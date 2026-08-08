@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+html, body { margin:0; background:#0A0C14; }
+a { color:#F2A33C; text-decoration:none; }
+a:hover { color:#FFC46B; }
+</style>
+</helmet>
+
+<section style="min-height:100vh; width:max-content; min-width:100%; box-sizing:border-box; background:#0A0C14; padding:72px 64px 90px; font-family:'JetBrains Mono', Menlo, monospace; color:#E9ECF5; display:flex; flex-direction:column; gap:44px; border-bottom:1px solid #262D45">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:820px">
+    <div style="font-size:11px; letter-spacing:2.4px; text-transform:uppercase; color:#5A6076; font-weight:600">Turn 2 · selected direction</div>
+    <div style="display:flex; align-items:baseline; gap:12px">
+      <span style="font-size:11px; font-weight:700; letter-spacing:1.4px; color:#14100A; background:#F2A33C; padding:4px 9px; border-radius:6px">2a</span>
+      <span style="font-size:32px; font-weight:700; letter-spacing:-0.5px">Bowl &amp; Bars — production sheet</span>
+    </div>
+    <div style="font-size:14px; line-height:1.65; color:#8A91A8; text-wrap:pretty">Refined from <a href="#1a">1a</a>: bars thickened from 32 to 38 units and the bowl widened so the silhouette holds at 60 px. Below are every asset <code style="color:#F2A33C">app.json</code> asks for.</div>
+  </div>
+
+  <div style="display:flex; gap:56px; align-items:flex-start">
+
+    <div style="display:flex; flex-direction:column; gap:14px">
+      <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#5A6076; font-weight:600">icon.png · 1024²</div>
+      <div style="width:512px; height:512px; border-radius:114px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative; box-shadow:0 30px 70px -20px rgba(0,0,0,0.85)">
+        <div style="position:absolute; inset:0; background:radial-gradient(120% 90% at 50% 16%, rgba(242,163,60,0.18), rgba(242,163,60,0) 60%)"></div>
+        <div style="position:absolute; left:50%; top:114px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:20px">
+          <div style="width:38px; height:62px; border-radius:19px; background:rgba(233,236,245,0.32)"></div>
+          <div style="width:38px; height:106px; border-radius:19px; background:rgba(233,236,245,0.60)"></div>
+          <div style="width:38px; height:152px; border-radius:19px; background:#57D9A3"></div>
+        </div>
+        <div style="position:absolute; left:50%; top:296px; transform:translateX(-50%); width:364px; height:36px; border-radius:18px; background:linear-gradient(180deg,#FFD79A,#F2A33C)"></div>
+        <div style="position:absolute; left:50%; top:324px; transform:translateX(-50%); width:316px; height:156px; border-radius:0 0 158px 158px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+        <div style="position:absolute; left:50%; top:478px; transform:translateX(-50%); width:100px; height:20px; border-radius:10px; background:#B96C18"></div>
+      </div>
+      <div style="font-size:12px; color:#5A6076">Bowl gold <span style="color:#F2A33C">#F2A33C</span> → <span style="color:#D8801F">#D8801F</span> · lead bar mint <span style="color:#57D9A3">#57D9A3</span> · ground <span style="color:#8A91A8">#1D2338 → #0C0F1A</span></div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:28px">
+
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#5A6076; font-weight:600">Android adaptive · foreground + background</div>
+        <div style="display:flex; gap:20px; align-items:flex-end">
+          <div style="display:flex; flex-direction:column; gap:8px">
+            <div style="width:200px; height:200px; border-radius:20px; overflow:hidden; position:relative; background:repeating-conic-gradient(#171B27 0% 25%, #10131C 0% 50%) 0 0/24px 24px">
+              <div style="position:absolute; inset:0; transform:scale(0.68)">
+                <div style="position:absolute; left:50%; top:44.5px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:7.8px">
+                  <div style="width:14.8px; height:24px; border-radius:8px; background:rgba(233,236,245,0.32)"></div>
+                  <div style="width:14.8px; height:41px; border-radius:8px; background:rgba(233,236,245,0.60)"></div>
+                  <div style="width:14.8px; height:59px; border-radius:8px; background:#57D9A3"></div>
+                </div>
+                <div style="position:absolute; left:50%; top:115.6px; transform:translateX(-50%); width:142px; height:14px; border-radius:7px; background:linear-gradient(180deg,#FFD79A,#F2A33C)"></div>
+                <div style="position:absolute; left:50%; top:126.6px; transform:translateX(-50%); width:123px; height:61px; border-radius:0 0 62px 62px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+                <div style="position:absolute; left:50%; top:186.7px; transform:translateX(-50%); width:39px; height:8px; border-radius:4px; background:#B96C18"></div>
+              </div>
+              <div style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:132px; height:132px; border-radius:50%; border:1px dashed rgba(87,217,163,0.5)"></div>
+            </div>
+            <div style="font-size:11px; color:#5A6076">foreground · 66% safe circle</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px">
+            <div style="width:200px; height:200px; border-radius:20px; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%)"></div>
+            <div style="font-size:11px; color:#5A6076">background</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px">
+            <div style="width:200px; height:200px; border-radius:20px; overflow:hidden; position:relative; background:#3B4257">
+              <div style="position:absolute; inset:0; transform:scale(0.68)">
+                <div style="position:absolute; left:50%; top:44.5px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:7.8px">
+                  <div style="width:14.8px; height:24px; border-radius:8px; background:#fff"></div>
+                  <div style="width:14.8px; height:41px; border-radius:8px; background:#fff"></div>
+                  <div style="width:14.8px; height:59px; border-radius:8px; background:#fff"></div>
+                </div>
+                <div style="position:absolute; left:50%; top:115.6px; transform:translateX(-50%); width:142px; height:14px; border-radius:7px; background:#fff"></div>
+                <div style="position:absolute; left:50%; top:126.6px; transform:translateX(-50%); width:123px; height:61px; border-radius:0 0 62px 62px; background:#fff"></div>
+                <div style="position:absolute; left:50%; top:186.7px; transform:translateX(-50%); width:39px; height:8px; border-radius:4px; background:#fff"></div>
+              </div>
+            </div>
+            <div style="font-size:11px; color:#5A6076">monochrome · solid white</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#5A6076; font-weight:600">Size ladder</div>
+        <div style="display:flex; gap:22px; align-items:flex-end">
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:center">
+            <div style="width:120px; height:120px; border-radius:27px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative">
+              <div style="position:absolute; left:50%; top:26.7px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:4.7px">
+                <div style="width:8.9px; height:14.5px; border-radius:5px; background:rgba(233,236,245,0.32)"></div>
+                <div style="width:8.9px; height:24.8px; border-radius:5px; background:rgba(233,236,245,0.60)"></div>
+                <div style="width:8.9px; height:35.6px; border-radius:5px; background:#57D9A3"></div>
+              </div>
+              <div style="position:absolute; left:50%; top:69.4px; transform:translateX(-50%); width:85.3px; height:8.4px; border-radius:5px; background:linear-gradient(180deg,#FFD79A,#F2A33C)"></div>
+              <div style="position:absolute; left:50%; top:76px; transform:translateX(-50%); width:74px; height:36.6px; border-radius:0 0 37px 37px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+            </div>
+            <div style="font-size:11px; color:#5A6076">120</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:center">
+            <div style="width:60px; height:60px; border-radius:13px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative">
+              <div style="position:absolute; left:50%; top:13.4px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:2.3px">
+                <div style="width:4.5px; height:7.3px; border-radius:2.3px; background:rgba(233,236,245,0.32)"></div>
+                <div style="width:4.5px; height:12.4px; border-radius:2.3px; background:rgba(233,236,245,0.60)"></div>
+                <div style="width:4.5px; height:17.8px; border-radius:2.3px; background:#57D9A3"></div>
+              </div>
+              <div style="position:absolute; left:50%; top:34.7px; transform:translateX(-50%); width:42.7px; height:4.2px; border-radius:2.1px; background:#F2A33C"></div>
+              <div style="position:absolute; left:50%; top:38px; transform:translateX(-50%); width:37px; height:18.3px; border-radius:0 0 19px 19px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+            </div>
+            <div style="font-size:11px; color:#5A6076">60</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:center">
+            <div style="width:40px; height:40px; border-radius:9px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative">
+              <div style="position:absolute; left:50%; top:8.9px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:1.6px">
+                <div style="width:3px; height:4.8px; border-radius:1.5px; background:rgba(233,236,245,0.32)"></div>
+                <div style="width:3px; height:8.3px; border-radius:1.5px; background:rgba(233,236,245,0.60)"></div>
+                <div style="width:3px; height:11.9px; border-radius:1.5px; background:#57D9A3"></div>
+              </div>
+              <div style="position:absolute; left:50%; top:23.1px; transform:translateX(-50%); width:28.4px; height:2.8px; border-radius:1.4px; background:#F2A33C"></div>
+              <div style="position:absolute; left:50%; top:25.3px; transform:translateX(-50%); width:24.7px; height:12.2px; border-radius:0 0 13px 13px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+            </div>
+            <div style="font-size:11px; color:#5A6076">40</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:center">
+            <div style="width:29px; height:29px; border-radius:6px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative">
+              <div style="position:absolute; left:50%; top:6.5px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:1.1px">
+                <div style="width:2.2px; height:3.5px; border-radius:1.1px; background:rgba(233,236,245,0.32)"></div>
+                <div style="width:2.2px; height:6px; border-radius:1.1px; background:rgba(233,236,245,0.60)"></div>
+                <div style="width:2.2px; height:8.6px; border-radius:1.1px; background:#57D9A3"></div>
+              </div>
+              <div style="position:absolute; left:50%; top:16.8px; transform:translateX(-50%); width:20.6px; height:2px; border-radius:1px; background:#F2A33C"></div>
+              <div style="position:absolute; left:50%; top:18.4px; transform:translateX(-50%); width:17.9px; height:8.8px; border-radius:0 0 9px 9px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+            </div>
+            <div style="font-size:11px; color:#5A6076">29</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section style="min-height:100vh; width:max-content; min-width:100%; box-sizing:border-box; background:#0A0C14; padding:72px 64px 120px; font-family:'JetBrains Mono', Menlo, monospace; color:#E9ECF5; display:flex; flex-direction:column; gap:56px">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:820px">
+    <div style="font-size:11px; letter-spacing:2.4px; text-transform:uppercase; color:#5A6076; font-weight:600">Turn 1 · explorations</div>
+    <div style="font-size:32px; font-weight:700; letter-spacing:-0.5px; color:#E9ECF5">Three directions, drawn from the in-app palette</div>
+    <div style="font-size:14px; line-height:1.65; color:#8A91A8; text-wrap:pretty">Current <code style="color:#F2A33C">assets/icon.png</code> is the stock Expo placeholder, so this is a from-scratch mark. All three use the game's own tokens — midnight <span style="color:#E9ECF5">#0C0F1A</span>, gold <span style="color:#F2A33C">#F2A33C</span>, mint <span style="color:#57D9A3">#57D9A3</span> — so the icon and the first screen feel like one product. Each is shown at 1024, 180 and 60 px; the 60 is the one that has to survive a crowded home screen.</div>
+  </div>
+
+  <div style="display:flex; gap:48px; align-items:flex-start; width:max-content">
+
+    <div id="1a" style="display:flex; flex-direction:column; gap:20px; width:520px">
+      <div style="display:flex; align-items:baseline; gap:12px">
+        <span style="font-size:11px; font-weight:700; letter-spacing:1.4px; color:#14100A; background:#F2A33C; padding:4px 9px; border-radius:6px">1a</span>
+        <span style="font-size:17px; font-weight:700">Bowl &amp; Bars</span>
+      </div>
+      <div style="width:512px; height:512px; border-radius:114px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative; box-shadow:0 30px 70px -20px rgba(0,0,0,0.8)">
+        <div style="position:absolute; inset:0; background:radial-gradient(120% 90% at 50% 18%, rgba(242,163,60,0.16), rgba(242,163,60,0) 60%)"></div>
+        <div style="position:absolute; left:50%; top:118px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:22px">
+          <div style="width:32px; height:64px; border-radius:16px; background:rgba(233,236,245,0.34)"></div>
+          <div style="width:32px; height:104px; border-radius:16px; background:rgba(233,236,245,0.62)"></div>
+          <div style="width:32px; height:148px; border-radius:16px; background:#57D9A3"></div>
+        </div>
+        <div style="position:absolute; left:50%; top:296px; transform:translateX(-50%); width:352px; height:34px; border-radius:17px; background:linear-gradient(180deg,#FFD79A,#F2A33C)"></div>
+        <div style="position:absolute; left:50%; top:322px; transform:translateX(-50%); width:304px; height:150px; border-radius:0 0 152px 152px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+        <div style="position:absolute; left:50%; top:472px; transform:translateX(-50%); width:96px; height:20px; border-radius:10px; background:#B96C18"></div>
+      </div>
+      <div style="display:flex; align-items:flex-end; gap:18px; padding-top:2px">
+        <div style="width:180px; height:180px; border-radius:40px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative">
+          <div style="position:absolute; left:50%; top:41px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:8px">
+            <div style="width:11px; height:22px; border-radius:6px; background:rgba(233,236,245,0.34)"></div>
+            <div style="width:11px; height:37px; border-radius:6px; background:rgba(233,236,245,0.62)"></div>
+            <div style="width:11px; height:52px; border-radius:6px; background:#57D9A3"></div>
+          </div>
+          <div style="position:absolute; left:50%; top:104px; transform:translateX(-50%); width:124px; height:12px; border-radius:6px; background:linear-gradient(180deg,#FFD79A,#F2A33C)"></div>
+          <div style="position:absolute; left:50%; top:113px; transform:translateX(-50%); width:107px; height:53px; border-radius:0 0 54px 54px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+        </div>
+        <div style="width:60px; height:60px; border-radius:13px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative">
+          <div style="position:absolute; left:50%; top:14px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:2.6px">
+            <div style="width:3.8px; height:7.5px; border-radius:2px; background:rgba(233,236,245,0.34)"></div>
+            <div style="width:3.8px; height:12px; border-radius:2px; background:rgba(233,236,245,0.62)"></div>
+            <div style="width:3.8px; height:17px; border-radius:2px; background:#57D9A3"></div>
+          </div>
+          <div style="position:absolute; left:50%; top:34.7px; transform:translateX(-50%); width:41px; height:4px; border-radius:2px; background:#F2A33C"></div>
+          <div style="position:absolute; left:50%; top:37.7px; transform:translateX(-50%); width:36px; height:17.6px; border-radius:0 0 18px 18px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+        </div>
+      </div>
+      <div style="font-size:13px; line-height:1.6; color:#8A91A8; text-wrap:pretty">The steam is a revenue chart. Reads as a ramen bowl instantly at any size, and the mint bar is the same mint the MRR meter uses. Safest of the three, and the most obviously a game about noodles and money.</div>
+    </div>
+
+    <div id="1b" style="display:flex; flex-direction:column; gap:20px; width:520px">
+      <div style="display:flex; align-items:baseline; gap:12px">
+        <span style="font-size:11px; font-weight:700; letter-spacing:1.4px; color:#14100A; background:#F2A33C; padding:4px 9px; border-radius:6px">1b</span>
+        <span style="font-size:17px; font-weight:700">Terminal Bowl</span>
+      </div>
+      <div style="width:512px; height:512px; border-radius:114px; overflow:hidden; background:linear-gradient(158deg,#161B2C 0%,#0C0F1A 70%); position:relative; box-shadow:0 30px 70px -20px rgba(0,0,0,0.8)">
+        <div style="position:absolute; inset:0; background:repeating-linear-gradient(180deg, rgba(233,236,245,0.035) 0 2px, rgba(0,0,0,0) 2px 8px)"></div>
+        <div style="position:absolute; left:0; right:0; top:172px; display:flex; align-items:center; justify-content:center; gap:26px">
+          <div style="font-size:210px; font-weight:800; line-height:0.8; color:#F2A33C; letter-spacing:-8px">&gt;</div>
+          <div style="width:88px; height:150px; border-radius:12px; background:#57D9A3; box-shadow:0 0 60px rgba(87,217,163,0.45)"></div>
+        </div>
+        <div style="position:absolute; left:50%; bottom:78px; transform:translateX(-50%); width:236px; height:14px; border-radius:7px; background:rgba(233,236,245,0.16)"></div>
+      </div>
+      <div style="display:flex; align-items:flex-end; gap:18px; padding-top:2px">
+        <div style="width:180px; height:180px; border-radius:40px; overflow:hidden; background:linear-gradient(158deg,#161B2C 0%,#0C0F1A 70%); position:relative">
+          <div style="position:absolute; left:0; right:0; top:60px; display:flex; align-items:center; justify-content:center; gap:9px">
+            <div style="font-size:74px; font-weight:800; line-height:0.8; color:#F2A33C; letter-spacing:-3px">&gt;</div>
+            <div style="width:31px; height:53px; border-radius:5px; background:#57D9A3"></div>
+          </div>
+          <div style="position:absolute; left:50%; bottom:27px; transform:translateX(-50%); width:83px; height:5px; border-radius:3px; background:rgba(233,236,245,0.16)"></div>
+        </div>
+        <div style="width:60px; height:60px; border-radius:13px; overflow:hidden; background:linear-gradient(158deg,#161B2C 0%,#0C0F1A 70%); position:relative">
+          <div style="position:absolute; left:0; right:0; top:20px; display:flex; align-items:center; justify-content:center; gap:3px">
+            <div style="font-size:25px; font-weight:800; line-height:0.8; color:#F2A33C; letter-spacing:-1px">&gt;</div>
+            <div style="width:10px; height:18px; border-radius:2px; background:#57D9A3"></div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:13px; line-height:1.6; color:#8A91A8; text-wrap:pretty">A shell prompt with a live cursor — the app's mono voice, compressed. Strongest personality and the clearest "indie dev" signal, but a browser of the Games category won't read food or idle-game from it.</div>
+    </div>
+
+    <div id="1c" style="display:flex; flex-direction:column; gap:20px; width:520px">
+      <div style="display:flex; align-items:baseline; gap:12px">
+        <span style="font-size:11px; font-weight:700; letter-spacing:1.4px; color:#14100A; background:#F2A33C; padding:4px 9px; border-radius:6px">1c</span>
+        <span style="font-size:17px; font-weight:700">Chopstick Lift</span>
+      </div>
+      <div style="width:512px; height:512px; border-radius:114px; overflow:hidden; background:linear-gradient(158deg,#F2A33C 0%,#D8801F 100%); position:relative; box-shadow:0 30px 70px -20px rgba(0,0,0,0.8)">
+        <div style="position:absolute; inset:0; background:radial-gradient(90% 70% at 50% 100%, rgba(12,15,26,0.28), rgba(12,15,26,0) 70%)"></div>
+        <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 60px),calc(-50% - 40px)) rotate(24deg); width:34px; height:330px; border-radius:17px; background:#0C0F1A"></div>
+        <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 118px),calc(-50% - 18px)) rotate(24deg); width:34px; height:300px; border-radius:17px; background:#0C0F1A"></div>
+        <div style="position:absolute; left:50%; top:265px; transform:translateX(-50%); width:190px; height:190px; border-radius:50%; border:32px solid #E9ECF5; box-sizing:border-box; clip-path:inset(50% 0 0 0)"></div>
+      </div>
+      <div style="display:flex; align-items:flex-end; gap:18px; padding-top:2px">
+        <div style="width:180px; height:180px; border-radius:40px; overflow:hidden; background:linear-gradient(158deg,#F2A33C 0%,#D8801F 100%); position:relative">
+          <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 21px),calc(-50% - 14px)) rotate(24deg); width:12px; height:116px; border-radius:6px; background:#0C0F1A"></div>
+          <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 41.5px),calc(-50% - 6.3px)) rotate(24deg); width:12px; height:105.5px; border-radius:6px; background:#0C0F1A"></div>
+          <div style="position:absolute; left:50%; top:93.2px; transform:translateX(-50%); width:66.8px; height:66.8px; border-radius:50%; border:11.3px solid #E9ECF5; box-sizing:border-box; clip-path:inset(50% 0 0 0)"></div>
+        </div>
+        <div style="width:60px; height:60px; border-radius:13px; overflow:hidden; background:linear-gradient(158deg,#F2A33C 0%,#D8801F 100%); position:relative">
+          <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 7px),calc(-50% - 4.7px)) rotate(24deg); width:4px; height:38.7px; border-radius:2px; background:#0C0F1A"></div>
+          <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 13.8px),calc(-50% - 2.1px)) rotate(24deg); width:4px; height:35.2px; border-radius:2px; background:#0C0F1A"></div>
+          <div style="position:absolute; left:50%; top:31px; transform:translateX(-50%); width:22.3px; height:22.3px; border-radius:50%; border:3.8px solid #E9ECF5; box-sizing:border-box; clip-path:inset(50% 0 0 0)"></div>
+        </div>
+      </div>
+      <div style="font-size:13px; line-height:1.6; color:#8A91A8; text-wrap:pretty">A pair of offset chopsticks with a single noodle draped over the tips, caught mid-lift. The only light-ground option, so it punches hardest in a grid of dark game icons — at the cost of not matching the app's dark interior.</div>
+    </div>
+
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:16px; max-width:1100px; border-top:1px solid #262D45; padding-top:36px">
+    <div style="font-size:11px; letter-spacing:2.4px; text-transform:uppercase; color:#5A6076; font-weight:600">On a home screen</div>
+    <div style="display:flex; gap:26px; align-items:flex-start; padding:26px; background:linear-gradient(140deg,#1D2338,#121624); border:1px solid #262D45; border-radius:22px; width:max-content">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:8px">
+        <div style="width:112px; height:112px; border-radius:25px; overflow:hidden; background:linear-gradient(158deg,#1D2338 0%,#0C0F1A 62%); position:relative">
+          <div style="position:absolute; left:50%; top:26px; transform:translateX(-50%); display:flex; align-items:flex-end; gap:5px">
+            <div style="width:7px; height:14px; border-radius:4px; background:rgba(233,236,245,0.34)"></div>
+            <div style="width:7px; height:23px; border-radius:4px; background:rgba(233,236,245,0.62)"></div>
+            <div style="width:7px; height:32px; border-radius:4px; background:#57D9A3"></div>
+          </div>
+          <div style="position:absolute; left:50%; top:65px; transform:translateX(-50%); width:77px; height:7px; border-radius:4px; background:linear-gradient(180deg,#FFD79A,#F2A33C)"></div>
+          <div style="position:absolute; left:50%; top:70px; transform:translateX(-50%); width:66px; height:33px; border-radius:0 0 33px 33px; background:linear-gradient(180deg,#F2A33C,#D8801F)"></div>
+        </div>
+        <div style="font-size:11px; color:#8A91A8">1a</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:8px">
+        <div style="width:112px; height:112px; border-radius:25px; overflow:hidden; background:linear-gradient(158deg,#161B2C 0%,#0C0F1A 70%); position:relative">
+          <div style="position:absolute; left:0; right:0; top:37px; display:flex; align-items:center; justify-content:center; gap:6px">
+            <div style="font-size:46px; font-weight:800; line-height:0.8; color:#F2A33C; letter-spacing:-2px">&gt;</div>
+            <div style="width:19px; height:33px; border-radius:4px; background:#57D9A3"></div>
+          </div>
+        </div>
+        <div style="font-size:11px; color:#8A91A8">1b</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:8px">
+        <div style="width:112px; height:112px; border-radius:25px; overflow:hidden; background:linear-gradient(158deg,#F2A33C 0%,#D8801F 100%); position:relative">
+          <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 13px),calc(-50% - 8.8px)) rotate(24deg); width:7.4px; height:72px; border-radius:4px; background:#0C0F1A"></div>
+          <div style="position:absolute; left:50%; top:50%; transform:translate(calc(-50% + 25.8px),calc(-50% - 3.9px)) rotate(24deg); width:7.4px; height:65.6px; border-radius:4px; background:#0C0F1A"></div>
+          <div style="position:absolute; left:50%; top:58px; transform:translateX(-50%); width:41.6px; height:41.6px; border-radius:50%; border:7px solid #E9ECF5; box-sizing:border-box; clip-path:inset(50% 0 0 0)"></div>
+        </div>
+        <div style="font-size:11px; color:#8A91A8">1c</div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</x-dc>
+</body>
+</html>
