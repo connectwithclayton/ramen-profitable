@@ -2,13 +2,18 @@
 
 Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
 
-## Design docs are rendered, not exported
+## Design docs: check for a vector source before rendering
 
-`design/*.dc.html` are design-canvas documents: they need the bundled `design/support.js`,
-and the artwork inside them is drawn in **HTML/CSS divs — there is no SVG, no `<path>`, no
-`<canvas>`**. To turn any of that artwork into an image asset, open the doc (or a standalone
-page transcribing its geometry) in a headless browser and screenshot it; render at or above
-the target resolution and downscale, never upscale.
+`design/*.dc.html` are design-canvas documents and need the bundled `design/support.js` to
+render. Whether their artwork has a vector source varies **per document — check the one you
+are working from** (`grep -c '<svg' 'design/<doc>.dc.html'`) before deciding how to extract it.
+
+- `design/Redesign.dc.html` does contain real inline `<svg>`/`<path>` artwork (the icon set):
+  export those elements, do not screenshot them.
+- `design/App Icon.dc.html` and `design/Current Screens.dc.html` are CSS-only (zero `<svg>`,
+  `<path>`, `<canvas>`), so their artwork must be rendered: open the doc (or a standalone page
+  transcribing its geometry) in a headless browser and screenshot it, at or above the target
+  resolution then downscale — never upscale.
 
 Browser screenshots carry no alpha channel. For an asset that must be transparent
 (`android-icon-foreground.png`, `android-icon-monochrome.png`), capture the same page twice —
