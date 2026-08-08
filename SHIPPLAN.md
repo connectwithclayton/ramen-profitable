@@ -7,8 +7,8 @@
 ---
 
 ## Week 1 — Aug 8–14 · Foundation
-- [ ] Register on Devpost (Ship Kit takes 3–5 days — do this TODAY)
-- [ ] Apple Developer account enrollment started (longest external dependency)
+- [x] Register on Devpost (Ship Kit takes 3–5 days — do this TODAY)
+- [x] Apple Developer account enrollment started (longest external dependency)
 - [ ] RevenueCat account + project created
 - [ ] This Expo scaffold running on your phone (`npx expo start`, Expo Go is fine for now)
 - [ ] Core loop verified: new project → tap code → App Review → MRR
