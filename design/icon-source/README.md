@@ -1,9 +1,21 @@
 # Ramen Profitable — icon export
 
-## What to use
-`icon-master.svg` is the master. It is pure geometry (rects, one arc, four gradients),
-so it re-renders lossless at any size. Regenerate PNGs from it rather than
-scaling the PNGs.
+## Production source mapping
+
+The committed PNGs are the approved production exports. When a new export is approved,
+render it at its target resolution from the mapped SVG; never scale an existing PNG.
+
+| Production asset | Durable vector source | Export size |
+|---|---|---|
+| `assets/icon.png` | `design/icon-source/icon-master.svg` | 1024×1024 |
+| `assets/splash-icon.png` | `design/icon-source/icon-master.svg` | 1024×1024 |
+| `assets/favicon.png` | `design/icon-source/icon-master.svg` | 96×96 |
+| `assets/android-icon-foreground.png` | `design/icon-source/android-icon-foreground.svg` | 1024×1024 |
+| `assets/android-icon-background.png` | `design/icon-source/android-icon-background.svg` | 1024×1024 |
+| `assets/android-icon-monochrome.png` | `design/icon-source/android-icon-monochrome.svg` | 1024×1024 |
+
+Do not render either Android foreground asset from `icon-master.svg`: the full master includes
+the colored ground and does not contain the adaptive-icon safe-circle correction.
 
 ## Drop-in for app.json
 | File | Goes to | app.json key |
@@ -22,8 +34,10 @@ themed fallback matches the ground.
 ## Geometry
 1024² artboard, no corner rounding — iOS and Android apply their own mask.
 Mark spans y 128–896, so 128px of clear margin top and bottom.
-Android foreground and monochrome are scaled to 68% to sit inside the
-66% adaptive-icon safe circle.
+Android foreground and monochrome keep transparent surroundings. Their maximum alpha-visible
+radius is at most 312.9px on the 1024px artboard (ratio ≤0.3056), inside the 66dp/108dp
+guaranteed-safe circle. The monochrome source is pure white, and its rim overlaps the bowl by
+24px so the themed-icon silhouette remains fused.
 
 ## Palette — all from src/theme.ts
 ground  #1D2338 → #0C0F1A   (C.card2 → C.midnight)
