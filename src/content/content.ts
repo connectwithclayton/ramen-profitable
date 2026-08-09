@@ -1,4 +1,5 @@
 import type { GameState } from '../state/gameStore';
+import type { IconName } from '../components/icons';
 
 export const APP_IDEAS: [string, string][] = [
   ['PlantParent', 'habit tracker, but for your dying succulents'],
@@ -26,18 +27,19 @@ export const REJECTIONS: [string, string][] = [
 export type GameEvent = {
   kind: 'good' | 'bad';
   text: string;
+  icon?: IconName;
   apply: (s: GameState) => Partial<GameState>;
 };
 
 export const EVENTS: GameEvent[] = [
   { kind: 'good', text: '⭐️ 5-star review: "life changing. also crashes sometimes."', apply: s => ({ mrr: s.mrr * 1.05 }) },
-  { kind: 'good', text: "📈 Featured in 'Apps We Also Noticed This Week'", apply: s => ({ mrr: s.mrr * 1.12 }) },
-  { kind: 'good', text: '🧵 Your build-in-public thread got 40k views. 3 conversions.', apply: s => ({ mrr: s.mrr + 15 }) },
-  { kind: 'bad', text: '📉 Churn monster attacks! A cohort just remembered they subscribed.', apply: s => ({ mrr: s.mrr * 0.92 }) },
+  { kind: 'good', text: "Featured in 'Apps We Also Noticed This Week'", icon: 'growth', apply: s => ({ mrr: s.mrr * 1.12 }) },
+  { kind: 'good', text: 'Your build-in-public thread got 40k views. 3 conversions.', icon: 'chirp', apply: s => ({ mrr: s.mrr + 15 }) },
+  { kind: 'bad', text: 'Churn monster attacks! A cohort just remembered they subscribed.', icon: 'churn', apply: s => ({ mrr: s.mrr * 0.92 }) },
   { kind: 'bad', text: '🍎 You got Sherlocked. Apple announced your app, but worse, at WWDC.', apply: s => ({ mrr: s.mrr * 0.88 }) },
   { kind: 'bad', text: '⭐️ 1-star review: "app opened. did not read minds. uninstalling."', apply: s => ({ mrr: s.mrr * 0.95 }) },
-  { kind: 'good', text: '☕️ Barista spelled your name right. Morale up. Energy restored.', apply: s => ({ energy: Math.min(s.energyMax, s.energy + 20) }) },
-  { kind: 'bad', text: '💸 Your Mac needs a new battery. -$60.', apply: s => ({ cash: Math.max(0, s.cash - 60) }) },
+  { kind: 'good', text: 'Barista spelled your name right. Morale up. Energy restored.', icon: 'energy', apply: s => ({ energy: Math.min(s.energyMax, s.energy + 20) }) },
+  { kind: 'bad', text: 'Your Mac needs a new battery. -$60.', icon: 'cash', apply: s => ({ cash: Math.max(0, s.cash - 60) }) },
 ];
 
 export type ShopItem = {
@@ -136,15 +138,15 @@ export const DARK_EVENTS: GameEvent[] = [
 
 /* ---------- Achievements ---------- */
 
-export type Achievement = { id: string; icon: string; name: string; desc: string };
+export type Achievement = { id: string; icon?: string; drawnIcon?: IconName; name: string; desc: string };
 
 export const ACHIEVEMENTS: Achievement[] = [
-  { id: 'first_ship', icon: '🚢', name: 'Shipped', desc: 'Got an app approved. Everything changes now.' },
+  { id: 'first_ship', drawnIcon: 'ship', name: 'Shipped', desc: 'Got an app approved. Everything changes now.' },
   { id: 'first_reject', icon: '🪦', name: '4.3 Survivor', desc: 'Got rejected and lived to tell Chirp about it.' },
   { id: 'mrr_100', icon: '🌱', name: 'Beer Money', desc: 'Reached $100 MRR.' },
-  { id: 'mrr_1000', icon: '📈', name: 'Rent Adjacent', desc: 'Reached $1,000 MRR.' },
+  { id: 'mrr_1000', drawnIcon: 'growth', name: 'Rent Adjacent', desc: 'Reached $1,000 MRR.' },
   { id: 'ramen', icon: '🍜', name: 'Ramen Profitable', desc: 'Quit the day job. Free at last.' },
-  { id: 'paywall_first', icon: '🧱', name: 'Paywall Architect', desc: 'Designed your first paywall.' },
+  { id: 'paywall_first', drawnIcon: 'paywall', name: 'Paywall Architect', desc: 'Designed your first paywall.' },
   { id: 'dark_side', icon: '😈', name: 'The Dark Side', desc: 'Shipped a paywall with heat ≥ 5. We saw that.' },
   { id: 'saint', icon: '😇', name: 'Ethically Sourced', desc: 'Shipped a completely clean paywall.' },
   { id: 'portfolio', icon: '🗂', name: 'Portfolio Guy', desc: 'Three live apps at once.' },

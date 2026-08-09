@@ -12,13 +12,15 @@ import StoreScreen from './src/screens/StoreScreen';
 import ChirpScreen from './src/screens/ChirpScreen';
 import { MonoText } from './src/components/ui';
 import { C, R } from './src/theme';
+import { DrawnIcon } from './src/components/icons';
+import type { IconName } from './src/components/icons';
 
 type Tab = 'home' | 'code' | 'store' | 'chirp';
-const TABS: { key: Tab; icon: string; label: string }[] = [
-  { key: 'home', icon: '🏠', label: 'Home' },
-  { key: 'code', icon: '⌨️', label: 'Code' },
-  { key: 'store', icon: '🛒', label: 'Store' },
-  { key: 'chirp', icon: '🐦', label: 'Chirp' },
+const TABS: { key: Tab; icon: IconName; label: string }[] = [
+  { key: 'home', icon: 'home', label: 'Home' },
+  { key: 'code', icon: 'code', label: 'Code' },
+  { key: 'store', icon: 'store', label: 'Store' },
+  { key: 'chirp', icon: 'chirp', label: 'Chirp' },
 ];
 
 export default function App() {
@@ -62,7 +64,7 @@ export default function App() {
       <View style={st.dock}>
         {TABS.map(t => (
           <Pressable key={t.key} onPress={() => setTab(t.key)} style={st.dockBtn}>
-            <Text style={{ fontSize: 20 }}>{t.icon}</Text>
+            <DrawnIcon name={t.icon} size={20} active={tab === t.key} color={C.dim} />
             <Text style={[st.dockLabel, tab === t.key && { color: C.gold }]}>{t.label}</Text>
             {t.key === 'chirp' && unread && <View style={st.badge} />}
           </Pressable>

@@ -14,6 +14,7 @@ export function Eyebrow({ children, color }: { children: React.ReactNode; color?
 
 export function Btn({
   label,
+  icon,
   onPress,
   ghost,
   disabled,
@@ -21,6 +22,7 @@ export function Btn({
   style,
 }: {
   label: string;
+  icon?: React.ReactNode;
   onPress: () => void;
   ghost?: boolean;
   disabled?: boolean;
@@ -40,7 +42,14 @@ export function Btn({
         style,
       ]}
     >
-      <Text style={[st.btnText, ghost && { color: C.ink, fontWeight: '600' }, small && { fontSize: 13 }]}>{label}</Text>
+      {icon ? (
+        <View style={st.btnContent}>
+          {icon}
+          <Text style={[st.btnText, ghost && { color: C.ink, fontWeight: '600' }, small && { fontSize: 13 }]}>{label}</Text>
+        </View>
+      ) : (
+        <Text style={[st.btnText, ghost && { color: C.ink, fontWeight: '600' }, small && { fontSize: 13 }]}>{label}</Text>
+      )}
     </Pressable>
   );
 }
@@ -90,6 +99,7 @@ const st = StyleSheet.create({
     borderColor: C.line,
   },
   btnSmall: { paddingVertical: 9, paddingHorizontal: 12 },
+  btnContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   btnText: { color: C.btnText, fontWeight: '700', fontSize: 15 },
   meter: {
     height: 8,

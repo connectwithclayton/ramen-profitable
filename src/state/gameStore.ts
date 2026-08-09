@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { APP_IDEAS, REJECTIONS, EVENTS, DARK_EVENTS, SHOP, CHIRPERS, MRR_GOAL, PAYWALL_AXES, ACHIEVEMENTS } from '../content/content';
+import type { IconName } from '../components/icons';
 
 export type Project = { name: string; idea: string; loc: number; need: number };
 export type ShippedApp = {
@@ -15,7 +16,7 @@ export type ShippedApp = {
   hasPaywall: boolean;
 };
 export type Chirp = { id: string; who: string; handle: string; text: string; likes: number };
-export type Notif = { id: string; text: string };
+export type Notif = { id: string; text: string; icon?: IconName };
 export type Overlay =
   | { type: 'review'; appName: string }
   | { type: 'verdict'; ok: boolean; appName: string; rule?: string; flavor?: string; gain?: number }
@@ -64,7 +65,7 @@ type Actions = {
   fastTick: () => void;
   slowTick: () => void;
   maybeEvent: () => void;
-  pushNotif: (text: string) => void;
+  pushNotif: (text: string, icon?: IconName) => void;
   expireNotif: (id: string) => void;
   pushChirp: (text: string) => void;
   markChirpsRead: () => void;
@@ -110,8 +111,8 @@ export const useGame = create<GameState & Actions>()(
     (set, get) => ({
       ...initial,
 
-      pushNotif: text => {
-        const n = { id: uid(), text };
+      pushNotif: (text, icon) => {
+        const n = { id: uid(), text, icon };
         set(s => ({ notifs: [...s.notifs.slice(-2), n] }));
       },
       expireNotif: id => set(s => ({ notifs: s.notifs.filter(n => n.id !== id) })),
@@ -133,7 +134,7 @@ export const useGame = create<GameState & Actions>()(
         const s = get();
         if (!s.project) return false;
         if (s.energy < 1) {
-          s.pushNotif('⚡ Out of energy. Coffee exists for a reason.');
+          s.pushNotif('Out of energy. Coffee exists for a reason.', 'energy');
           return false;
         }
         set({
@@ -198,7 +199,7 @@ export const useGame = create<GameState & Actions>()(
           upgrades: { ...s.upgrades, [id]: true },
           ...item.apply(s),
         });
-        s.pushNotif(`🛒 ${item.name} acquired.`);
+        s.pushNotif(`${item.name} acquired.`, 'store');
       },
 
       quitJob: () => {
@@ -228,7 +229,7 @@ export const useGame = create<GameState & Actions>()(
           next.day = s.day + 1;
           if (s.hasJob) {
             next.cash = (next.cash as number) + s.salary;
-            s.pushNotif(`💼 Payday. +$${s.salary} for 8 hours of meetings that could've been Slack messages.`);
+            s.pushNotif(`Payday. +$${s.salary} for 8 hours of meetings that could've been Slack messages.`, 'cash');
           }
         }
         set(next);
@@ -244,8 +245,8 @@ export const useGame = create<GameState & Actions>()(
         const useDark = totalDark >= 3 && Math.random() < 0.35;
         const ev = useDark ? pick(DARK_EVENTS) : pick(EVENTS);
         set(ev.apply(s));
-        s.pushNotif(ev.text);
-        if (Math.random() < 0.4) s.pushChirp(ev.text.replace(/^\S+\s/, ''));
+        s.pushNotif(ev.text, ev.icon);
+        if (Math.random() < 0.4) s.pushChirp(ev.icon ? ev.text : ev.text.replace(/^\S+\s/, ''));
       },
 
 
@@ -255,7 +256,7 @@ export const useGame = create<GameState & Actions>()(
         if (!app || !app.live) return;
         if (app.hasPaywall) {
           if (s.cash < 75) {
-            s.pushNotif('🧪 A/B tests cost $75. Science is not free.');
+            s.pushNotif('A/B tests cost $75. Science is not free.', 'abTest');
             return;
           }
           set({ cash: s.cash - 75 });
@@ -300,7 +301,7 @@ export const useGame = create<GameState & Actions>()(
         const a = ACHIEVEMENTS.find(x => x.id === id);
         if (!a) return;
         set({ achievements: { ...s.achievements, [id]: true } });
-        s.pushNotif(`🏆 Achievement: ${a.icon} ${a.name}`);
+        s.pushNotif(`🏆 Achievement: ${a.name}`, a.drawnIcon);
       },
 
       applyOfflineEarnings: () => {

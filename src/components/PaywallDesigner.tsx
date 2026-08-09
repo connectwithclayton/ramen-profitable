@@ -5,6 +5,7 @@ import { useGame } from '../state/gameStore';
 import { PAYWALL_AXES } from '../content/content';
 import { Btn, Eyebrow, MonoText } from './ui';
 import { C } from '../theme';
+import { ShipIcon } from './icons';
 
 export default function PaywallDesigner({ appId }: { appId: string }) {
   const app = useGame(s => s.apps.find(a => a.id === appId));
@@ -62,7 +63,8 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
       </View>
 
       <Btn
-        label={complete ? '🧱 Ship this paywall' : 'Pick one from each row'}
+        label={complete ? 'Ship this paywall' : 'Pick one from each row'}
+        icon={complete ? <ShipIcon size={18} color={C.btnText} /> : undefined}
         disabled={!complete}
         onPress={() => applyPaywall(appId, picks)}
         style={{ marginTop: 12 }}
