@@ -38,6 +38,8 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
             return (
               <Pressable
                 key={ch.id}
+                accessibilityLabel={`${ch.label}, heat ${ch.dark}`}
+                accessibilityState={{ selected: active }}
                 onPress={() => {
                   Haptics.selectionAsync().catch(() => {});
                   setPicks(p => ({ ...p, [axis.id]: ch.id }));
@@ -60,7 +62,7 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
       ))}
 
       <View style={st.previewRow}>
-        <MonoText style={{ fontSize: 12, color: C.mut }}>conv ×{preview.mult.toFixed(2)}   heat: </MonoText>
+        <MonoText style={{ fontSize: 12, color: C.mut }}>conv ×{preview.mult.toFixed(2)}   heat {preview.dark}: </MonoText>
         {preview.dark > 0 ? (
           <View style={st.heatIcons}>
             {Array.from({ length: Math.min(preview.dark, 8) }, (_, i) => <TrendingIcon key={i} size={12} color={C.pink} />)}

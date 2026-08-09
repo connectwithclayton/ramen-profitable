@@ -37,7 +37,7 @@ export default function ChirpScreen() {
                   style={st.likeButton}
                 >
                   {c.liked ? <LikeFilledIcon size={14} color={C.pink} /> : <LikeIcon size={14} color={C.dim} />}
-                  <MonoText style={st.metaText}>{c.likes}</MonoText>
+                  <MonoText style={st.metaText}>{c.likes + (c.liked ? 1 : 0)}</MonoText>
                 </Pressable>
                 <MonoText style={st.metaText}>⟳ {Math.floor(c.likes / 4)}</MonoText>
               </View>

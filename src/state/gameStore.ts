@@ -127,7 +127,7 @@ export const useGame = create<GameState & Actions>()(
       toggleChirpLike: id =>
         set(s => ({
           chirps: s.chirps.map(c =>
-            c.id === id ? { ...c, liked: !c.liked, likes: Math.max(0, c.likes + (c.liked ? -1 : 1)) } : c,
+            c.id === id ? { ...c, liked: !c.liked } : c,
           ),
         })),
 
