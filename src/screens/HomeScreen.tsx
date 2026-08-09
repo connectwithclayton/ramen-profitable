@@ -4,6 +4,7 @@ import { useGame, MRR_GOAL } from '../state/gameStore';
 import { ACHIEVEMENTS } from '../content/content';
 import { Card, Eyebrow, Btn, Meter, MonoText, fmt } from '../components/ui';
 import { C } from '../theme';
+import { AbTestIcon, DrawnIcon, GoalIcon, PaywallIcon } from '../components/icons';
 
 export default function HomeScreen() {
   const s = useGame();
@@ -21,9 +22,14 @@ export default function HomeScreen() {
           <MonoText style={{ color: C.mut, fontSize: 13 }}>cash {fmt(s.cash)}</MonoText>
         </View>
         <Meter pct={pct} />
-        <MonoText style={st.label}>
-          {s.hasJob ? `🎯 QUIT YOUR JOB at ${fmt(MRR_GOAL)} MRR — ${pct.toFixed(0)}%` : '🍜 RAMEN PROFITABLE. You are free.'}
-        </MonoText>
+        {s.hasJob ? (
+          <View style={st.goalLabel}>
+            <GoalIcon size={13} />
+            <MonoText style={st.label}>QUIT YOUR JOB at {fmt(MRR_GOAL)} MRR — {pct.toFixed(0)}%</MonoText>
+          </View>
+        ) : (
+          <MonoText style={st.label}>🍜 RAMEN PROFITABLE. You are free.</MonoText>
+        )}
         {s.hasJob && s.mrr >= MRR_GOAL && (
           <Btn label="✉️ Send resignation email" onPress={s.quitJob} style={{ marginTop: 12 }} />
         )}
@@ -66,7 +72,8 @@ export default function HomeScreen() {
                   <Btn
                     small
                     ghost
-                    label={a.hasPaywall ? `🧪 A/B ($75) ×${(a.mult ?? 1).toFixed(2)}` : '🧱 Design paywall'}
+                    label={a.hasPaywall ? `A/B ($75) ×${(a.mult ?? 1).toFixed(2)}` : 'Design paywall'}
+                    icon={a.hasPaywall ? <AbTestIcon size={15} color={C.ink} /> : <PaywallIcon size={15} color={C.ink} />}
                     onPress={() => s.openPaywallDesigner(a.id)}
                   />
                 )}
@@ -82,7 +89,7 @@ export default function HomeScreen() {
             const got = s.achievements[a.id];
             return (
               <View key={a.id} style={[st.ach, !got && { opacity: 0.28 }]}>
-                <Text style={{ fontSize: 18 }}>{a.icon}</Text>
+                {a.drawnIcon ? <DrawnIcon name={a.drawnIcon} size={18} color={C.mut} /> : <Text style={{ fontSize: 18 }}>{a.icon}</Text>}
                 <Text style={st.achName}>{got ? a.name : '???'}</Text>
               </View>
             );
@@ -97,6 +104,7 @@ const st = StyleSheet.create({
   wrap: { padding: 14, paddingBottom: 110 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   label: { fontSize: 11, color: C.mut, marginTop: 6 },
+  goalLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   grid: { flexDirection: 'row', gap: 10 },
   k: { color: C.mut, fontSize: 12 },
   v: { color: C.ink, fontWeight: '600', fontSize: 14, marginTop: 2 },

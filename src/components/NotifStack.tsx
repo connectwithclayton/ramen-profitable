@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Text, StyleSheet, View } from 'react-native';
 import { useGame, Notif } from '../state/gameStore';
 import { C } from '../theme';
+import { DrawnIcon } from './icons';
 
 function NotifCard({ n }: { n: Notif }) {
   const y = useRef(new Animated.Value(-30)).current;
@@ -21,6 +22,11 @@ function NotifCard({ n }: { n: Notif }) {
 
   return (
     <Animated.View style={[st.notif, { opacity: op, transform: [{ translateY: y }] }]}>
+      {n.icon ? (
+        <DrawnIcon name={n.icon} size={18} />
+      ) : n.emoji ? (
+        <Text style={st.emoji}>{n.emoji}</Text>
+      ) : null}
       <Text style={st.text}>{n.text}</Text>
     </Animated.View>
   );
@@ -40,6 +46,9 @@ export default function NotifStack() {
 const st = StyleSheet.create({
   wrap: { position: 'absolute', top: 54, left: 10, right: 10, zIndex: 60, gap: 6 },
   notif: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: 'rgba(29,35,56,0.96)',
     borderColor: C.line,
     borderWidth: 1,
@@ -52,5 +61,6 @@ const st = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
   },
-  text: { color: C.ink, fontSize: 13 },
+  text: { flex: 1, color: C.ink, fontSize: 13 },
+  emoji: { fontSize: 18 },
 });

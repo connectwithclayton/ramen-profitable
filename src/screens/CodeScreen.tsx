@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { useGame } from '../state/gameStore';
 import { Card, Eyebrow, Btn, Meter, MonoText, fmtN } from '../components/ui';
 import { C } from '../theme';
+import { CodeIcon, EnergyIcon, ShipIcon } from '../components/icons';
 
 function FloatingLoc({ amount, onDone }: { amount: number; onDone: () => void }) {
   const y = useRef(new Animated.Value(0)).current;
@@ -56,10 +57,18 @@ export default function CodeScreen() {
 
             <View style={{ marginTop: 14 }}>
               {p.loc >= p.need ? (
-                <Btn label="🚀 Submit to App Review" onPress={s.submitToReview} />
+                <Btn label="Submit to App Review" icon={<ShipIcon size={18} color={C.btnText} />} onPress={s.submitToReview} />
               ) : (
                 <View>
-                  <Btn label={`⌨️ Write code  (+${s.tapPower} LOC, −1⚡)`} onPress={onTap} />
+                  <Btn
+                    accessibilityLabel={`Write code, plus ${s.tapPower} ${s.tapPower === 1 ? 'line' : 'lines'} of code, costs 1 energy`}
+                    icon={<CodeIcon size={18} color={C.btnText} />}
+                    onPress={onTap}
+                  >
+                    {`Write code  (+${s.tapPower} LOC, −1`}
+                    <EnergyIcon size={14} color={C.btnText} />
+                    {')'}
+                  </Btn>
                   {floats.map(id => (
                     <FloatingLoc key={id} amount={s.tapPower} onDone={() => setFloats(f => f.filter(x => x !== id))} />
                   ))}
@@ -67,9 +76,10 @@ export default function CodeScreen() {
               )}
             </View>
 
-            <MonoText style={{ fontSize: 11, color: C.mut, marginTop: 10 }}>
-              ⚡ {Math.floor(s.energy)}/{s.energyMax} energy
-            </MonoText>
+            <View style={st.energyLabel}>
+              <EnergyIcon size={13} color={C.mint} />
+              <MonoText style={{ fontSize: 11, color: C.mut }}>{Math.floor(s.energy)}/{s.energyMax} energy</MonoText>
+            </View>
             <Meter pct={(s.energy / s.energyMax) * 100} color={C.mint} />
           </>
         ) : (
@@ -98,4 +108,5 @@ const st = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   notes: { color: C.mut, fontSize: 12, lineHeight: 18 },
   float: { position: 'absolute', top: -8, alignSelf: 'center' },
+  energyLabel: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 },
 });

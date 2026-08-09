@@ -12,23 +12,41 @@ export function Eyebrow({ children, color }: { children: React.ReactNode; color?
   return <Text style={[st.eyebrow, color ? { color } : null]}>{children}</Text>;
 }
 
-export function Btn({
-  label,
-  onPress,
-  ghost,
-  disabled,
-  small,
-  style,
-}: {
-  label: string;
+type BtnProps = ({ label: string; children?: never } | { label?: never; children: React.ReactNode }) & {
+  icon?: React.ReactNode;
+  accessibilityLabel?: string;
   onPress: () => void;
   ghost?: boolean;
   disabled?: boolean;
   small?: boolean;
   style?: ViewStyle;
-}) {
+};
+
+export function Btn({
+  label,
+  children,
+  icon,
+  accessibilityLabel,
+  onPress,
+  ghost,
+  disabled,
+  small,
+  style,
+}: BtnProps) {
+  const textStyle = [st.btnText, ghost && { color: C.ink, fontWeight: '600' as const }, small && { fontSize: 13 }];
+  const content = children ? (
+    <View style={st.btnLabel}>
+      {React.Children.map(children, child =>
+        typeof child === 'string' || typeof child === 'number' ? <Text style={textStyle}>{child}</Text> : child,
+      )}
+    </View>
+  ) : (
+    <Text style={textStyle}>{label}</Text>
+  );
+
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
@@ -40,7 +58,14 @@ export function Btn({
         style,
       ]}
     >
-      <Text style={[st.btnText, ghost && { color: C.ink, fontWeight: '600' }, small && { fontSize: 13 }]}>{label}</Text>
+      {icon || children ? (
+        <View style={st.btnContent}>
+          {icon}
+          {content}
+        </View>
+      ) : (
+        content
+      )}
     </Pressable>
   );
 }
@@ -90,6 +115,8 @@ const st = StyleSheet.create({
     borderColor: C.line,
   },
   btnSmall: { paddingVertical: 9, paddingHorizontal: 12 },
+  btnContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  btnLabel: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
   btnText: { color: C.btnText, fontWeight: '700', fontSize: 15 },
   meter: {
     height: 8,
