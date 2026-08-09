@@ -14,8 +14,8 @@ npx expo install expo-haptics @react-native-async-storage/async-storage react-na
 npx expo start
 ```
 
-Scan the QR with Expo Go on your phone. That's it — the game runs fully in
-Expo Go for now (RevenueCat is in mock mode until Week 3).
+Scan the QR with Expo Go on your phone. The game runs there, but a development
+build is required for real RevenueCat Test Store purchases.
 
 ## Architecture
 
@@ -36,17 +36,22 @@ Design decisions worth knowing:
 - **Persistence** partializes out `notifs`/`overlay` so you never rehydrate into
   a stale modal.
 - **Offline earnings** are computed from `lastSeen` on foreground, capped at 8h.
-- **RevenueCat** uses dynamic `require` so Expo Go never crashes; Week 3 adds
-  API keys + an EAS dev build and the "Go Indie" paywall becomes real.
+- **RevenueCat** uses dynamic `require` and graceful mock fallback when the
+  native module or environment key is unavailable.
 
 ## Week 3: going live with RevenueCat
 
-1. RevenueCat dashboard → new project → iOS app → copy `appl_` key into
-   `src/monetization/purchases.ts`
-2. Create entitlement `go_indie`, attach a $4.99/mo product + lifetime product
-3. `npx eas build --profile development --platform ios`
-4. Replace the mock branch in `presentGoIndiePaywall` with RC Paywalls UI if
-   desired (`react-native-purchases-ui`)
+1. RevenueCat dashboard → Test Store → copy its `test_` public SDK key into
+   an untracked `.env.local` as `REVENUECAT_TEST_STORE_API_KEY`.
+2. Configure Test Store products, attach them to an offering, and attach the
+   product to the `go_indie` entitlement.
+3. Rebuild and launch the development client with `npx expo run:ios`.
+
+Release environments must instead provide the matching
+`REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. Expo config injects
+only Test Store keys into development builds and only validated platform keys
+into release builds; it never falls back from a release build to the Test Store
+variable.
 
 ## Balancing cheatsheet
 
