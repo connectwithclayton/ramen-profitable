@@ -138,7 +138,9 @@ export const DARK_EVENTS: GameEvent[] = [
 
 /* ---------- Achievements ---------- */
 
-export type Achievement = { id: string; icon?: string; drawnIcon?: IconName; name: string; desc: string };
+type AchievementDetails = { id: string; name: string; desc: string };
+
+export type Achievement = AchievementDetails & ({ icon: string; drawnIcon?: never } | { icon?: never; drawnIcon: IconName });
 
 export const ACHIEVEMENTS: Achievement[] = [
   { id: 'first_ship', drawnIcon: 'ship', name: 'Shipped', desc: 'Got an app approved. Everything changes now.' },

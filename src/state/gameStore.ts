@@ -301,7 +301,7 @@ export const useGame = create<GameState & Actions>()(
         const a = ACHIEVEMENTS.find(x => x.id === id);
         if (!a) return;
         set({ achievements: { ...s.achievements, [id]: true } });
-        s.pushNotif(`🏆 Achievement: ${a.name}`, a.drawnIcon);
+        s.pushNotif(`🏆 Achievement: ${a.drawnIcon ? '' : `${a.icon} `}${a.name}`, a.drawnIcon);
       },
 
       applyOfflineEarnings: () => {
