@@ -14,7 +14,7 @@ export function useGameLoop() {
     // Welcome-back money
     const earned = g.applyOfflineEarnings();
     if (earned > 1) {
-      g.pushNotif(`🌙 While you were gone, your apps earned $${Math.floor(earned)}. The dream, working.`);
+      g.pushNotif(`While you were gone, your apps earned $${Math.floor(earned)}. The dream, working.`, 'night');
     }
 
     const fast = setInterval(() => useGame.getState().fastTick(), 500);
@@ -25,7 +25,7 @@ export function useGameLoop() {
       const s = useGame.getState();
       if (state === 'active') {
         const e = s.applyOfflineEarnings();
-        if (e > 1) s.pushNotif(`🌙 Welcome back. Offline earnings: $${Math.floor(e)}.`);
+        if (e > 1) s.pushNotif(`Welcome back. Offline earnings: $${Math.floor(e)}.`, 'night');
       } else {
         s.touchLastSeen();
       }

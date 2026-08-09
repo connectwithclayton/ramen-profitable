@@ -1,12 +1,14 @@
 import React, { useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useGame } from '../state/gameStore';
 import { Card, MonoText } from '../components/ui';
 import { C } from '../theme';
+import { LikeFilledIcon, LikeIcon } from '../components/icons';
 
 export default function ChirpScreen() {
   const chirps = useGame(s => s.chirps);
   const markRead = useGame(s => s.markChirpsRead);
+  const toggleLike = useGame(s => s.toggleChirpLike);
 
   useEffect(() => {
     markRead();
@@ -25,9 +27,20 @@ export default function ChirpScreen() {
                 <Text style={st.handle}>{c.handle}</Text>
               </Text>
               <Text style={st.body}>{c.text}</Text>
-              <MonoText style={st.meta}>
-                ♡ {c.likes}   ⟳ {Math.floor(c.likes / 4)}
-              </MonoText>
+              <View style={st.meta}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${c.liked ? 'Unlike' : 'Like'} post by ${c.who}`}
+                  accessibilityState={{ selected: Boolean(c.liked) }}
+                  hitSlop={8}
+                  onPress={() => toggleLike(c.id)}
+                  style={st.likeButton}
+                >
+                  {c.liked ? <LikeFilledIcon size={14} color={C.pink} /> : <LikeIcon size={14} color={C.dim} />}
+                  <MonoText style={st.metaText}>{c.likes}</MonoText>
+                </Pressable>
+                <MonoText style={st.metaText}>⟳ {Math.floor(c.likes / 4)}</MonoText>
+              </View>
             </View>
           ))
         )}
@@ -49,5 +62,7 @@ const st = StyleSheet.create({
   who: { color: C.ink, fontWeight: '700', fontSize: 14 },
   handle: { color: C.dim, fontSize: 12 },
   body: { color: C.ink, fontSize: 14, lineHeight: 20 },
-  meta: { color: C.dim, fontSize: 12, marginTop: 6 },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 },
+  metaText: { color: C.dim, fontSize: 12 },
+  likeButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

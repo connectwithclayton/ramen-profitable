@@ -4,7 +4,7 @@ import { useGame, MRR_GOAL } from '../state/gameStore';
 import { ACHIEVEMENTS } from '../content/content';
 import { Card, Eyebrow, Btn, Meter, MonoText, fmt } from '../components/ui';
 import { C } from '../theme';
-import { AbTestIcon, DrawnIcon, GoalIcon, PaywallIcon } from '../components/icons';
+import { AbTestIcon, DrawnIcon, GoalIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
 
 export default function HomeScreen() {
   const s = useGame();
@@ -28,10 +28,13 @@ export default function HomeScreen() {
             <MonoText style={st.label}>QUIT YOUR JOB at {fmt(MRR_GOAL)} MRR — {pct.toFixed(0)}%</MonoText>
           </View>
         ) : (
-          <MonoText style={st.label}>🍜 RAMEN PROFITABLE. You are free.</MonoText>
+          <View style={st.goalLabel}>
+            <RamenProfitableIcon size={13} />
+            <MonoText style={st.label}>RAMEN PROFITABLE. You are free.</MonoText>
+          </View>
         )}
         {s.hasJob && s.mrr >= MRR_GOAL && (
-          <Btn label="✉️ Send resignation email" onPress={s.quitJob} style={{ marginTop: 12 }} />
+          <Btn label="Send resignation email" icon={<VerdictIcon size={18} color={C.btnText} />} onPress={s.quitJob} style={{ marginTop: 12 }} />
         )}
       </Card>
 
