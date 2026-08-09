@@ -17,19 +17,19 @@ render it at its target resolution from the mapped SVG; never scale an existing 
 Do not render either Android foreground asset from `icon-master.svg`: the full master includes
 the colored ground and does not contain the adaptive-icon safe-circle correction.
 
-## Drop-in for app.json
-| File | Goes to | app.json key |
-|---|---|---|
-| icon.png (1024²) | assets/icon.png | expo.icon |
-| splash-icon.png (1024²) | assets/splash-icon.png | splash |
-| favicon.png (96²) | assets/favicon.png | expo.web.favicon |
-| android-icon-foreground.png (1024²) | assets/ | android.adaptiveIcon.foregroundImage |
-| android-icon-background.png (1024²) | assets/ | android.adaptiveIcon.backgroundImage |
-| android-icon-monochrome.png (1024²) | assets/ | android.adaptiveIcon.monochromeImage |
+## App configuration mapping
 
-One `app.json` change is needed: `android.adaptiveIcon.backgroundColor` is
-currently `#E6F4FE` (Expo default light blue). Set it to `#0C0F1A` so the
-themed fallback matches the ground.
+| Production asset | Expo configuration | Current status |
+|---|---|---|
+| `assets/icon.png` | `expo.icon` | Configured |
+| `assets/splash-icon.png` | `expo-splash-screen` config plugin `image` | Asset only; splash configuration remains tracked in `SHIPPLAN.md` |
+| `assets/favicon.png` | `expo.web.favicon` | Configured |
+| `assets/android-icon-foreground.png` | `expo.android.adaptiveIcon.foregroundImage` | Configured |
+| `assets/android-icon-background.png` | `expo.android.adaptiveIcon.backgroundImage` | Configured |
+| `assets/android-icon-monochrome.png` | `expo.android.adaptiveIcon.monochromeImage` | Configured |
+
+`app.json` already sets `expo.android.adaptiveIcon.backgroundColor` to `#0C0F1A`.
+Expo uses `backgroundImage` in preference to `backgroundColor` when both are configured.
 
 ## Geometry
 1024² artboard, no corner rounding — iOS and Android apply their own mask.
@@ -45,6 +45,3 @@ bowl    #F2A33C → #D8801F   (C.gold, shaded)
 rim     #FFD79A → #F2A33C
 foot    #B96C18
 bars    #E9ECF5 @32% / @60%  (C.ink), lead bar #57D9A3 (C.mint)
-
-Monochrome is a single fused white silhouette — rim and bowl overlap by 24px
-so themed-icon mode cannot split it.
