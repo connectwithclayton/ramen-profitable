@@ -22,7 +22,11 @@ function NotifCard({ n }: { n: Notif }) {
 
   return (
     <Animated.View style={[st.notif, { opacity: op, transform: [{ translateY: y }] }]}>
-      {n.icon && <DrawnIcon name={n.icon} size={18} />}
+      {n.icon ? (
+        <DrawnIcon name={n.icon} size={18} />
+      ) : n.emoji ? (
+        <Text style={st.emoji}>{n.emoji}</Text>
+      ) : null}
       <Text style={st.text}>{n.text}</Text>
     </Animated.View>
   );
@@ -58,4 +62,5 @@ const st = StyleSheet.create({
     elevation: 8,
   },
   text: { flex: 1, color: C.ink, fontSize: 13 },
+  emoji: { fontSize: 18 },
 });

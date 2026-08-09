@@ -16,7 +16,7 @@ export type ShippedApp = {
   hasPaywall: boolean;
 };
 export type Chirp = { id: string; who: string; handle: string; text: string; likes: number };
-export type Notif = { id: string; text: string; icon?: IconName };
+export type Notif = { id: string; text: string; icon?: IconName; emoji?: string };
 export type Overlay =
   | { type: 'review'; appName: string }
   | { type: 'verdict'; ok: boolean; appName: string; rule?: string; flavor?: string; gain?: number }
@@ -65,7 +65,7 @@ type Actions = {
   fastTick: () => void;
   slowTick: () => void;
   maybeEvent: () => void;
-  pushNotif: (text: string, icon?: IconName) => void;
+  pushNotif: (text: string, icon?: IconName, emoji?: string) => void;
   expireNotif: (id: string) => void;
   pushChirp: (text: string) => void;
   markChirpsRead: () => void;
@@ -111,8 +111,8 @@ export const useGame = create<GameState & Actions>()(
     (set, get) => ({
       ...initial,
 
-      pushNotif: (text, icon) => {
-        const n = { id: uid(), text, icon };
+      pushNotif: (text, icon, emoji) => {
+        const n = { id: uid(), text, icon, emoji };
         set(s => ({ notifs: [...s.notifs.slice(-2), n] }));
       },
       expireNotif: id => set(s => ({ notifs: s.notifs.filter(n => n.id !== id) })),
@@ -301,7 +301,7 @@ export const useGame = create<GameState & Actions>()(
         const a = ACHIEVEMENTS.find(x => x.id === id);
         if (!a) return;
         set({ achievements: { ...s.achievements, [id]: true } });
-        s.pushNotif(`🏆 Achievement: ${a.drawnIcon ? '' : `${a.icon} `}${a.name}`, a.drawnIcon);
+        s.pushNotif(`🏆 Achievement: ${a.name}`, a.drawnIcon, a.drawnIcon ? undefined : a.icon);
       },
 
       applyOfflineEarnings: () => {
