@@ -10,7 +10,7 @@ fight churn, quit your day job. Built for **Shipaton 2026**.
 
 ```bash
 npm install
-npx expo install expo-haptics @react-native-async-storage/async-storage
+npx expo install expo-haptics @react-native-async-storage/async-storage react-native-svg
 npx expo start
 ```
 
