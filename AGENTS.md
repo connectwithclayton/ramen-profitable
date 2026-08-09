@@ -11,9 +11,9 @@ are working from** (`grep -c '<svg' 'design/<doc>.dc.html'`) before deciding how
 - `design/Redesign.dc.html` does contain real inline `<svg>`/`<path>` artwork (the icon set):
   export those elements, do not screenshot them.
 - `design/App Icon.dc.html` and `design/Current Screens.dc.html` are CSS-only (zero `<svg>`,
-  `<path>`, `<canvas>`), so their artwork must be rendered: open the doc (or a standalone page
-  transcribing its geometry) in a headless browser and screenshot it, at or above the target
-  resolution then downscale — never upscale.
+  `<path>`, `<canvas>`), so their artwork must be rendered from the actual local document with
+  its bundled `design/support.js` using `chrome-devtools-axi`; screenshot at or above the target
+  resolution then downscale — never upscale or transcribe the geometry into a standalone page.
 
 Browser screenshots carry no alpha channel. For an asset that must be transparent
 (`android-icon-foreground.png`, `android-icon-monochrome.png`), capture the same page twice —
