@@ -14,8 +14,8 @@ npx expo install expo-haptics @react-native-async-storage/async-storage react-na
 npx expo start
 ```
 
-Scan the QR with Expo Go on your phone. That's it — the game runs fully in
-Expo Go for now (RevenueCat is in mock mode until Week 3).
+Scan the QR with Expo Go on your phone. The game runs there, but a development
+build is required for real RevenueCat Test Store purchases.
 
 ## Architecture
 
@@ -36,17 +36,40 @@ Design decisions worth knowing:
 - **Persistence** partializes out `notifs`/`overlay` so you never rehydrate into
   a stale modal.
 - **Offline earnings** are computed from `lastSeen` on foreground, capped at 8h.
-- **RevenueCat** uses dynamic `require` so Expo Go never crashes; Week 3 adds
-  API keys + an EAS dev build and the "Go Indie" paywall becomes real.
+- **RevenueCat** uses dynamic `require` and graceful mock fallback when the
+  native module or environment key is unavailable.
 
 ## Week 3: going live with RevenueCat
 
-1. RevenueCat dashboard → new project → iOS app → copy `appl_` key into
-   `src/monetization/purchases.ts`
-2. Create entitlement `go_indie`, attach a $4.99/mo product + lifetime product
-3. `npx eas build --profile development --platform ios`
-4. Replace the mock branch in `presentGoIndiePaywall` with RC Paywalls UI if
-   desired (`react-native-purchases-ui`)
+Remaining captain steps for a Test Store purchase:
+
+1. Create a RevenueCat account and create a project for Ramen Profitable.
+2. In **Apps & Providers**, create a **Test Store** app/provider for the
+   project.
+3. In **Product Catalog**, define the Test Store products, create an offering,
+   connect the products to that offering, and create the `go_indie` entitlement
+   with those products attached.
+4. In **Project Settings → API keys**, copy the Test Store public SDK key. It
+   must start with `test_`.
+5. For local development, put the exact variable
+   `REVENUECAT_TEST_STORE_API_KEY=test_...` in the untracked `.env.local`.
+   For an EAS development build, add that same variable and value to the
+   project's **development** environment with
+   `eas env:create --name REVENUECAT_TEST_STORE_API_KEY --value test_... --environment development --visibility plaintext`,
+   or add it in **Project settings → Environment variables**. The
+   `development` profile already selects that environment.
+6. Build the simulator development client with
+   `npx eas build --profile ios-simulator --platform ios`, install it in the
+   iOS Simulator, and start the bundler with `npx expo start --dev-client`.
+
+Apple Developer approval and App Store Connect are not required for RevenueCat
+Test Store purchases.
+
+Release environments must instead provide the matching
+`REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. Expo config injects
+only Test Store keys into development builds and only validated platform keys
+into release builds; it never falls back from a release build to the Test Store
+variable.
 
 ## Balancing cheatsheet
 
