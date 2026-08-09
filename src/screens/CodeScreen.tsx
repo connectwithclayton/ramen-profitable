@@ -60,7 +60,11 @@ export default function CodeScreen() {
                 <Btn label="Submit to App Review" icon={<ShipIcon size={18} color={C.btnText} />} onPress={s.submitToReview} />
               ) : (
                 <View>
-                  <Btn icon={<CodeIcon size={18} color={C.btnText} />} onPress={onTap}>
+                  <Btn
+                    accessibilityLabel={`Write code, plus ${s.tapPower} ${s.tapPower === 1 ? 'line' : 'lines'} of code, costs 1 energy`}
+                    icon={<CodeIcon size={18} color={C.btnText} />}
+                    onPress={onTap}
+                  >
                     {`Write code  (+${s.tapPower} LOC, −1`}
                     <EnergyIcon size={14} color={C.btnText} />
                     {')'}

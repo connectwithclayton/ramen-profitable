@@ -14,6 +14,7 @@ export function Eyebrow({ children, color }: { children: React.ReactNode; color?
 
 type BtnProps = ({ label: string; children?: never } | { label?: never; children: React.ReactNode }) & {
   icon?: React.ReactNode;
+  accessibilityLabel?: string;
   onPress: () => void;
   ghost?: boolean;
   disabled?: boolean;
@@ -25,6 +26,7 @@ export function Btn({
   label,
   children,
   icon,
+  accessibilityLabel,
   onPress,
   ghost,
   disabled,
@@ -44,6 +46,7 @@ export function Btn({
 
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
