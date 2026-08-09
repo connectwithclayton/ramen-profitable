@@ -12,7 +12,7 @@ import StoreScreen from './src/screens/StoreScreen';
 import ChirpScreen from './src/screens/ChirpScreen';
 import { MonoText } from './src/components/ui';
 import { C, R } from './src/theme';
-import { DrawnIcon } from './src/components/icons';
+import { DrawnIcon, RamenProfitableIcon } from './src/components/icons';
 import type { IconName } from './src/components/icons';
 
 type Tab = 'home' | 'code' | 'store' | 'chirp';
@@ -35,7 +35,7 @@ export default function App() {
 
   useEffect(() => {
     initPurchases();
-    const t1 = setTimeout(() => pushNotif('🌙 11:58 PM. The day job is done. The real work begins. Open Code.'), 900);
+    const t1 = setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900);
     const t2 = setTimeout(() => {
       const s = useGame.getState();
       if (s.chirps.length === 0) {
@@ -50,7 +50,10 @@ export default function App() {
       <StatusBar style="light" />
       <View style={st.statusbar}>
         <MonoText style={{ fontSize: 12, fontWeight: '600' }}>Day {day}</MonoText>
-        <MonoText style={{ fontSize: 12, color: C.mut }}>🍜 RAMEN PROFITABLE</MonoText>
+        <View style={st.brand}>
+          <RamenProfitableIcon size={13} />
+          <MonoText style={{ fontSize: 12, color: C.mut }}>RAMEN PROFITABLE</MonoText>
+        </View>
         <MonoText style={{ fontSize: 12, color: C.mut }}>v0.1</MonoText>
       </View>
 
@@ -91,6 +94,7 @@ const st = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 4,
   },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dock: {
     position: 'absolute',
     left: 12,

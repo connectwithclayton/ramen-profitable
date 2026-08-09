@@ -7,6 +7,7 @@ import { Btn, Eyebrow, MonoText, fmt } from './ui';
 import { C, R } from '../theme';
 import { presentGoIndiePaywall } from '../monetization/purchases';
 import PaywallDesigner from './PaywallDesigner';
+import { CelebrateIcon, RamenProfitableIcon } from './icons';
 
 function Spinner() {
   const spin = useRef(new Animated.Value(0)).current;
@@ -78,7 +79,10 @@ export default function OverlayHost() {
         {overlay.type === 'verdict' && overlay.ok && (
           <>
             <Eyebrow color={C.mint}>Approved</Eyebrow>
-            <Text style={st.h1}>{overlay.appName} is LIVE 🎉</Text>
+            <View style={st.titleRow}>
+              <Text style={st.h1}>{overlay.appName} is LIVE</Text>
+              <CelebrateIcon size={24} color={C.mint} />
+            </View>
             <Text style={st.body}>First subscribers rolling in:</Text>
             <MonoText style={{ color: C.gold, fontSize: 30, fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
               +{fmt(overlay.gain ?? 0)}/mo
@@ -137,7 +141,9 @@ export default function OverlayHost() {
 
         {overlay.type === 'win' && (
           <>
-            <Text style={{ fontSize: 44, textAlign: 'center' }}>🍜</Text>
+            <View style={st.heroIcon}>
+              <RamenProfitableIcon size={44} color={C.gold} />
+            </View>
             <Eyebrow color={C.gold}>Achievement unlocked</Eyebrow>
             <Text style={st.h1}>RAMEN PROFITABLE</Text>
             <Text style={st.body}>
@@ -180,6 +186,8 @@ const st = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  heroIcon: { alignItems: 'center' },
   body: { color: C.mut, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 19 },
   spinner: {
     width: 36,

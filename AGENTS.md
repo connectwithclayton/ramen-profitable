@@ -17,6 +17,12 @@ are working from** (`grep -c '<svg' 'design/<doc>.dc.html'`) before deciding how
   evidence that has no exported vector source. Screenshot at or above the target resolution and
   then downscale — never upscale or transcribe the geometry into a standalone page.
 
+## Emoji boundary
+
+UI chrome uses the drawn icons in `src/components/icons.tsx`. Chirp post text remains user-style
+content and may keep emoji; event notifications and Chirp copies are separated by `GameEvent.text`
+and `GameEvent.chirpText` in `src/content/content.ts`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

@@ -15,7 +15,7 @@ export type ShippedApp = {
   dark: number; // dark-pattern heat
   hasPaywall: boolean;
 };
-export type Chirp = { id: string; who: string; handle: string; text: string; likes: number };
+export type Chirp = { id: string; who: string; handle: string; text: string; likes: number; liked?: boolean };
 export type Notif = { id: string; text: string; icon?: IconName; emoji?: string };
 export type Overlay =
   | { type: 'review'; appName: string }
@@ -69,6 +69,7 @@ type Actions = {
   expireNotif: (id: string) => void;
   pushChirp: (text: string) => void;
   markChirpsRead: () => void;
+  toggleChirpLike: (id: string) => void;
   openPaywallDesigner: (appId: string) => void;
   applyPaywall: (appId: string, picks: Record<string, string>) => void;
   unlock: (id: string) => void;
@@ -123,6 +124,12 @@ export const useGame = create<GameState & Actions>()(
         set(s => ({ chirps: [c, ...s.chirps].slice(0, 30), unreadChirps: true }));
       },
       markChirpsRead: () => set({ unreadChirps: false }),
+      toggleChirpLike: id =>
+        set(s => ({
+          chirps: s.chirps.map(c =>
+            c.id === id ? { ...c, liked: !c.liked } : c,
+          ),
+        })),
 
       newProject: () => {
         const [name, idea] = pick(APP_IDEAS);
@@ -229,7 +236,7 @@ export const useGame = create<GameState & Actions>()(
           next.day = s.day + 1;
           if (s.hasJob) {
             next.cash = (next.cash as number) + s.salary;
-            s.pushNotif(`Payday. +$${s.salary} for 8 hours of meetings that could've been Slack messages.`, 'cash');
+            s.pushNotif(`Payday. +$${s.salary} for 8 hours of meetings that could've been Slack messages.`, 'day-job');
           }
         }
         set(next);
@@ -246,7 +253,7 @@ export const useGame = create<GameState & Actions>()(
         const ev = useDark ? pick(DARK_EVENTS) : pick(EVENTS);
         set(ev.apply(s));
         s.pushNotif(ev.text, ev.icon);
-        if (Math.random() < 0.4) s.pushChirp(ev.icon ? ev.text : ev.text.replace(/^\S+\s/, ''));
+        if (Math.random() < 0.4) s.pushChirp(ev.chirpText ?? ev.text);
       },
 
 
@@ -301,7 +308,7 @@ export const useGame = create<GameState & Actions>()(
         const a = ACHIEVEMENTS.find(x => x.id === id);
         if (!a) return;
         set({ achievements: { ...s.achievements, [id]: true } });
-        s.pushNotif(`🏆 Achievement: ${a.name}`, a.drawnIcon, a.drawnIcon ? undefined : a.icon);
+        s.pushNotif('Achievement: ' + a.name, a.drawnIcon ? 'achievement' : undefined, a.drawnIcon ? undefined : a.icon);
       },
 
       applyOfflineEarnings: () => {

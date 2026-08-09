@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { useGame } from '../state/gameStore';
 import { Card, Eyebrow, Btn, Meter, MonoText, fmtN } from '../components/ui';
 import { C } from '../theme';
-import { CodeIcon, EnergyIcon, ShipIcon } from '../components/icons';
+import { CodeIcon, EnergyIcon, IdeaIcon, LaunchIcon } from '../components/icons';
 
 function FloatingLoc({ amount, onDone }: { amount: number; onDone: () => void }) {
   const y = useRef(new Animated.Value(0)).current;
@@ -57,7 +57,7 @@ export default function CodeScreen() {
 
             <View style={{ marginTop: 14 }}>
               {p.loc >= p.need ? (
-                <Btn label="Submit to App Review" icon={<ShipIcon size={18} color={C.btnText} />} onPress={s.submitToReview} />
+                <Btn label="Submit to App Review" icon={<LaunchIcon size={18} color={C.btnText} />} onPress={s.submitToReview} />
               ) : (
                 <View>
                   <Btn
@@ -85,7 +85,7 @@ export default function CodeScreen() {
         ) : (
           <>
             <Text style={st.idea}>No active project. Ideas are free. Shipping is the hard part.</Text>
-            <Btn label="💡 Start a new app" onPress={s.newProject} style={{ marginTop: 12 }} />
+            <Btn label="Start a new app" icon={<IdeaIcon size={18} color={C.btnText} />} onPress={s.newProject} style={{ marginTop: 12 }} />
           </>
         )}
       </Card>

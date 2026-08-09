@@ -5,7 +5,7 @@ import { useGame } from '../state/gameStore';
 import { PAYWALL_AXES } from '../content/content';
 import { Btn, Eyebrow, MonoText } from './ui';
 import { C } from '../theme';
-import { ShipIcon } from './icons';
+import { EthicallySourcedIcon, ShipIcon, TrendingIcon } from './icons';
 
 export default function PaywallDesigner({ appId }: { appId: string }) {
   const app = useGame(s => s.apps.find(a => a.id === appId));
@@ -38,6 +38,8 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
             return (
               <Pressable
                 key={ch.id}
+                accessibilityLabel={`${ch.label}, heat ${ch.dark}`}
+                accessibilityState={{ selected: active }}
                 onPress={() => {
                   Haptics.selectionAsync().catch(() => {});
                   setPicks(p => ({ ...p, [axis.id]: ch.id }));
@@ -48,7 +50,11 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
                   <Text style={[st.choiceLabel, active && { color: C.ink }]}>{ch.label}</Text>
                   <Text style={st.choiceFlavor}>{ch.flavor}</Text>
                 </View>
-                {ch.dark > 0 && <Text style={{ fontSize: 12 }}>{'🔥'.repeat(ch.dark)}</Text>}
+                {ch.dark > 0 && (
+                  <View style={st.heatIcons}>
+                    {Array.from({ length: ch.dark }, (_, i) => <TrendingIcon key={i} size={12} color={C.pink} />)}
+                  </View>
+                )}
               </Pressable>
             );
           })}
@@ -56,10 +62,17 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
       ))}
 
       <View style={st.previewRow}>
-        <MonoText style={{ fontSize: 12, color: C.mut }}>
-          conv ×{preview.mult.toFixed(2)}
-          {preview.dark > 0 ? `   heat ${'🔥'.repeat(Math.min(preview.dark, 8))}` : '   heat: clean 😇'}
-        </MonoText>
+        <MonoText style={{ fontSize: 12, color: C.mut }}>conv ×{preview.mult.toFixed(2)}   heat {preview.dark}: </MonoText>
+        {preview.dark > 0 ? (
+          <View style={st.heatIcons}>
+            {Array.from({ length: Math.min(preview.dark, 8) }, (_, i) => <TrendingIcon key={i} size={12} color={C.pink} />)}
+          </View>
+        ) : (
+          <View style={st.cleanStatus}>
+            <MonoText style={{ fontSize: 12, color: C.mut }}>clean</MonoText>
+            <EthicallySourcedIcon size={13} color={C.mint} />
+          </View>
+        )}
       </View>
 
       <Btn
@@ -93,5 +106,7 @@ const st = StyleSheet.create({
   choiceActive: { borderColor: C.gold, backgroundColor: '#241F14' },
   choiceLabel: { color: C.mut, fontWeight: '700', fontSize: 13 },
   choiceFlavor: { color: C.dim, fontSize: 11, marginTop: 1 },
-  previewRow: { alignItems: 'center', marginTop: 14 },
+  previewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  heatIcons: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+  cleanStatus: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });
