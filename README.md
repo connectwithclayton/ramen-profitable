@@ -41,11 +41,29 @@ Design decisions worth knowing:
 
 ## Week 3: going live with RevenueCat
 
-1. RevenueCat dashboard → Test Store → copy its `test_` public SDK key into
-   an untracked `.env.local` as `REVENUECAT_TEST_STORE_API_KEY`.
-2. Configure Test Store products, attach them to an offering, and attach the
-   product to the `go_indie` entitlement.
-3. Rebuild and launch the development client with `npx expo run:ios`.
+Remaining captain steps for a Test Store purchase:
+
+1. Create a RevenueCat account and create a project for Ramen Profitable.
+2. In **Apps & Providers**, create a **Test Store** app/provider for the
+   project.
+3. In **Product Catalog**, define the Test Store products, create an offering,
+   connect the products to that offering, and create the `go_indie` entitlement
+   with those products attached.
+4. In **Project Settings → API keys**, copy the Test Store public SDK key. It
+   must start with `test_`.
+5. For local development, put the exact variable
+   `REVENUECAT_TEST_STORE_API_KEY=test_...` in the untracked `.env.local`.
+   For an EAS development build, add that same variable and value to the
+   project's **development** environment with
+   `eas env:create --name REVENUECAT_TEST_STORE_API_KEY --value test_... --environment development --visibility plaintext`,
+   or add it in **Project settings → Environment variables**. The
+   `development` profile already selects that environment.
+6. Build the simulator development client with
+   `npx eas build --profile ios-simulator --platform ios`, install it in the
+   iOS Simulator, and start the bundler with `npx expo start --dev-client`.
+
+Apple Developer approval and App Store Connect are not required for RevenueCat
+Test Store purchases.
 
 Release environments must instead provide the matching
 `REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. Expo config injects

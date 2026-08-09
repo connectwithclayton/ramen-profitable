@@ -2,6 +2,14 @@ const DEVELOPMENT_PROFILES = new Set(['development', 'ios-simulator']);
 const RELEASE_PROFILES = new Set(['preview', 'production']);
 
 function buildMode() {
+  const profile = process.env.EAS_BUILD_PROFILE;
+  const profileMode =
+    profile && DEVELOPMENT_PROFILES.has(profile)
+      ? 'development'
+      : profile && RELEASE_PROFILES.has(profile)
+        ? 'release'
+        : undefined;
+  const defaultMode = process.env.NODE_ENV === 'production' ? 'release' : 'development';
   const explicitMode = process.env.REVENUECAT_BUILD_MODE;
   if (explicitMode) {
     if (explicitMode !== 'development' && explicitMode !== 'release') {
@@ -9,13 +17,20 @@ function buildMode() {
         'REVENUECAT_BUILD_MODE must be either "development" or "release".',
       );
     }
-    return explicitMode;
+    const inferredMode = profileMode ?? defaultMode;
+    if (explicitMode !== inferredMode) {
+      const source = profileMode
+        ? `EAS_BUILD_PROFILE="${profile}"`
+        : 'NODE_ENV="production"';
+      throw new Error(
+        `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
+          `this configuration requires "${inferredMode}" mode.`,
+      );
+    }
+    return inferredMode;
   }
 
-  const profile = process.env.EAS_BUILD_PROFILE;
-  if (profile && DEVELOPMENT_PROFILES.has(profile)) return 'development';
-  if (profile && RELEASE_PROFILES.has(profile)) return 'release';
-  return process.env.NODE_ENV === 'production' ? 'release' : 'development';
+  return profileMode ?? defaultMode;
 }
 
 function cleanKey(value) {
