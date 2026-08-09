@@ -60,7 +60,11 @@ export default function CodeScreen() {
                 <Btn label="Submit to App Review" icon={<ShipIcon size={18} color={C.btnText} />} onPress={s.submitToReview} />
               ) : (
                 <View>
-                  <Btn label={`Write code  (+${s.tapPower} LOC, −1 energy)`} icon={<CodeIcon size={18} color={C.btnText} />} onPress={onTap} />
+                  <Btn icon={<CodeIcon size={18} color={C.btnText} />} onPress={onTap}>
+                    {`Write code  (+${s.tapPower} LOC, −1`}
+                    <EnergyIcon size={14} color={C.btnText} />
+                    {')'}
+                  </Btn>
                   {floats.map(id => (
                     <FloatingLoc key={id} amount={s.tapPower} onDone={() => setFloats(f => f.filter(x => x !== id))} />
                   ))}
