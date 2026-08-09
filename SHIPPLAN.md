@@ -29,7 +29,8 @@
 
 ## Week 4 — Aug 29–Sept 4 · Juice
 - [ ] Sound design + haptics (App Review verdict = heavy haptic; this is the money moment)
-- [ ] App icon, splash, onboarding (3 screens max)
+- [x] App icon — Bowl & Bars 2a production assets
+- [ ] Splash and onboarding (3 screens max)
 - [ ] Animations pass (spring on MRR ticker, notification drops)
 - [ ] External TestFlight beta — recruit from Shipaton Discord + X followers
 - [ ] 2 posts, include beta invite link
