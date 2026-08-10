@@ -88,15 +88,20 @@ Run `npx eas build --profile development --platform ios`. In the EAS Website
 device-registration flow, open the registration page on the captain's iPhone,
 register that device, select it for the build, and install the resulting
 development build from its EAS build link. The device must launch the app and
-render it before physical-device validation is claimed.
+render it before physical-device validation is claimed. Keep Metro running with
+`npx expo start --dev-client` and report the device-side RevenueCat state plainly:
+`[purchases] RevenueCat configured for test-store.` means Test Store is
+configured; `[purchases] ... mock mode.` means the native module or key is
+unavailable and real purchases were not configured.
 
 After dependency changes, run `npm ci` in the clone that actually runs Metro;
 otherwise Metro can fail with `Unable to resolve module` even when this clone
-is installed correctly. Firstmate observed the external physical-device
-evidence; this test phase did not capture that evidence.
+is installed correctly. Do not claim RevenueCat configuration from app launch
+alone; use the Metro evidence above.
 
-Apple Developer approval and App Store Connect are not required for RevenueCat
-Test Store purchases.
+Apple Developer or App Store Connect approval is not required for RevenueCat
+Test Store purchases; the physical iPhone EAS build still requires the Apple
+credentials and device registration described above.
 
 Release environments must instead provide the matching
 `REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. Expo config injects
