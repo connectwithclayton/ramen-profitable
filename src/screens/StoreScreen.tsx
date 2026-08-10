@@ -64,11 +64,17 @@ export default function StoreScreen() {
         </Text>
         <Btn
           small
+          label="Go Indie"
+          onPress={s.openGoIndiePaywall}
+          style={{ marginTop: 10 }}
+        />
+        <Btn
+          small
           ghost
           label={restoring ? 'Restoring…' : 'Restore Purchases'}
           disabled={restoring}
           onPress={restore}
-          style={{ marginTop: 10 }}
+          style={{ marginTop: 8 }}
         />
       </Card>
 

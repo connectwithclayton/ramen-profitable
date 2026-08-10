@@ -54,8 +54,7 @@ function ReviewSheet({ appName }: { appName: string }) {
 export default function OverlayHost() {
   const overlay = useGame(s => s.overlay);
   const dismiss = useGame(s => s.dismissOverlay);
-  const showPaywall = useGame(s => s.showPaywallIfFirstLaunch);
-  const markPaywallShown = useGame(s => s.markPaywallShown);
+  const openGoIndiePaywall = useGame(s => s.openGoIndiePaywall);
   const setGoIndieActive = useGame(s => s.setGoIndieActive);
   const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
@@ -90,7 +89,7 @@ export default function OverlayHost() {
             <MonoText style={{ color: C.gold, fontSize: 30, fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
               +{fmt(overlay.gain ?? 0)}/mo
             </MonoText>
-            <Btn label="Refresh dashboard 47 times" onPress={showPaywall} style={{ marginTop: 16 }} />
+            <Btn label="Go Indie" onPress={openGoIndiePaywall} style={{ marginTop: 16 }} />
           </>
         )}
 
@@ -117,7 +116,6 @@ export default function OverlayHost() {
                 const active = await presentGoIndiePaywall();
                 if (active === true) {
                   setGoIndieActive(true);
-                  markPaywallShown();
                   pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
                   dismiss();
                 }

@@ -39,7 +39,6 @@ export default function App() {
     void initPurchases().then(active => {
       if (!cancelled && active !== null) {
         setGoIndieActive(active);
-        useGame.getState().applyOfflineEarnings();
       }
     });
     const t1 = setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900);

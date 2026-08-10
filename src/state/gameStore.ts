@@ -47,10 +47,8 @@ export type GameState = {
   unreadChirps: boolean;
   notifs: Notif[];
   overlay: Overlay;
-  paywallShown: boolean;
   goIndieActive: boolean;
   goIndieResolved: boolean;
-  paywallPending: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
@@ -62,8 +60,7 @@ type Actions = {
   submitToReview: () => void;
   resolveReview: () => void;
   dismissOverlay: () => void;
-  showPaywallIfFirstLaunch: () => void;
-  markPaywallShown: () => void;
+  openGoIndiePaywall: () => void;
   setGoIndieActive: (active: boolean) => void;
   buy: (id: string) => void;
   quitJob: () => void;
@@ -106,10 +103,8 @@ const initial: GameState = {
   unreadChirps: false,
   notifs: [],
   overlay: null,
-  paywallShown: false,
   goIndieActive: false,
   goIndieResolved: false,
-  paywallPending: false,
   won: false,
   achievements: {},
   lastSeen: Date.now(),
@@ -196,32 +191,9 @@ export const useGame = create<GameState & Actions>()(
 
       dismissOverlay: () => set({ overlay: null }),
 
-      showPaywallIfFirstLaunch: () => {
-        const s = get();
-        if (!s.goIndieResolved) {
-          set({ paywallPending: true });
-          return;
-        }
-        if (!s.paywallShown && !s.goIndieActive && s.apps.some(a => a.live)) {
-          set({ overlay: { type: 'paywall' } });
-        } else {
-          set({ overlay: null });
-        }
-      },
+      openGoIndiePaywall: () => set({ overlay: { type: 'paywall' } }),
 
-      markPaywallShown: () => set({ paywallShown: true }),
-
-      setGoIndieActive: active =>
-        set(s => {
-          if (!s.paywallPending) return { goIndieActive: active, goIndieResolved: true };
-          const showPaywall = !s.paywallShown && !active && s.apps.some(a => a.live);
-          return {
-            goIndieActive: active,
-            goIndieResolved: true,
-            paywallPending: false,
-            overlay: showPaywall ? { type: 'paywall' } : null,
-          };
-        }),
+      setGoIndieActive: active => set({ goIndieActive: active, goIndieResolved: true }),
 
       buy: id => {
         const s = get();
@@ -365,7 +337,7 @@ export const useGame = create<GameState & Actions>()(
       },
       storage: createJSONStorage(() => AsyncStorage),
       partialize: s => {
-        const { notifs, overlay, goIndieResolved, paywallPending, ...rest } = s as GameState;
+        const { notifs, overlay, goIndieResolved, ...rest } = s as GameState;
         return rest;
       },
     }
