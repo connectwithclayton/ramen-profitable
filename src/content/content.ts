@@ -97,7 +97,7 @@ export const CHIRPERS: [string, string][] = [
   ['Anonymous Founder', '@definitely_not_sad'],
   ['Design Twitter', '@kerning_police'],
   ['Your Old Coworker', '@still_at_the_job'],
-  ['Reply Guy', '@actually_however'],
+  ['Product Hunt Regular', '@4th_place_tuesday'],
   ['Pivoted to AI', '@formerly_web3'],
   ['Angel Investor', '@checksize_25k'],
   ['Burnt Out Beta Tester', '@testflight_gremlin'],
