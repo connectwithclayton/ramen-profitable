@@ -48,6 +48,7 @@ export type GameState = {
   notifs: Notif[];
   overlay: Overlay;
   paywallShown: boolean;
+  goIndieActive: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
@@ -60,6 +61,7 @@ type Actions = {
   resolveReview: () => void;
   dismissOverlay: () => void;
   showPaywallIfFirstLaunch: () => void;
+  setGoIndieActive: (active: boolean) => void;
   buy: (id: string) => void;
   quitJob: () => void;
   fastTick: () => void;
@@ -102,6 +104,7 @@ const initial: GameState = {
   notifs: [],
   overlay: null,
   paywallShown: false,
+  goIndieActive: false,
   won: false,
   achievements: {},
   lastSeen: Date.now(),
@@ -196,6 +199,8 @@ export const useGame = create<GameState & Actions>()(
           set({ overlay: null });
         }
       },
+
+      setGoIndieActive: active => set({ goIndieActive: active }),
 
       buy: id => {
         const s = get();
@@ -320,7 +325,7 @@ export const useGame = create<GameState & Actions>()(
         }
         // Earn cash at the live rate, capped at 8 hours away
         const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
-        const earned = (s.mrr / 120) * (cappedSec / 5);
+        const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieActive ? 2 : 1);
         set({ cash: s.cash + earned, lastSeen: Date.now() });
         return earned;
       },
@@ -334,6 +339,7 @@ export const useGame = create<GameState & Actions>()(
           persisted.apps = persisted.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
         persisted.achievements = persisted.achievements ?? {};
+        persisted.goIndieActive = persisted.goIndieActive ?? false;
         return persisted;
       },
       storage: createJSONStorage(() => AsyncStorage),

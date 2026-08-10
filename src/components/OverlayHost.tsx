@@ -55,6 +55,8 @@ export default function OverlayHost() {
   const overlay = useGame(s => s.overlay);
   const dismiss = useGame(s => s.dismissOverlay);
   const showPaywall = useGame(s => s.showPaywallIfFirstLaunch);
+  const setGoIndieActive = useGame(s => s.setGoIndieActive);
+  const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
 
   useEffect(() => {
@@ -109,12 +111,16 @@ export default function OverlayHost() {
               earnings. One subscription, two realities.
             </Text>
             <MonoText style={{ color: C.dim, fontSize: 11, textAlign: 'center', marginVertical: 12 }}>
-              [ Wired to RevenueCat — mock mode until API keys land ]
+              [ RevenueCat Paywall · remotely configured ]
             </MonoText>
             <Btn
               label="Go Indie"
               onPress={async () => {
-                await presentGoIndiePaywall();
+                const active = await presentGoIndiePaywall();
+                if (active) {
+                  setGoIndieActive(true);
+                  pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
+                }
                 dismiss();
               }}
             />

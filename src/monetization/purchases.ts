@@ -79,14 +79,32 @@ export function selectRevenueCatApiKey(
 }
 
 let Purchases: any = null;
+let RevenueCatUI: any = null;
 let mockMode = true;
+
+const GO_INDIE_ENTITLEMENT = 'go_indie';
 
 function configuredKeys(): RevenueCatKeyConfig {
   const extra = Constants.expoConfig?.extra?.revenueCat;
   return extra && typeof extra === 'object' ? extra : {};
 }
 
-export async function initPurchases(): Promise<void> {
+function isGoIndieActive(customerInfo: any): boolean {
+  return customerInfo?.entitlements?.active?.[GO_INDIE_ENTITLEMENT] !== undefined;
+}
+
+async function refreshGoIndieEntitlement(): Promise<boolean | null> {
+  if (mockMode || !Purchases) return null;
+  try {
+    const info = await Purchases.getCustomerInfo();
+    return isGoIndieActive(info);
+  } catch (e) {
+    console.warn('[purchases] Could not refresh CustomerInfo.', e);
+    return null;
+  }
+}
+
+export async function initPurchases(): Promise<boolean | null> {
   try {
     // Dynamic require so Expo Go (no native module) doesn't crash at import time
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -100,15 +118,17 @@ export async function initPurchases(): Promise<void> {
     );
     if ('reason' in selection) {
       console.log(`[purchases] ${selection.reason} — mock mode.`);
-      return;
+      return null;
     }
     const logLevel = __DEV__ ? mod.LOG_LEVEL.VERBOSE : mod.LOG_LEVEL.WARN;
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
     mockMode = false;
     console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
+    return refreshGoIndieEntitlement();
   } catch (e) {
     console.log('[purchases] Native module unavailable (Expo Go?) — mock mode.', e);
+    return null;
   }
 }
 
@@ -118,23 +138,42 @@ export async function presentGoIndiePaywall(): Promise<boolean> {
     return false;
   }
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const uiMod = require('react-native-purchases-ui');
+    RevenueCatUI = uiMod.default ?? uiMod;
     const offerings = await Purchases.getOfferings();
-    const pkg = offerings.current?.availablePackages?.[0];
-    if (!pkg) return false;
-    const { customerInfo } = await Purchases.purchasePackage(pkg);
-    return customerInfo.entitlements.active['go_indie'] !== undefined;
+    const offering = offerings.current;
+    if (!offering?.availablePackages?.length) {
+      console.warn('[purchases] Current Offering has no available packages.');
+      return false;
+    }
+
+    if (__DEV__) {
+      const packageIds = offering.availablePackages
+        .map((pkg: any) => pkg.product?.identifier ?? pkg.identifier)
+        .join(', ');
+      console.log(`[purchases] Current Offering "${offering.identifier}" packages: ${packageIds}`);
+    }
+
+    await RevenueCatUI.presentPaywall({ offering });
+    return (await refreshGoIndieEntitlement()) === true;
   } catch (e: any) {
     if (!e?.userCancelled) console.warn('[purchases] purchase failed', e);
     return false;
   }
 }
 
-export async function hasGoIndie(): Promise<boolean> {
+export async function restoreGoIndiePurchases(): Promise<boolean> {
   if (mockMode || !Purchases) return false;
   try {
-    const info = await Purchases.getCustomerInfo();
-    return info.entitlements.active['go_indie'] !== undefined;
-  } catch {
+    const customerInfo = await Purchases.restorePurchases();
+    return isGoIndieActive(customerInfo);
+  } catch (e) {
+    console.warn('[purchases] restore failed', e);
     return false;
   }
+}
+
+export async function hasGoIndie(): Promise<boolean> {
+  return (await refreshGoIndieEntitlement()) === true;
 }

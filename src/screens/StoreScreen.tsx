@@ -1,12 +1,28 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useGame } from '../state/gameStore';
 import { SHOP } from '../content/content';
 import { Card, Eyebrow, Btn, MonoText, fmt } from '../components/ui';
 import { C } from '../theme';
+import { restoreGoIndiePurchases } from '../monetization/purchases';
 
 export default function StoreScreen() {
   const s = useGame();
+  const [restoring, setRestoring] = useState(false);
+
+  const restore = async () => {
+    if (restoring) return;
+    setRestoring(true);
+    const active = await restoreGoIndiePurchases();
+    if (active) {
+      s.setGoIndieActive(true);
+      s.pushNotif('Purchases restored. Go Indie is active.', 'growth');
+    } else {
+      s.pushNotif('No Go Indie purchase found to restore.', 'store');
+    }
+    setRestoring(false);
+  };
+
   return (
     <ScrollView contentContainerStyle={st.wrap} showsVerticalScrollIndicator={false}>
       <Card>
@@ -33,6 +49,23 @@ export default function StoreScreen() {
             </View>
           );
         })}
+      </Card>
+
+      <Card>
+        <Eyebrow>Go Indie</Eyebrow>
+        <Text style={st.d}>
+          {s.goIndieActive
+            ? 'Indie operator status is active. Offline earnings are doubled.'
+            : 'Already bought Go Indie? Restore the lifetime unlock on this device.'}
+        </Text>
+        <Btn
+          small
+          ghost
+          label={restoring ? 'Restoring…' : 'Restore Purchases'}
+          disabled={restoring}
+          onPress={restore}
+          style={{ marginTop: 10 }}
+        />
       </Card>
 
       <Card>
