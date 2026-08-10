@@ -52,6 +52,11 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+        {s.goIndieResolved && s.goIndieActive && (
+          <View style={st.indieBadge}>
+            <MonoText style={st.indieText}>GO INDIE ACTIVE · INDIE OPERATOR · 2× OFFLINE EARNINGS</MonoText>
+          </View>
+        )}
       </Card>
 
       <Card>
@@ -111,6 +116,16 @@ const st = StyleSheet.create({
   grid: { flexDirection: 'row', gap: 10 },
   k: { color: C.mut, fontSize: 12 },
   v: { color: C.ink, fontWeight: '600', fontSize: 14, marginTop: 2 },
+  indieBadge: {
+    marginTop: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    borderRadius: 7,
+    backgroundColor: C.card2,
+    borderWidth: 1,
+    borderColor: C.mint,
+  },
+  indieText: { color: C.mint, fontSize: 10, fontWeight: '600', textAlign: 'center' },
   empty: { color: C.mut, fontSize: 13 },
   appRow: {
     flexDirection: 'row',

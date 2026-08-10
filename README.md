@@ -36,8 +36,15 @@ Design decisions worth knowing:
 - **Persistence** partializes out `notifs`/`overlay` so you never rehydrate into
   a stale modal.
 - **Offline earnings** are computed from `lastSeen` on foreground, capped at 8h.
-- **RevenueCat** uses dynamic `require` and graceful mock fallback when the
-  native module or environment key is unavailable.
+- **Go Indie** opens the remotely configured RevenueCat Paywall only after a
+  deliberate Go Indie tap from the approved-app affordance or Store. There is
+  no launch paywall. The lifetime unlock doubles offline earnings only after
+  the `go_indie` entitlement is known active; Restore Purchases is available in
+  Store.
+- **RevenueCat** uses the SDK's `CURRENT` offering without hardcoded product
+  identifiers or prices. Dynamic `require` preserves graceful mock fallback
+  when the native module or environment key is unavailable, and unavailable
+  RevenueCat never blocks launch or base offline earnings.
 
 ## Week 3: going live with RevenueCat
 
@@ -46,9 +53,12 @@ Remaining captain steps for a Test Store purchase:
 1. Create a RevenueCat account and create a project for Ramen Profitable.
 2. In **Apps & Providers**, create a **Test Store** app/provider for the
    project.
-3. In **Product Catalog**, define the Test Store products, create an offering,
-   connect the products to that offering, and create the `go_indie` entitlement
-   with those products attached.
+3. In **Product Catalog**, define the Test Store lifetime product and the
+   `go_indie_lifetime` package, create the offering, connect the package to
+   that offering, and create the `go_indie` entitlement with the product
+   attached. Publish a Paywall/workflow on that same offering; the app reads
+   the SDK's `CURRENT` offering and its remotely configured packages and prices.
+   Confirm the published workflow assembles without a no-workflow error.
 4. In **Project Settings → API keys**, copy the Test Store public SDK key. It
    must start with `test_`.
 5. For local development, put the exact variable
@@ -61,6 +71,7 @@ Remaining captain steps for a Test Store purchase:
 6. Build the simulator development client with
    `npx eas build --profile ios-simulator --platform ios`, install it in the
    iOS Simulator, and start the bundler with `npx expo start --dev-client`.
+   For a local native rebuild, use `npx expo run:ios`.
 
 Apple Developer approval and App Store Connect are not required for RevenueCat
 Test Store purchases.

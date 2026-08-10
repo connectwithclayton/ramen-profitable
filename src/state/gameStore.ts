@@ -47,7 +47,8 @@ export type GameState = {
   unreadChirps: boolean;
   notifs: Notif[];
   overlay: Overlay;
-  paywallShown: boolean;
+  goIndieActive: boolean;
+  goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
@@ -59,7 +60,8 @@ type Actions = {
   submitToReview: () => void;
   resolveReview: () => void;
   dismissOverlay: () => void;
-  showPaywallIfFirstLaunch: () => void;
+  openGoIndiePaywall: () => void;
+  setGoIndieActive: (active: boolean) => void;
   buy: (id: string) => void;
   quitJob: () => void;
   fastTick: () => void;
@@ -79,6 +81,22 @@ type Actions = {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+
+const persistedStateKeys = [
+  'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
+  'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
+  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
+] as const satisfies readonly (keyof GameState)[];
+
+function selectPersistedState(value: unknown): Partial<GameState> {
+  if (!value || typeof value !== 'object') return {};
+  const source = value as Record<string, unknown>;
+  return Object.fromEntries(
+    persistedStateKeys
+      .filter(key => key in source)
+      .map(key => [key, source[key]]),
+  ) as Partial<GameState>;
+}
 
 const initial: GameState = {
   day: 1,
@@ -101,7 +119,8 @@ const initial: GameState = {
   unreadChirps: false,
   notifs: [],
   overlay: null,
-  paywallShown: false,
+  goIndieActive: false,
+  goIndieResolved: false,
   won: false,
   achievements: {},
   lastSeen: Date.now(),
@@ -188,13 +207,11 @@ export const useGame = create<GameState & Actions>()(
 
       dismissOverlay: () => set({ overlay: null }),
 
-      showPaywallIfFirstLaunch: () => {
-        const s = get();
-        if (!s.paywallShown && s.apps.some(a => a.live)) {
-          set({ paywallShown: true, overlay: { type: 'paywall' } });
-        } else {
-          set({ overlay: null });
-        }
+      openGoIndiePaywall: () => set({ overlay: { type: 'paywall' } }),
+
+      setGoIndieActive: active => {
+        if (active) set({ lastSeen: Date.now() });
+        set({ goIndieActive: active, goIndieResolved: true });
       },
 
       buy: id => {
@@ -320,7 +337,7 @@ export const useGame = create<GameState & Actions>()(
         }
         // Earn cash at the live rate, capped at 8 hours away
         const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
-        const earned = (s.mrr / 120) * (cappedSec / 5);
+        const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieResolved && s.goIndieActive ? 2 : 1);
         set({ cash: s.cash + earned, lastSeen: Date.now() });
         return earned;
       },
@@ -330,15 +347,21 @@ export const useGame = create<GameState & Actions>()(
       name: 'ramen-profitable-v1',
       version: 2,
       migrate: (persisted: any) => {
-        if (persisted?.apps) {
-          persisted.apps = persisted.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
+        const migrated = selectPersistedState(persisted);
+        if (migrated?.apps) {
+          migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
-        persisted.achievements = persisted.achievements ?? {};
-        return persisted;
+        migrated.achievements = migrated.achievements ?? {};
+        migrated.goIndieActive = migrated.goIndieActive ?? false;
+        return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
+      merge: (persisted, current) => ({
+        ...current,
+        ...selectPersistedState(persisted),
+      }),
       partialize: s => {
-        const { notifs, overlay, ...rest } = s as GameState;
+        const { notifs, overlay, goIndieResolved, ...rest } = s as GameState;
         return rest;
       },
     }

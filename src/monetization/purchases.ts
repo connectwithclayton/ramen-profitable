@@ -1,8 +1,7 @@
 /**
  * RevenueCat integration — the HAMM Award centerpiece.
  *
- * "Go Indie" is a real subscription that removes real ads AND upgrades
- * your in-game character. One purchase, two realities.
+ * "Go Indie" is a non-consumable unlock that upgrades your in-game character.
  *
  * react-native-purchases requires a development build for real purchases.
  * When the native module or the appropriate environment key is unavailable,
@@ -79,14 +78,52 @@ export function selectRevenueCatApiKey(
 }
 
 let Purchases: any = null;
+let RevenueCatUI: any = null;
 let mockMode = true;
+let initializationPromise: Promise<boolean | null> | null = null;
+
+const GO_INDIE_ENTITLEMENT = 'go_indie';
+
+function isExpectedRevenueCatUnavailableMessage(message: string): boolean {
+  return /network|offline|connection|timed? ?out|unreachable|internet|request failed|failed to fetch|could not connect|couldn't connect|nsurlerror|urlerror/i.test(
+    message,
+  );
+}
+
+function handleRevenueCatLog(level: string, message: string): void {
+  if (level === 'ERROR' && isExpectedRevenueCatUnavailableMessage(message)) {
+    return;
+  }
+
+  const prefixedMessage = `[RevenueCat] ${message}`;
+  if (level === 'ERROR') console.error(prefixedMessage);
+  else if (level === 'WARN') console.warn(prefixedMessage);
+  else if (level === 'INFO') console.info(prefixedMessage);
+  else if (level === 'DEBUG') console.debug(prefixedMessage);
+  else console.log(prefixedMessage);
+}
 
 function configuredKeys(): RevenueCatKeyConfig {
   const extra = Constants.expoConfig?.extra?.revenueCat;
   return extra && typeof extra === 'object' ? extra : {};
 }
 
-export async function initPurchases(): Promise<void> {
+function isGoIndieActive(customerInfo: any): boolean {
+  return customerInfo?.entitlements?.active?.[GO_INDIE_ENTITLEMENT] !== undefined;
+}
+
+async function refreshGoIndieEntitlement(): Promise<boolean | null> {
+  if (mockMode || !Purchases) return null;
+  try {
+    const info = await Purchases.getCustomerInfo();
+    return isGoIndieActive(info);
+  } catch (e) {
+    console.warn('[purchases] Could not refresh CustomerInfo.', e);
+    return null;
+  }
+}
+
+async function configurePurchases(): Promise<boolean | null> {
   try {
     // Dynamic require so Expo Go (no native module) doesn't crash at import time
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -100,41 +137,75 @@ export async function initPurchases(): Promise<void> {
     );
     if ('reason' in selection) {
       console.log(`[purchases] ${selection.reason} — mock mode.`);
-      return;
+      return null;
     }
     const logLevel = __DEV__ ? mod.LOG_LEVEL.VERBOSE : mod.LOG_LEVEL.WARN;
+    Purchases.setLogHandler(handleRevenueCatLog);
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
     mockMode = false;
     console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
+    return refreshGoIndieEntitlement();
   } catch (e) {
     console.log('[purchases] Native module unavailable (Expo Go?) — mock mode.', e);
+    return null;
   }
 }
 
-export async function presentGoIndiePaywall(): Promise<boolean> {
-  if (mockMode || !Purchases) {
-    // In mock mode the button is a wink, not a transaction.
-    return false;
+export function initPurchases(): Promise<boolean | null> {
+  if (!initializationPromise) {
+    initializationPromise = configurePurchases();
   }
+  return initializationPromise;
+}
+
+export async function presentGoIndiePaywall(): Promise<boolean | null> {
+  await initPurchases();
+  if (mockMode || !Purchases) return null;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const uiMod = require('react-native-purchases-ui');
+    RevenueCatUI = uiMod.default ?? uiMod;
     const offerings = await Purchases.getOfferings();
-    const pkg = offerings.current?.availablePackages?.[0];
-    if (!pkg) return false;
-    const { customerInfo } = await Purchases.purchasePackage(pkg);
-    return customerInfo.entitlements.active['go_indie'] !== undefined;
-  } catch (e: any) {
-    if (!e?.userCancelled) console.warn('[purchases] purchase failed', e);
-    return false;
+    const offering = offerings.current;
+    if (!offering?.availablePackages?.length) {
+      console.warn('[purchases] Current Offering has no available packages.');
+      return null;
+    }
+
+    if (__DEV__) {
+      const packageIds = offering.availablePackages
+        .map((pkg: any) => pkg.product?.identifier ?? pkg.identifier)
+        .join(', ');
+      console.log(`[purchases] Current Offering "${offering.identifier}" packages: ${packageIds}`);
+    }
+
+    const result = await RevenueCatUI.presentPaywall({ offering });
+    if (result === uiMod.PAYWALL_RESULT.PURCHASED || result === uiMod.PAYWALL_RESULT.RESTORED) {
+      await refreshGoIndieEntitlement();
+      return true;
+    }
+    return result === uiMod.PAYWALL_RESULT.CANCELLED ? false : null;
+  } catch (e) {
+    console.warn('[purchases] purchase failed', e);
+    return null;
   }
 }
 
-export async function hasGoIndie(): Promise<boolean> {
-  if (mockMode || !Purchases) return false;
+export async function restoreGoIndiePurchases(): Promise<boolean | null> {
+  await initPurchases();
+  if (mockMode || !Purchases) return null;
   try {
-    const info = await Purchases.getCustomerInfo();
-    return info.entitlements.active['go_indie'] !== undefined;
-  } catch {
-    return false;
+    const customerInfo = await Purchases.restorePurchases();
+    return isGoIndieActive(customerInfo);
+  } catch (e) {
+    console.warn('[purchases] restore failed', e);
+    return null;
   }
+}
+
+export async function hasGoIndie(): Promise<boolean | null> {
+  await initPurchases();
+  if (mockMode || !Purchases) return null;
+  return refreshGoIndieEntitlement();
 }

@@ -22,7 +22,7 @@
 
 ## Week 3 — Aug 22–28 · Real money
 - [ ] EAS dev build (react-native-purchases needs it — Expo Go won't cut it)
-- [ ] RevenueCat SDK live: "Go Indie" subscription + lifetime unlock, using RC Paywalls
+- [ ] RevenueCat SDK live: "Go Indie" lifetime unlock, using the current RC Paywall offering
 - [ ] AdMob rehearsal: real banner rendered inside the in-game phone billboard (Catvertising)
 - [ ] TestFlight internal build
 - [ ] Post: "the paywall in my game about paywalls is a real paywall" thread

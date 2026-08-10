@@ -54,8 +54,11 @@ function ReviewSheet({ appName }: { appName: string }) {
 export default function OverlayHost() {
   const overlay = useGame(s => s.overlay);
   const dismiss = useGame(s => s.dismissOverlay);
-  const showPaywall = useGame(s => s.showPaywallIfFirstLaunch);
+  const openGoIndiePaywall = useGame(s => s.openGoIndiePaywall);
+  const setGoIndieActive = useGame(s => s.setGoIndieActive);
+  const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
+  const [goIndiePending, setGoIndiePending] = useState(false);
 
   useEffect(() => {
     if (overlay?.type === 'verdict') {
@@ -87,7 +90,7 @@ export default function OverlayHost() {
             <MonoText style={{ color: C.gold, fontSize: 30, fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
               +{fmt(overlay.gain ?? 0)}/mo
             </MonoText>
-            <Btn label="Refresh dashboard 47 times" onPress={showPaywall} style={{ marginTop: 16 }} />
+            <Btn label="Go Indie" onPress={openGoIndiePaywall} style={{ marginTop: 16 }} />
           </>
         )}
 
@@ -103,19 +106,26 @@ export default function OverlayHost() {
         {overlay.type === 'paywall' && (
           <>
             <Eyebrow>A wild paywall appears</Eyebrow>
-            <Text style={st.h1}>Go Indie — $4.99/mo</Text>
-            <Text style={st.body}>
-              Removes ads for you <Text style={{ fontStyle: 'italic' }}>and</Text> for your character. 2× offline
-              earnings. One subscription, two realities.
-            </Text>
+            <Text style={st.h1}>Go Indie</Text>
+            <Text style={st.body}>Make your character an indie operator. Go Indie doubles offline earnings in this game.</Text>
             <MonoText style={{ color: C.dim, fontSize: 11, textAlign: 'center', marginVertical: 12 }}>
-              [ Wired to RevenueCat — mock mode until API keys land ]
+              [ RevenueCat Paywall · remotely configured ]
             </MonoText>
             <Btn
               label="Go Indie"
+              disabled={goIndiePending}
               onPress={async () => {
-                await presentGoIndiePaywall();
-                dismiss();
+                setGoIndiePending(true);
+                try {
+                  const active = await presentGoIndiePaywall();
+                  if (active === true) {
+                    setGoIndieActive(true);
+                    pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
+                    dismiss();
+                  }
+                } finally {
+                  setGoIndiePending(false);
+                }
               }}
             />
             <Btn label="Remain humble" ghost onPress={dismiss} style={{ marginTop: 8 }} />
