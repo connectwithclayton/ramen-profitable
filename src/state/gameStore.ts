@@ -339,7 +339,6 @@ export const useGame = create<GameState & Actions>()(
 
       applyOfflineEarnings: () => {
         const s = get();
-        if (!s.goIndieResolved) return 0;
         const awayMs = Date.now() - s.lastSeen;
         if (awayMs < 60_000 || s.mrr <= 0) {
           set({ lastSeen: Date.now() });
@@ -347,7 +346,7 @@ export const useGame = create<GameState & Actions>()(
         }
         // Earn cash at the live rate, capped at 8 hours away
         const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
-        const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieActive ? 2 : 1);
+        const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieResolved && s.goIndieActive ? 2 : 1);
         set({ cash: s.cash + earned, lastSeen: Date.now() });
         return earned;
       },
