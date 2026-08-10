@@ -84,6 +84,25 @@ let initializationPromise: Promise<boolean | null> | null = null;
 
 const GO_INDIE_ENTITLEMENT = 'go_indie';
 
+function isExpectedRevenueCatUnavailableMessage(message: string): boolean {
+  return /network|offline|connection|timed? ?out|unreachable|internet|request failed|failed to fetch|could not connect|couldn't connect|nsurlerror|urlerror/i.test(
+    message,
+  );
+}
+
+function handleRevenueCatLog(level: string, message: string): void {
+  if (level === 'ERROR' && isExpectedRevenueCatUnavailableMessage(message)) {
+    return;
+  }
+
+  const prefixedMessage = `[RevenueCat] ${message}`;
+  if (level === 'ERROR') console.error(prefixedMessage);
+  else if (level === 'WARN') console.warn(prefixedMessage);
+  else if (level === 'INFO') console.info(prefixedMessage);
+  else if (level === 'DEBUG') console.debug(prefixedMessage);
+  else console.log(prefixedMessage);
+}
+
 function configuredKeys(): RevenueCatKeyConfig {
   const extra = Constants.expoConfig?.extra?.revenueCat;
   return extra && typeof extra === 'object' ? extra : {};
@@ -121,6 +140,7 @@ async function configurePurchases(): Promise<boolean | null> {
       return null;
     }
     const logLevel = __DEV__ ? mod.LOG_LEVEL.VERBOSE : mod.LOG_LEVEL.WARN;
+    Purchases.setLogHandler(handleRevenueCatLog);
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
     mockMode = false;
