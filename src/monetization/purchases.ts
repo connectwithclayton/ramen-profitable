@@ -80,6 +80,8 @@ export function selectRevenueCatApiKey(
 let Purchases: any = null;
 let RevenueCatUI: any = null;
 let mockMode = true;
+let initializationPromise: Promise<boolean | null> | null = null;
+let purchaseOperation: Promise<unknown> = Promise.resolve();
 
 const GO_INDIE_ENTITLEMENT = 'go_indie';
 
@@ -103,7 +105,13 @@ async function refreshGoIndieEntitlement(): Promise<boolean | null> {
   }
 }
 
-export async function initPurchases(): Promise<boolean | null> {
+function serializePurchaseOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const next = purchaseOperation.then(() => operation(), () => operation());
+  purchaseOperation = next.then(() => undefined, () => undefined);
+  return next;
+}
+
+async function configurePurchases(): Promise<boolean | null> {
   try {
     // Dynamic require so Expo Go (no native module) doesn't crash at import time
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -131,48 +139,60 @@ export async function initPurchases(): Promise<boolean | null> {
   }
 }
 
-export async function presentGoIndiePaywall(): Promise<boolean> {
-  if (mockMode || !Purchases) {
-    // In mock mode the button is a wink, not a transaction.
-    return false;
+export function initPurchases(): Promise<boolean | null> {
+  if (!initializationPromise) {
+    initializationPromise = serializePurchaseOperation(configurePurchases);
   }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const uiMod = require('react-native-purchases-ui');
-    RevenueCatUI = uiMod.default ?? uiMod;
-    const offerings = await Purchases.getOfferings();
-    const offering = offerings.current;
-    if (!offering?.availablePackages?.length) {
-      console.warn('[purchases] Current Offering has no available packages.');
-      return false;
-    }
-
-    if (__DEV__) {
-      const packageIds = offering.availablePackages
-        .map((pkg: any) => pkg.product?.identifier ?? pkg.identifier)
-        .join(', ');
-      console.log(`[purchases] Current Offering "${offering.identifier}" packages: ${packageIds}`);
-    }
-
-    await RevenueCatUI.presentPaywall({ offering });
-    return (await refreshGoIndieEntitlement()) === true;
-  } catch (e: any) {
-    if (!e?.userCancelled) console.warn('[purchases] purchase failed', e);
-    return false;
-  }
+  return initializationPromise;
 }
 
-export async function restoreGoIndiePurchases(): Promise<boolean> {
+export async function presentGoIndiePaywall(): Promise<boolean> {
+  await initPurchases();
   if (mockMode || !Purchases) return false;
-  try {
-    const customerInfo = await Purchases.restorePurchases();
-    return isGoIndieActive(customerInfo);
-  } catch (e) {
-    console.warn('[purchases] restore failed', e);
-    return false;
-  }
+  return serializePurchaseOperation(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const uiMod = require('react-native-purchases-ui');
+      RevenueCatUI = uiMod.default ?? uiMod;
+      const offerings = await Purchases.getOfferings();
+      const offering = offerings.current;
+      if (!offering?.availablePackages?.length) {
+        console.warn('[purchases] Current Offering has no available packages.');
+        return false;
+      }
+
+      if (__DEV__) {
+        const packageIds = offering.availablePackages
+          .map((pkg: any) => pkg.product?.identifier ?? pkg.identifier)
+          .join(', ');
+        console.log(`[purchases] Current Offering "${offering.identifier}" packages: ${packageIds}`);
+      }
+
+      await RevenueCatUI.presentPaywall({ offering });
+      return (await refreshGoIndieEntitlement()) === true;
+    } catch (e: any) {
+      if (!e?.userCancelled) console.warn('[purchases] purchase failed', e);
+      return false;
+    }
+  });
+}
+
+export async function restoreGoIndiePurchases(): Promise<boolean | null> {
+  await initPurchases();
+  if (mockMode || !Purchases) return null;
+  return serializePurchaseOperation(async () => {
+    try {
+      const customerInfo = await Purchases.restorePurchases();
+      return isGoIndieActive(customerInfo);
+    } catch (e) {
+      console.warn('[purchases] restore failed', e);
+      return null;
+    }
+  });
 }
 
 export async function hasGoIndie(): Promise<boolean> {
-  return (await refreshGoIndieEntitlement()) === true;
+  await initPurchases();
+  if (mockMode || !Purchases) return false;
+  return (await serializePurchaseOperation(refreshGoIndieEntitlement)) === true;
 }

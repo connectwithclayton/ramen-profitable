@@ -14,11 +14,15 @@ export default function StoreScreen() {
     if (restoring) return;
     setRestoring(true);
     const active = await restoreGoIndiePurchases();
-    if (active) {
-      s.setGoIndieActive(true);
+    if (active !== null) {
+      s.setGoIndieActive(active);
+    }
+    if (active === true) {
       s.pushNotif('Purchases restored. Go Indie is active.', 'growth');
-    } else {
+    } else if (active === false) {
       s.pushNotif('No Go Indie purchase found to restore.', 'store');
+    } else {
+      s.pushNotif('Purchases are unavailable. Try restoring again later.', 'store');
     }
     setRestoring(false);
   };

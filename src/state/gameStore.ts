@@ -49,6 +49,8 @@ export type GameState = {
   overlay: Overlay;
   paywallShown: boolean;
   goIndieActive: boolean;
+  goIndieResolved: boolean;
+  paywallPending: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
@@ -106,6 +108,8 @@ const initial: GameState = {
   overlay: null,
   paywallShown: false,
   goIndieActive: false,
+  goIndieResolved: false,
+  paywallPending: false,
   won: false,
   achievements: {},
   lastSeen: Date.now(),
@@ -194,7 +198,11 @@ export const useGame = create<GameState & Actions>()(
 
       showPaywallIfFirstLaunch: () => {
         const s = get();
-        if (!s.paywallShown && s.apps.some(a => a.live)) {
+        if (!s.goIndieResolved) {
+          set({ paywallPending: true });
+          return;
+        }
+        if (!s.paywallShown && !s.goIndieActive && s.apps.some(a => a.live)) {
           set({ overlay: { type: 'paywall' } });
         } else {
           set({ overlay: null });
@@ -203,7 +211,17 @@ export const useGame = create<GameState & Actions>()(
 
       markPaywallShown: () => set({ paywallShown: true }),
 
-      setGoIndieActive: active => set({ goIndieActive: active }),
+      setGoIndieActive: active =>
+        set(s => {
+          if (!s.paywallPending) return { goIndieActive: active, goIndieResolved: true };
+          const showPaywall = !s.paywallShown && !active && s.apps.some(a => a.live);
+          return {
+            goIndieActive: active,
+            goIndieResolved: true,
+            paywallPending: false,
+            overlay: showPaywall ? { type: 'paywall' } : null,
+          };
+        }),
 
       buy: id => {
         const s = get();
@@ -321,6 +339,7 @@ export const useGame = create<GameState & Actions>()(
 
       applyOfflineEarnings: () => {
         const s = get();
+        if (!s.goIndieResolved) return 0;
         const awayMs = Date.now() - s.lastSeen;
         if (awayMs < 60_000 || s.mrr <= 0) {
           set({ lastSeen: Date.now() });
@@ -347,7 +366,7 @@ export const useGame = create<GameState & Actions>()(
       },
       storage: createJSONStorage(() => AsyncStorage),
       partialize: s => {
-        const { notifs, overlay, ...rest } = s as GameState;
+        const { notifs, overlay, goIndieResolved, paywallPending, ...rest } = s as GameState;
         return rest;
       },
     }

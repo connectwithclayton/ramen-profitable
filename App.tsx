@@ -37,7 +37,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     void initPurchases().then(active => {
-      if (!cancelled && active !== null) setGoIndieActive(active);
+      if (!cancelled) {
+        setGoIndieActive(active === true);
+        useGame.getState().applyOfflineEarnings();
+      }
     });
     const t1 = setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900);
     const t2 = setTimeout(() => {
