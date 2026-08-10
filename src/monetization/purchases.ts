@@ -146,9 +146,9 @@ export function initPurchases(): Promise<boolean | null> {
   return initializationPromise;
 }
 
-export async function presentGoIndiePaywall(): Promise<boolean> {
+export async function presentGoIndiePaywall(): Promise<boolean | null> {
   await initPurchases();
-  if (mockMode || !Purchases) return false;
+  if (mockMode || !Purchases) return null;
   return serializePurchaseOperation(async () => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -158,7 +158,7 @@ export async function presentGoIndiePaywall(): Promise<boolean> {
       const offering = offerings.current;
       if (!offering?.availablePackages?.length) {
         console.warn('[purchases] Current Offering has no available packages.');
-        return false;
+        return null;
       }
 
       if (__DEV__) {
@@ -169,10 +169,11 @@ export async function presentGoIndiePaywall(): Promise<boolean> {
       }
 
       await RevenueCatUI.presentPaywall({ offering });
-      return (await refreshGoIndieEntitlement()) === true;
+      return refreshGoIndieEntitlement();
     } catch (e: any) {
-      if (!e?.userCancelled) console.warn('[purchases] purchase failed', e);
-      return false;
+      if (e?.userCancelled) return false;
+      console.warn('[purchases] purchase failed', e);
+      return null;
     }
   });
 }
@@ -191,8 +192,8 @@ export async function restoreGoIndiePurchases(): Promise<boolean | null> {
   });
 }
 
-export async function hasGoIndie(): Promise<boolean> {
+export async function hasGoIndie(): Promise<boolean | null> {
   await initPurchases();
-  if (mockMode || !Purchases) return false;
-  return (await serializePurchaseOperation(refreshGoIndieEntitlement)) === true;
+  if (mockMode || !Purchases) return null;
+  return serializePurchaseOperation(refreshGoIndieEntitlement);
 }

@@ -115,7 +115,7 @@ export default function OverlayHost() {
               label="Go Indie"
               onPress={async () => {
                 const active = await presentGoIndiePaywall();
-                if (active) {
+                if (active === true) {
                   setGoIndieActive(true);
                   markPaywallShown();
                   pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');

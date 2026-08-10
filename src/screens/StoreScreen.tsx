@@ -58,7 +58,7 @@ export default function StoreScreen() {
       <Card>
         <Eyebrow>Go Indie</Eyebrow>
         <Text style={st.d}>
-          {s.goIndieActive
+          {s.goIndieResolved && s.goIndieActive
             ? 'Indie operator status is active. Offline earnings are doubled.'
             : 'Already bought Go Indie? Restore the lifetime unlock on this device.'}
         </Text>

@@ -37,8 +37,8 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     void initPurchases().then(active => {
-      if (!cancelled) {
-        setGoIndieActive(active === true);
+      if (!cancelled && active !== null) {
+        setGoIndieActive(active);
         useGame.getState().applyOfflineEarnings();
       }
     });

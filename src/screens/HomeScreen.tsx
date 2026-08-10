@@ -52,7 +52,7 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
-        {s.goIndieActive && (
+        {s.goIndieResolved && s.goIndieActive && (
           <View style={st.indieBadge}>
             <MonoText style={st.indieText}>GO INDIE ACTIVE · INDIE OPERATOR · 2× OFFLINE EARNINGS</MonoText>
           </View>
