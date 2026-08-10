@@ -8,7 +8,10 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.clayton.ramenprofitable"
+      "bundleIdentifier": "com.clayton.ramenprofitable",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,6 +26,13 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "backgroundColor": "#0C0F1A"
+    "backgroundColor": "#0C0F1A",
+    "extra": {
+      "revenueCat": {},
+      "eas": {
+        "projectId": "7a439f05-864f-4171-93bb-f23d6901a3a1"
+      }
+    },
+    "owner": "clayj.dev"
   }
 }
