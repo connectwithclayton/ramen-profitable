@@ -82,10 +82,20 @@ type Actions = {
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 
-function withoutLegacyPaywallShown<T extends object>(value: T): Omit<T, 'paywallShown'> {
-  const result = { ...value } as T & { paywallShown?: unknown };
-  delete result.paywallShown;
-  return result as Omit<T, 'paywallShown'>;
+const persistedStateKeys = [
+  'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
+  'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
+  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
+] as const satisfies readonly (keyof GameState)[];
+
+function selectPersistedState(value: unknown): Partial<GameState> {
+  if (!value || typeof value !== 'object') return {};
+  const source = value as Record<string, unknown>;
+  return Object.fromEntries(
+    persistedStateKeys
+      .filter(key => key in source)
+      .map(key => [key, source[key]]),
+  ) as Partial<GameState>;
 }
 
 const initial: GameState = {
@@ -337,7 +347,7 @@ export const useGame = create<GameState & Actions>()(
       name: 'ramen-profitable-v1',
       version: 2,
       migrate: (persisted: any) => {
-        const migrated = withoutLegacyPaywallShown(persisted);
+        const migrated = selectPersistedState(persisted);
         if (migrated?.apps) {
           migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
@@ -348,11 +358,11 @@ export const useGame = create<GameState & Actions>()(
       storage: createJSONStorage(() => AsyncStorage),
       merge: (persisted, current) => ({
         ...current,
-        ...withoutLegacyPaywallShown((persisted ?? {}) as object),
+        ...selectPersistedState(persisted),
       }),
       partialize: s => {
         const { notifs, overlay, goIndieResolved, ...rest } = s as GameState;
-        return withoutLegacyPaywallShown(rest);
+        return rest;
       },
     }
   )
