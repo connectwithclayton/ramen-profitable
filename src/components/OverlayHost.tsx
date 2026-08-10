@@ -58,6 +58,7 @@ export default function OverlayHost() {
   const setGoIndieActive = useGame(s => s.setGoIndieActive);
   const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
+  const [goIndiePending, setGoIndiePending] = useState(false);
 
   useEffect(() => {
     if (overlay?.type === 'verdict') {
@@ -112,12 +113,18 @@ export default function OverlayHost() {
             </MonoText>
             <Btn
               label="Go Indie"
+              disabled={goIndiePending}
               onPress={async () => {
-                const active = await presentGoIndiePaywall();
-                if (active === true) {
-                  setGoIndieActive(true);
-                  pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
-                  dismiss();
+                setGoIndiePending(true);
+                try {
+                  const active = await presentGoIndiePaywall();
+                  if (active === true) {
+                    setGoIndieActive(true);
+                    pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
+                    dismiss();
+                  }
+                } finally {
+                  setGoIndiePending(false);
                 }
               }}
             />
