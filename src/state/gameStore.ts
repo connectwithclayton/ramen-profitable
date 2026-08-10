@@ -199,7 +199,10 @@ export const useGame = create<GameState & Actions>()(
 
       openGoIndiePaywall: () => set({ overlay: { type: 'paywall' } }),
 
-      setGoIndieActive: active => set({ goIndieActive: active, goIndieResolved: true }),
+      setGoIndieActive: active => {
+        if (active) set({ lastSeen: Date.now() });
+        set({ goIndieActive: active, goIndieResolved: true });
+      },
 
       buy: id => {
         const s = get();
@@ -343,6 +346,10 @@ export const useGame = create<GameState & Actions>()(
         return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
+      merge: (persisted, current) => ({
+        ...current,
+        ...withoutLegacyPaywallShown((persisted ?? {}) as object),
+      }),
       partialize: s => {
         const { notifs, overlay, goIndieResolved, ...rest } = s as GameState;
         return withoutLegacyPaywallShown(rest);
