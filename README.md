@@ -73,6 +73,28 @@ Remaining captain steps for a Test Store purchase:
    iOS Simulator, and start the bundler with `npx expo start --dev-client`.
    For a local native rebuild, use `npx expo run:ios`.
 
+### Captain path: physical iPhone development build
+
+The captain must run `eas login` in a real terminal, then provision the
+development Test Store variable in the EAS **development** environment as
+described above. For Apple credentials, create an App Store Connect API key
+with the **Admin** role, keep its `.p8` file outside this repository, and use
+the captain-provided key only through the EAS credential flow. Choose the
+**Individual** team type and provide the non-secret Key ID, Issuer ID, and
+Apple Team ID when EAS requests them. Do not commit or share the `.p8` file or
+any credential values.
+
+Run `npx eas build --profile development --platform ios`. In the EAS Website
+device-registration flow, open the registration page on the captain's iPhone,
+register that device, select it for the build, and install the resulting
+development build from its EAS build link. The device must launch the app and
+render it before physical-device validation is claimed.
+
+After dependency changes, run `npm ci` in the clone that actually runs Metro;
+otherwise Metro can fail with `Unable to resolve module` even when this clone
+is installed correctly. Firstmate observed the external physical-device
+evidence; this test phase did not capture that evidence.
+
 Apple Developer approval and App Store Connect are not required for RevenueCat
 Test Store purchases.
 
