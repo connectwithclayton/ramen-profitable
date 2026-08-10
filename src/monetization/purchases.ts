@@ -1,8 +1,7 @@
 /**
  * RevenueCat integration — the HAMM Award centerpiece.
  *
- * "Go Indie" is a real subscription that removes real ads AND upgrades
- * your in-game character. One purchase, two realities.
+ * "Go Indie" is a non-consumable unlock that upgrades your in-game character.
  *
  * react-native-purchases requires a development build for real purchases.
  * When the native module or the appropriate environment key is unavailable,

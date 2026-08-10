@@ -55,6 +55,7 @@ export default function OverlayHost() {
   const overlay = useGame(s => s.overlay);
   const dismiss = useGame(s => s.dismissOverlay);
   const showPaywall = useGame(s => s.showPaywallIfFirstLaunch);
+  const markPaywallShown = useGame(s => s.markPaywallShown);
   const setGoIndieActive = useGame(s => s.setGoIndieActive);
   const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
@@ -105,11 +106,8 @@ export default function OverlayHost() {
         {overlay.type === 'paywall' && (
           <>
             <Eyebrow>A wild paywall appears</Eyebrow>
-            <Text style={st.h1}>Go Indie — $4.99/mo</Text>
-            <Text style={st.body}>
-              Removes ads for you <Text style={{ fontStyle: 'italic' }}>and</Text> for your character. 2× offline
-              earnings. One subscription, two realities.
-            </Text>
+            <Text style={st.h1}>Go Indie</Text>
+            <Text style={st.body}>Make your character an indie operator. Go Indie doubles offline earnings in this game.</Text>
             <MonoText style={{ color: C.dim, fontSize: 11, textAlign: 'center', marginVertical: 12 }}>
               [ RevenueCat Paywall · remotely configured ]
             </MonoText>
@@ -119,9 +117,10 @@ export default function OverlayHost() {
                 const active = await presentGoIndiePaywall();
                 if (active) {
                   setGoIndieActive(true);
+                  markPaywallShown();
                   pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
+                  dismiss();
                 }
-                dismiss();
               }}
             />
             <Btn label="Remain humble" ghost onPress={dismiss} style={{ marginTop: 8 }} />

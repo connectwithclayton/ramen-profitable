@@ -61,6 +61,7 @@ type Actions = {
   resolveReview: () => void;
   dismissOverlay: () => void;
   showPaywallIfFirstLaunch: () => void;
+  markPaywallShown: () => void;
   setGoIndieActive: (active: boolean) => void;
   buy: (id: string) => void;
   quitJob: () => void;
@@ -194,11 +195,13 @@ export const useGame = create<GameState & Actions>()(
       showPaywallIfFirstLaunch: () => {
         const s = get();
         if (!s.paywallShown && s.apps.some(a => a.live)) {
-          set({ paywallShown: true, overlay: { type: 'paywall' } });
+          set({ overlay: { type: 'paywall' } });
         } else {
           set({ overlay: null });
         }
       },
+
+      markPaywallShown: () => set({ paywallShown: true }),
 
       setGoIndieActive: active => set({ goIndieActive: active }),
 
