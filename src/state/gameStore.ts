@@ -82,6 +82,12 @@ type Actions = {
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 
+function withoutLegacyPaywallShown<T extends object>(value: T): Omit<T, 'paywallShown'> {
+  const result = { ...value } as T & { paywallShown?: unknown };
+  delete result.paywallShown;
+  return result as Omit<T, 'paywallShown'>;
+}
+
 const initial: GameState = {
   day: 1,
   dayTick: 0,
@@ -328,17 +334,18 @@ export const useGame = create<GameState & Actions>()(
       name: 'ramen-profitable-v1',
       version: 2,
       migrate: (persisted: any) => {
-        if (persisted?.apps) {
-          persisted.apps = persisted.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
+        const migrated = withoutLegacyPaywallShown(persisted);
+        if (migrated?.apps) {
+          migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
-        persisted.achievements = persisted.achievements ?? {};
-        persisted.goIndieActive = persisted.goIndieActive ?? false;
-        return persisted;
+        migrated.achievements = migrated.achievements ?? {};
+        migrated.goIndieActive = migrated.goIndieActive ?? false;
+        return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
       partialize: s => {
         const { notifs, overlay, goIndieResolved, ...rest } = s as GameState;
-        return rest;
+        return withoutLegacyPaywallShown(rest);
       },
     }
   )
