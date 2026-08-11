@@ -19,13 +19,14 @@ are working from** (`grep -c '<svg' 'design/<doc>.dc.html'`) before deciding how
 
 ## Screen layout system
 
-All four game screens are built from the primitives in `src/components/ui.tsx`
+The four game screens share the primitives in `src/components/ui.tsx`
 (`Screen` / `ScreenTop` / `Hero` / `Section` / `SectionHeader` / `Unit` / `Rail`), with spacing
-from `S` in `src/theme.ts`. The rules those encode: one hero per screen, full-bleed and
-borderless; section headers sit on the midnight ground; a border means "this is one genuine
-unit". There is no global chrome band — each screen's `ScreenTop` carries the day plus, when
-available, that screen's single piece of telemetry. Mono is machine telemetry, sans is
-human-authored text.
+from `S` in `src/theme.ts`; each screen uses the subset its content needs. The rules those
+primitives encode: one hero per screen, full-bleed and borderless; section headers sit on the
+midnight ground; a border means "this is one genuine unit". Chirp's feed is its hero and has no
+`Hero` container. There is no global chrome band — each screen's `ScreenTop` carries the day
+plus, when available, that screen's single piece of telemetry. Mono is machine telemetry, sans
+is human-authored text.
 Add to these primitives rather than hand-rolling per-screen boxes.
 
 ## Running the app on the simulator

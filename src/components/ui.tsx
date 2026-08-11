@@ -106,11 +106,12 @@ export const money = (n: number) => `$${Math.floor(n).toLocaleString()}`;
 /* ------------------------------------------------------------------ *
  * Screen scaffold
  *
- * Every screen is the same three-part shape:
+ * Every screen starts with the same top-level rhythm:
  *   ScreenTop   the game clock plus this screen's one piece of telemetry
- *   Hero        full-bleed, no box, the loudest thing on the screen
+ *   Hero        where a full-bleed container suits the screen's hero
  *   Section*    section headers sit on the midnight ground; only genuine
- *               units (Unit) keep a border.
+ *               units (Unit) keep a border. Chirp's feed is its hero and
+ *               deliberately has no Hero container.
  * ------------------------------------------------------------------ */
 
 export function Screen({ children }: { children: React.ReactNode }) {
