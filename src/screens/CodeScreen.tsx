@@ -131,6 +131,7 @@ export default function CodeScreen() {
     <Screen>
       <ScreenTop
         day={s.day}
+        {/* ScreenTop carries telemetry, not an absence, so omit this slot at zero. */}
         right={s.autoCode > 0 ? `AUTO ${s.autoCode} LOC/S` : undefined}
         rightLabel={`Automation writes ${s.autoCode} lines per second`}
         rightColor={C.mint}
@@ -148,7 +149,7 @@ export default function CodeScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={done ? `${p.name} is finished. ${fmtN(p.loc)} lines written.` : writeLabel}
-              accessibilityState={{ disabled: done || drained }}
+              accessibilityState={{ disabled: done }}
               disabled={done}
               onPress={onTap}
               style={({ pressed }) => [st.ringPress, pressed && { transform: [{ scale: 0.975 }] }]}

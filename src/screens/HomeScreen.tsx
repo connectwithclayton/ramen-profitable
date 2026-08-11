@@ -214,13 +214,13 @@ export default function HomeScreen() {
       <Section>
         <SectionHeader title="Achievements" meta={`${unlocked} / ${ACHIEVEMENTS.length}`} />
         <View style={st.achStrip}>
-          {ACHIEVEMENTS.map(a => {
+          {ACHIEVEMENTS.map((a, i) => {
             const got = s.achievements[a.id];
             return (
               <View
                 key={a.id}
                 accessible
-                accessibilityLabel={got ? `${a.name}. ${a.desc}` : 'Locked achievement'}
+                accessibilityLabel={got ? `${a.name}. ${a.desc}` : `Locked achievement, ${i + 1} of ${ACHIEVEMENTS.length}`}
                 style={[st.achTile, got && st.achTileGot]}
               >
                 {got ? (

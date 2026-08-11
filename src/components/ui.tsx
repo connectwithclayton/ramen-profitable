@@ -313,6 +313,7 @@ const st = StyleSheet.create({
     paddingHorizontal: S.gutter,
     paddingTop: 14,
     paddingBottom: 22,
+    // This one-sided RULE separates the hero from the ground; it encloses no unit.
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.line,
     overflow: 'hidden',
