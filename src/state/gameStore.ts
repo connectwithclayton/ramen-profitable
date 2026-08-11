@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { APP_IDEAS, REJECTIONS, EVENTS, DARK_EVENTS, SHOP, CHIRPERS, MRR_GOAL, PAYWALL_AXES, ACHIEVEMENTS } from '../content/content';
 import type { IconName } from '../components/icons';
+import { pickAppIdea } from './projectIdeas';
 
 export type Project = { name: string; idea: string; loc: number; need: number };
 export type ShippedApp = {
@@ -151,7 +152,12 @@ export const useGame = create<GameState & Actions>()(
         })),
 
       newProject: () => {
-        const [name, idea] = pick(APP_IDEAS);
+        const s = get();
+        const usedNames = new Set([
+          ...s.apps.map(app => app.name),
+          ...(s.project ? [s.project.name] : []),
+        ]);
+        const [name, idea] = pickAppIdea(APP_IDEAS, usedNames);
         set({ project: { name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250) } });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`);
       },
