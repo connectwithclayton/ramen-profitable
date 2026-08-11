@@ -25,7 +25,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "node --test tests/app-config.test.js"
+    "test": "node --experimental-strip-types --test tests/*.test.js"
   },
   "private": true
 }
