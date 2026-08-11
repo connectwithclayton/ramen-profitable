@@ -1,11 +1,20 @@
 import React, { useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useGame } from '../state/gameStore';
-import { Card, MonoText } from '../components/ui';
-import { C } from '../theme';
-import { LikeFilledIcon, LikeIcon } from '../components/icons';
+import {
+  Divider,
+  Monogram,
+  MonoText,
+  Screen,
+  ScreenTop,
+  accentFor,
+  initials,
+} from '../components/ui';
+import { C, S } from '../theme';
+import { ChirpIcon, LikeFilledIcon, LikeIcon } from '../components/icons';
 
 export default function ChirpScreen() {
+  const day = useGame(s => s.day);
   const chirps = useGame(s => s.chirps);
   const markRead = useGame(s => s.markChirpsRead);
   const toggleLike = useGame(s => s.toggleChirpLike);
@@ -15,54 +24,88 @@ export default function ChirpScreen() {
   }, [chirps.length]);
 
   return (
-    <ScrollView contentContainerStyle={st.wrap} showsVerticalScrollIndicator={false}>
-      <Card style={{ paddingVertical: 6 }}>
-        {chirps.length === 0 ? (
-          <Text style={st.empty}>Your feed is empty. Ship something and the internet will have opinions.</Text>
-        ) : (
-          chirps.map(c => (
-            <View key={c.id} style={st.chirp}>
-              <Text style={st.line}>
-                <Text style={st.who}>{c.who} </Text>
-                <Text style={st.handle}>{c.handle}</Text>
-              </Text>
-              <Text style={st.body}>{c.text}</Text>
-              <View style={st.meta}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${c.liked ? 'Unlike' : 'Like'} post by ${c.who}`}
-                  accessibilityState={{ selected: Boolean(c.liked) }}
-                  hitSlop={8}
-                  onPress={() => toggleLike(c.id)}
-                  style={st.likeButton}
-                >
-                  {c.liked ? <LikeFilledIcon size={14} color={C.pink} /> : <LikeIcon size={14} color={C.dim} />}
-                  <MonoText style={st.metaText}>{c.likes + (c.liked ? 1 : 0)}</MonoText>
-                </Pressable>
-                <MonoText style={st.metaText}>⟳ {Math.floor(c.likes / 4)}</MonoText>
+    <Screen>
+      <ScreenTop
+        day={day}
+        right={chirps.length ? `${chirps.length} POSTS` : undefined}
+        rightLabel={`${chirps.length} posts in your feed`}
+      />
+
+      <View style={st.masthead}>
+        <Text style={st.wordmark}>Chirp</Text>
+        <MonoText style={st.tagline}>THE INTERNET HAS OPINIONS</MonoText>
+      </View>
+
+      {chirps.length === 0 ? (
+        <View style={st.empty}>
+          <ChirpIcon size={34} color={C.dim} />
+          <Text style={st.emptyText}>Your feed is empty. Ship something and the internet will have opinions.</Text>
+        </View>
+      ) : (
+        <View>
+          {chirps.map((c, i) => {
+            const tone = accentFor(c.handle);
+            const likes = c.likes + (c.liked ? 1 : 0);
+            return (
+              <View key={c.id}>
+                {i > 0 && <View style={st.dividerWrap}><Divider /></View>}
+                <View style={st.chirp}>
+                  <Monogram label={initials(c.who)} tone={tone} size={40} />
+                  <View style={st.chirpBody}>
+                    <Text style={st.line} numberOfLines={1}>
+                      <Text style={st.who}>{c.who}</Text>
+                      <Text style={st.handle}>{'  '}{c.handle}</Text>
+                    </Text>
+                    <Text style={st.text}>{c.text}</Text>
+                    <View style={st.meta}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${c.liked ? 'Unlike' : 'Like'} post by ${c.who}, ${likes} likes`}
+                        accessibilityState={{ selected: Boolean(c.liked) }}
+                        hitSlop={{ top: 14, bottom: 14, left: 12, right: 22 }}
+                        onPress={() => toggleLike(c.id)}
+                        style={({ pressed }) => [st.likeButton, pressed && { opacity: 0.6 }]}
+                      >
+                        {c.liked ? <LikeFilledIcon size={14} color={C.pink} /> : <LikeIcon size={14} color={C.dim} />}
+                        <MonoText style={[st.metaText, c.liked && { color: C.pink }]}>{likes}</MonoText>
+                      </Pressable>
+                      <MonoText style={st.metaText} accessibilityLabel={`${Math.floor(c.likes / 4)} reposts`}>
+                        ⟳ {Math.floor(c.likes / 4)}
+                      </MonoText>
+                    </View>
+                  </View>
+                </View>
               </View>
-            </View>
-          ))
-        )}
-      </Card>
-    </ScrollView>
+            );
+          })}
+        </View>
+      )}
+    </Screen>
   );
 }
 
 const st = StyleSheet.create({
-  wrap: { padding: 14, paddingBottom: 110 },
-  empty: { color: C.mut, fontSize: 13, paddingVertical: 14 },
-  chirp: {
-    paddingVertical: 12,
-    paddingHorizontal: 2,
+  masthead: {
+    paddingHorizontal: S.gutter,
+    paddingTop: 10,
+    paddingBottom: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.line,
   },
-  line: { marginBottom: 2 },
-  who: { color: C.ink, fontWeight: '700', fontSize: 14 },
-  handle: { color: C.dim, fontSize: 12 },
-  body: { color: C.ink, fontSize: 14, lineHeight: 20 },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 },
+  wordmark: { color: C.ink, fontSize: 30, fontWeight: '800', letterSpacing: -0.8 },
+  tagline: { color: C.dim, fontSize: 10, letterSpacing: 1.8, marginTop: 4 },
+
+  empty: { paddingHorizontal: S.gutter, paddingTop: 40, alignItems: 'center', gap: 14 },
+  emptyText: { color: C.mut, fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 280 },
+
+  dividerWrap: { paddingHorizontal: S.gutter },
+  chirp: { flexDirection: 'row', gap: 12, paddingHorizontal: S.gutter, paddingVertical: 15 },
+  chirpBody: { flex: 1 },
+  line: { marginBottom: 4 },
+  who: { color: C.ink, fontWeight: '700', fontSize: 14.5 },
+  handle: { color: C.dim, fontSize: 12.5 },
+  text: { color: C.ink, fontSize: 14.5, lineHeight: 21 },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 5 },
   metaText: { color: C.dim, fontSize: 12 },
-  likeButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  likeButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingRight: 6 },
 });

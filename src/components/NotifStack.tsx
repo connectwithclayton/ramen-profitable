@@ -5,7 +5,7 @@ import { C } from '../theme';
 import { DrawnIcon } from './icons';
 
 function NotifCard({ n }: { n: Notif }) {
-  const y = useRef(new Animated.Value(-30)).current;
+  const y = useRef(new Animated.Value(26)).current;
   const op = useRef(new Animated.Value(0)).current;
   const expire = useGame(s => s.expireNotif);
 
@@ -44,7 +44,9 @@ export default function NotifStack() {
 }
 
 const st = StyleSheet.create({
-  wrap: { position: 'absolute', top: 54, left: 10, right: 10, zIndex: 60, gap: 6 },
+  // Anchored above the dock, not over the hero: with one hero per screen the top
+  // of every screen is now the most valuable real estate in the app.
+  wrap: { position: 'absolute', bottom: 88, left: 12, right: 12, zIndex: 60, gap: 6 },
   notif: {
     flexDirection: 'row',
     alignItems: 'center',
