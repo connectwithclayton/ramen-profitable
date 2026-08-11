@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 7.3.0"
+    "version": ">= 7.3.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -25,6 +26,7 @@
       }
     },
     "production": {
+      "autoIncrement": true,
       "environment": "production",
       "env": {
         "REVENUECAT_BUILD_MODE": "release"
