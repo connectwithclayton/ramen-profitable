@@ -23,8 +23,9 @@ All four game screens are built from the primitives in `src/components/ui.tsx`
 (`Screen` / `ScreenTop` / `Hero` / `Section` / `SectionHeader` / `Unit` / `Rail`), with spacing
 from `S` in `src/theme.ts`. The rules those encode: one hero per screen, full-bleed and
 borderless; section headers sit on the midnight ground; a border means "this is one genuine
-unit". There is no global chrome band — each screen's `ScreenTop` carries the day plus that
-screen's single piece of telemetry. Mono is machine telemetry, sans is human-authored text.
+unit". There is no global chrome band — each screen's `ScreenTop` carries the day plus, when
+available, that screen's single piece of telemetry. Mono is machine telemetry, sans is
+human-authored text.
 Add to these primitives rather than hand-rolling per-screen boxes.
 
 ## Running the app on the simulator
