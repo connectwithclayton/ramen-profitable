@@ -25,9 +25,9 @@ export default function ChirpScreen() {
 
   return (
     <Screen>
+      {/* ScreenTop carries telemetry, not an absence, so omit this slot at zero. */}
       <ScreenTop
         day={day}
-        {/* ScreenTop carries telemetry, not an absence, so omit this slot at zero. */}
         right={chirps.length ? `${chirps.length} POSTS` : undefined}
         rightLabel={`${chirps.length} posts in your feed`}
       />

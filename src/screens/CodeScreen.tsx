@@ -129,9 +129,9 @@ export default function CodeScreen() {
 
   return (
     <Screen>
+      {/* ScreenTop carries telemetry, not an absence, so omit this slot at zero. */}
       <ScreenTop
         day={s.day}
-        {/* ScreenTop carries telemetry, not an absence, so omit this slot at zero. */}
         right={s.autoCode > 0 ? `AUTO ${s.autoCode} LOC/S` : undefined}
         rightLabel={`Automation writes ${s.autoCode} lines per second`}
         rightColor={C.mint}

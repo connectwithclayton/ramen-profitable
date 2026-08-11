@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, SafeAreaView, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import Svg, { Defs, LinearGradient, Rect as SvgRect, Stop } from 'react-native-svg';
 import { useGame } from './src/state/gameStore';
 import { useGameLoop } from './src/systems/useGameLoop';
 import { initPurchases } from './src/monetization/purchases';
@@ -64,6 +65,18 @@ export default function App() {
         {tab === 'chirp' && <ChirpScreen />}
       </View>
 
+      <View pointerEvents="none" style={st.dockFade}>
+        <Svg width="100%" height="100%">
+          <Defs>
+            <LinearGradient id="dockFade" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={C.midnight} stopOpacity={0} />
+              <Stop offset="1" stopColor={C.midnight} stopOpacity={1} />
+            </LinearGradient>
+          </Defs>
+          <SvgRect x="0" y="0" width="100%" height="100%" fill="url(#dockFade)" />
+        </Svg>
+      </View>
+
       <View style={st.dock} accessibilityRole="tablist">
         {TABS.map(t => {
           const active = tab === t.key;
@@ -96,6 +109,13 @@ const st = StyleSheet.create({
     flex: 1,
     backgroundColor: C.midnight,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0,
+  },
+  dockFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 76,
+    height: 96,
   },
   dock: {
     position: 'absolute',
