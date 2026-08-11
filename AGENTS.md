@@ -17,6 +17,26 @@ are working from** (`grep -c '<svg' 'design/<doc>.dc.html'`) before deciding how
   evidence that has no exported vector source. Screenshot at or above the target resolution and
   then downscale — never upscale or transcribe the geometry into a standalone page.
 
+## Screen layout system
+
+The four game screens share the primitives in `src/components/ui.tsx`
+(`Screen` / `ScreenTop` / `Hero` / `Section` / `SectionHeader` / `Unit` / `Rail`), with spacing
+from `S` in `src/theme.ts`; each screen uses the subset its content needs. The rules those
+primitives encode: one hero per screen, full-bleed and borderless; section headers sit on the
+midnight ground; a border means "this is one genuine unit". Chirp's feed is its hero and has no
+`Hero` container. There is no global chrome band — each screen's `ScreenTop` carries the day
+plus, when available, that screen's single piece of telemetry. Mono is machine telemetry, sans
+is human-authored text.
+Add to these primitives rather than hand-rolling per-screen boxes.
+
+## Running the app on the simulator
+
+`npx expo run:ios --device <udid> --port <free port>` — a dev-client `.app` already installed on
+a simulator may be a *release* build with the JS bundled in, so deep-linking it at a Metro server
+silently does nothing. To exercise rich game states without grinding, overwrite the persisted
+zustand blob (key `ramen-profitable-v1`) in the app container's
+`Library/Application Support/<bundle id>/RCTAsyncLocalStorage_V1/manifest.json`, then relaunch.
+
 ## Emoji boundary
 
 UI chrome uses the drawn icons in `src/components/icons.tsx`. Chirp post text remains user-style

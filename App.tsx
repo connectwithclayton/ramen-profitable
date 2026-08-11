@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, SafeAreaView, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import Svg, { Defs, LinearGradient, Rect as SvgRect, Stop } from 'react-native-svg';
 import { useGame } from './src/state/gameStore';
 import { useGameLoop } from './src/systems/useGameLoop';
 import { initPurchases } from './src/monetization/purchases';
@@ -10,9 +11,8 @@ import HomeScreen from './src/screens/HomeScreen';
 import CodeScreen from './src/screens/CodeScreen';
 import StoreScreen from './src/screens/StoreScreen';
 import ChirpScreen from './src/screens/ChirpScreen';
-import { MonoText } from './src/components/ui';
 import { C, R } from './src/theme';
-import { DrawnIcon, RamenProfitableIcon } from './src/components/icons';
+import { DrawnIcon } from './src/components/icons';
 import type { IconName } from './src/components/icons';
 
 type Tab = 'home' | 'code' | 'store' | 'chirp';
@@ -25,7 +25,6 @@ const TABS: { key: Tab; icon: IconName; label: string }[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('home');
-  const day = useGame(s => s.day);
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
@@ -58,14 +57,6 @@ export default function App() {
   return (
     <SafeAreaView style={st.root}>
       <StatusBar style="light" />
-      <View style={st.statusbar}>
-        <MonoText style={{ fontSize: 12, fontWeight: '600' }}>Day {day}</MonoText>
-        <View style={st.brand}>
-          <RamenProfitableIcon size={13} />
-          <MonoText style={{ fontSize: 12, color: C.mut }}>RAMEN PROFITABLE</MonoText>
-        </View>
-        <MonoText style={{ fontSize: 12, color: C.mut }}>v0.1</MonoText>
-      </View>
 
       <View style={{ flex: 1 }}>
         {tab === 'home' && <HomeScreen />}
@@ -74,14 +65,39 @@ export default function App() {
         {tab === 'chirp' && <ChirpScreen />}
       </View>
 
-      <View style={st.dock}>
-        {TABS.map(t => (
-          <Pressable key={t.key} onPress={() => setTab(t.key)} style={st.dockBtn}>
-            <DrawnIcon name={t.icon} size={20} active={tab === t.key} color={C.dim} />
-            <Text style={[st.dockLabel, tab === t.key && { color: C.gold }]}>{t.label}</Text>
-            {t.key === 'chirp' && unread && <View style={st.badge} />}
-          </Pressable>
-        ))}
+      <View pointerEvents="none" style={st.dockFade}>
+        <Svg width="100%" height="100%">
+          <Defs>
+            <LinearGradient id="dockFade" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={C.midnight} stopOpacity={0} />
+              {/* Opaque from the dock's top edge down, so nothing ghosts through the dock fill. */}
+              <Stop offset="0.57" stopColor={C.midnight} stopOpacity={1} />
+              <Stop offset="1" stopColor={C.midnight} stopOpacity={1} />
+            </LinearGradient>
+          </Defs>
+          <SvgRect x="0" y="0" width="100%" height="100%" fill="url(#dockFade)" />
+        </Svg>
+      </View>
+
+      <View style={st.dock} accessibilityRole="tablist">
+        {TABS.map(t => {
+          const active = tab === t.key;
+          const flagged = t.key === 'chirp' && unread;
+          return (
+            <Pressable
+              key={t.key}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={flagged ? `${t.label}, new posts` : t.label}
+              onPress={() => setTab(t.key)}
+              style={({ pressed }) => [st.dockBtn, pressed && { opacity: 0.6 }]}
+            >
+              <DrawnIcon name={t.icon} size={20} active={active} color={C.dim} />
+              <Text style={[st.dockLabel, active && { color: C.gold }]}>{t.label}</Text>
+              {flagged && <View style={st.badge} />}
+            </Pressable>
+          );
+        })}
       </View>
 
       <NotifStack />
@@ -96,15 +112,15 @@ const st = StyleSheet.create({
     backgroundColor: C.midnight,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0,
   },
-  statusbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 4,
+  // Runs to the very bottom, not just to the dock's top edge: content scrolling
+  // past needs to fade out *and* stop showing through the dock's translucent fill.
+  dockFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 172,
   },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dock: {
     position: 'absolute',
     left: 12,

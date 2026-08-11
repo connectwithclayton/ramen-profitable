@@ -12,7 +12,10 @@ export const C = {
   btnText: '#14100A',
 };
 
-export const R = { card: 18, btn: 14, sheet: 22, dock: 22 };
+export const R = { card: 18, btn: 14, sheet: 22, dock: 22, unit: 16, tile: 11, pill: 999 };
+
+/** Spacing scale. One gutter, one gap, one section rhythm — used by every screen. */
+export const S = { gutter: 20, gap: 10, row: 14, section: 26 };
 
 export const F = {
   mono: 'Menlo', // iOS; Android falls back via monospace below
