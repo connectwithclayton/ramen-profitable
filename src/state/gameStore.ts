@@ -158,7 +158,7 @@ export const useGame = create<GameState & Actions>()(
 
       tapCode: () => {
         const s = get();
-        if (!s.project) return false;
+        if (!s.project || s.project.loc >= s.project.need) return false;
         if (s.energy < 1) {
           s.pushNotif('Out of energy. Coffee exists for a reason.', 'energy');
           return false;
@@ -239,7 +239,7 @@ export const useGame = create<GameState & Actions>()(
         const next: Partial<GameState> = {
           energy: Math.min(s.energyMax, s.energy + s.energyRegen),
         };
-        if (s.project && s.autoCode > 0) {
+        if (s.project && s.project.loc < s.project.need && s.autoCode > 0) {
           next.project = { ...s.project, loc: s.project.loc + s.autoCode / 2 };
         }
         set(next);
