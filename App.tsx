@@ -70,6 +70,8 @@ export default function App() {
           <Defs>
             <LinearGradient id="dockFade" x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={C.midnight} stopOpacity={0} />
+              {/* Opaque from the dock's top edge down, so nothing ghosts through the dock fill. */}
+              <Stop offset="0.57" stopColor={C.midnight} stopOpacity={1} />
               <Stop offset="1" stopColor={C.midnight} stopOpacity={1} />
             </LinearGradient>
           </Defs>
@@ -110,12 +112,14 @@ const st = StyleSheet.create({
     backgroundColor: C.midnight,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0,
   },
+  // Runs to the very bottom, not just to the dock's top edge: content scrolling
+  // past needs to fade out *and* stop showing through the dock's translucent fill.
   dockFade: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 76,
-    height: 96,
+    bottom: 0,
+    height: 172,
   },
   dock: {
     position: 'absolute',
