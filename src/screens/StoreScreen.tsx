@@ -60,8 +60,8 @@ export default function StoreScreen() {
     <Screen>
       <ScreenTop
         day={s.day}
-        right={`${owned} / ${SHOP.length} OWNED`}
-        rightLabel={`${owned} of ${SHOP.length} upgrades owned`}
+        right={owned > 0 ? `${owned} / ${SHOP.length} OWNED` : undefined}
+        rightLabel={owned > 0 ? `${owned} of ${SHOP.length} upgrades owned` : undefined}
       />
 
       <Hero>
@@ -83,6 +83,7 @@ export default function StoreScreen() {
                 const isOwned = Boolean(s.upgrades[item.id]);
                 const short = Math.max(0, item.cost - s.cash);
                 const affordable = short === 0;
+                const shortDisplay = Math.ceil(short);
                 return (
                   <View key={item.id}>
                     {i > 0 && <Divider />}
@@ -92,7 +93,7 @@ export default function StoreScreen() {
                       accessibilityLabel={
                         isOwned
                           ? `${item.name}. ${item.desc}. Owned.`
-                          : `${item.name}. ${item.desc}. ${fmt(item.cost)}. ${fmt(short)} short.`
+                          : `${item.name}. ${item.desc}. ${fmt(item.cost)}. ${fmt(shortDisplay)} short.`
                       }
                     >
                       <View style={{ flex: 1 }}>
@@ -112,7 +113,7 @@ export default function StoreScreen() {
                       ) : (
                         <View style={st.lockedPrice}>
                           <MonoText style={st.lockedCost}>{fmt(item.cost)}</MonoText>
-                          <MonoText style={st.lockedShort}>{fmt(short)} SHORT</MonoText>
+                          <MonoText style={st.lockedShort}>{fmt(shortDisplay)} SHORT</MonoText>
                         </View>
                       )}
                     </View>
