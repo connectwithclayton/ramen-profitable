@@ -22,6 +22,7 @@
       "distribution": "internal",
       "environment": "preview",
       "env": {
+        "EAS_BUILD_PROFILE": "preview",
         "REVENUECAT_BUILD_MODE": "release"
       }
     },
@@ -29,6 +30,7 @@
       "autoIncrement": true,
       "environment": "production",
       "env": {
+        "EAS_BUILD_PROFILE": "production",
         "REVENUECAT_BUILD_MODE": "release"
       }
     }
