@@ -101,7 +101,7 @@ export default function App() {
       </View>
 
       <NotifStack />
-      <OverlayHost />
+      <OverlayHost onReturnHome={() => setTab('home')} />
     </SafeAreaView>
   );
 }
