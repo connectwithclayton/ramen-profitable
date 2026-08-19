@@ -1,6 +1,6 @@
 # Ramen Profitable App Store text metadata draft
 
-> **DRAFT — NOT SUBMITTED.** This copy is grounded in freshly fetched `origin/main` at `b7d39848e7d830bcb8d2ab31ff562293fc60151c`. It has not been entered in App Store Connect and does not imply that the app, production purchase configuration, privacy policy, or listing is approved or live.
+> **DRAFT — UNPUBLISHED AND NOT SUBMITTED.** This copy is grounded in freshly fetched `origin/main` at `b7d39848e7d830bcb8d2ab31ff562293fc60151c`. It has not been entered in App Store Connect and does not imply that the app, production purchase configuration, privacy policy, or listing is approved or live. The privacy draft's effective date remains a captain-approved placeholder to fill at publication.
 >
 > The privacy policy remains behind captain decision `approve-ramen-profitable-privacy-policy`. Approval means the captain has read and approved the exact public-policy copy in [`PRIVACY_POLICY_DRAFT.md`](./PRIVACY_POLICY_DRAFT.md), including its operator/contact/date and RevenueCat disclosures, before any publication or App Store privacy-policy use. Do not close that decision without the captain's answer.
 

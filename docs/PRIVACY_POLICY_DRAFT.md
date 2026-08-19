@@ -4,6 +4,8 @@
 >
 > Durable decision key: `approve-ramen-profitable-privacy-policy`
 >
+> Support-contact decision key: `approve-ramen-profitable-support-contact` (the exact public support-contact string is intentionally still a placeholder).
+>
 > Approval boundary: approval covers the exact public-policy copy in this file, including the named operator, contact route, publication date, RevenueCat disclosures, and the assumption that the released build and captain-owned RevenueCat configuration match the audited implementation. Any material change to the app's data flows, SDK configuration, third-party integrations, contact route, or policy text requires a fresh review. Do not close the decision without the captain's answer.
 
 ## Public-policy copy
@@ -38,7 +40,7 @@ RevenueCat processes purchase information as a service provider so the app can v
 
 #### Permissions and device features
 
-The app uses device haptics for tap and result feedback and uses an internet connection for purchase-related RevenueCat and app-store requests. The current application code does not request or use access to your camera, microphone, contacts, precise or coarse location, photos, media library, notifications, or tracking permission.
+The app uses device haptics for tap and result feedback and uses an internet connection for purchase-related RevenueCat and app-store requests. The current application code does not request or use access to your camera, microphone, contacts, precise or coarse location, photos, media library, push notifications, notification permission, or tracking permission.
 
 #### Analytics, advertising, and fictional content
 
@@ -50,7 +52,7 @@ Ramen Profitable does not sell personal information or use purchase information 
 
 Local game data remains on the device until the app or its app data is removed. Purchase records may be retained by Apple or Google and by RevenueCat according to their own legal obligations and service terms so that purchases can be validated and restored.
 
-To ask a privacy question or make a request concerning information processed for Ramen Profitable, contact Clayton Johnson through the verified developer-support contact on Ramen Profitable's App Store product page. Because the app has no account and does not connect purchase records to a name or email address, it may not always be possible to match an anonymous RevenueCat record to a particular person without additional purchase information from the app store.
+To ask a privacy question or make a request concerning information processed for Ramen Profitable, contact Clayton Johnson through **[CAPTAIN TO PROVIDE THE VERIFIED DEVELOPER-SUPPORT CONTACT STRING BEFORE PUBLICATION]** on Ramen Profitable's App Store product page. Because the app has no account and does not connect purchase records to a name or email address, it may not always be possible to match an anonymous RevenueCat record to a particular person without additional purchase information from the app store.
 
 #### Changes to this policy
 
