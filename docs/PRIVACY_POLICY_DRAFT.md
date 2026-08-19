@@ -103,6 +103,6 @@ The resolved iOS configuration has no privacy-sensitive usage-description keys. 
 
 Based on the audited code and RevenueCat's current guidance, the likely minimum App Store privacy disclosure is **Purchase History**, used for **App Functionality** and **Analytics**, not linked to identity and not used for tracking. This is an implementation-derived draft only. The captain must reconcile it with the actual release artifact and captain-owned RevenueCat project settings, including any dashboard integrations, before answering App Store Connect's privacy questionnaire.
 
-### Outstanding Support URL requirement — not built
+### App Store support URL
 
-App Store Connect still requires a Support URL that leads to a web page with actual contact information. The captain has supplied `ramenprofitablegame@gmail.com` as the direct support contact, but no Support URL web page was built or selected in this task. That separate requirement remains outstanding and must be completed before App Store submission; this draft does not supply or imply a URL.
+The outstanding Support URL requirement is owned by [`APP_STORE_METADATA_DRAFT.md`](./APP_STORE_METADATA_DRAFT.md); this privacy draft does not supply or imply a URL.
