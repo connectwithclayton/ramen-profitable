@@ -1,12 +1,12 @@
 # Ramen Profitable privacy policy draft
 
-> **DRAFT — NOT APPROVED OR PUBLISHED.** This is a code-grounded working draft under Clayton Johnson's name, not legal advice or a claim of legal sufficiency. Clayton Johnson, as captain, must read and explicitly approve the exact policy copy below before anyone publishes it, supplies it as an App Store privacy-policy URL, or otherwise represents it as Ramen Profitable's policy.
+> **UNPUBLISHED DRAFT — NOT A PUBLISHED PRIVACY POLICY.** This is a code-grounded working draft under Clayton Johnson's name, not legal advice or a claim of legal sufficiency. The effective-date placeholder must remain until the day this policy is published. Clayton Johnson, as captain, must read and explicitly approve the final dated copy before anyone publishes it, supplies it as an App Store privacy-policy URL, or otherwise represents it as Ramen Profitable's policy.
 >
-> Durable decision key: `approve-ramen-profitable-privacy-policy`
+> **Operator:** Clayton Johnson, acting through his own Apple developer account.
 >
-> Support-contact decision key: `approve-ramen-profitable-support-contact` (the exact public support-contact string is intentionally still a placeholder).
+> **Captain-supplied support contact:** `ramenprofitablegame@gmail.com`
 >
-> Approval boundary: approval covers the exact public-policy copy in this file, including the named operator, contact route, publication date, RevenueCat disclosures, and the assumption that the released build and captain-owned RevenueCat configuration match the audited implementation. Any material change to the app's data flows, SDK configuration, third-party integrations, contact route, or policy text requires a fresh review. Do not close the decision without the captain's answer.
+> **Publication boundary:** the captain's drafting decisions supplied the operator name and support email but did not authorize publication. Publication approval must cover the exact final public-policy copy, the publication-day effective date, RevenueCat disclosures, and the assumption that the released build and captain-owned RevenueCat configuration match the audited implementation. Any material change to the app's data flows, SDK configuration, third-party integrations, contact route, or policy text requires a fresh review.
 
 ## Public-policy copy
 
@@ -52,7 +52,7 @@ Ramen Profitable does not sell personal information or use purchase information 
 
 Local game data remains on the device until the app or its app data is removed. Purchase records may be retained by Apple or Google and by RevenueCat according to their own legal obligations and service terms so that purchases can be validated and restored.
 
-To ask a privacy question or make a request concerning information processed for Ramen Profitable, contact Clayton Johnson through **[CAPTAIN TO PROVIDE THE VERIFIED DEVELOPER-SUPPORT CONTACT STRING BEFORE PUBLICATION]** on Ramen Profitable's App Store product page. Because the app has no account and does not connect purchase records to a name or email address, it may not always be possible to match an anonymous RevenueCat record to a particular person without additional purchase information from the app store.
+To ask a privacy question or make a request concerning information processed for Ramen Profitable, email Clayton Johnson at ramenprofitablegame@gmail.com. Because the app has no account and does not connect purchase records to a name or email address, it may not always be possible to match an anonymous RevenueCat record to a particular person without additional purchase information from the app store.
 
 #### Changes to this policy
 
@@ -102,3 +102,7 @@ The resolved iOS configuration has no privacy-sensitive usage-description keys. 
 ### App Store privacy-label implication — not submitted
 
 Based on the audited code and RevenueCat's current guidance, the likely minimum App Store privacy disclosure is **Purchase History**, used for **App Functionality** and **Analytics**, not linked to identity and not used for tracking. This is an implementation-derived draft only. The captain must reconcile it with the actual release artifact and captain-owned RevenueCat project settings, including any dashboard integrations, before answering App Store Connect's privacy questionnaire.
+
+### Outstanding Support URL requirement — not built
+
+App Store Connect still requires a Support URL that leads to a web page with actual contact information. The captain has supplied `ramenprofitablegame@gmail.com` as the direct support contact, but no Support URL web page was built or selected in this task. That separate requirement remains outstanding and must be completed before App Store submission; this draft does not supply or imply a URL.

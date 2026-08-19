@@ -1,8 +1,8 @@
 # Ramen Profitable App Store text metadata draft
 
-> **DRAFT — UNPUBLISHED AND NOT SUBMITTED.** This copy is grounded in freshly fetched `origin/main` at `b7d39848e7d830bcb8d2ab31ff562293fc60151c`. It has not been entered in App Store Connect and does not imply that the app, production purchase configuration, privacy policy, or listing is approved or live. The privacy draft's effective date remains a captain-approved placeholder to fill at publication.
+> **UNPUBLISHED DRAFT — NOT SUBMITTED TO APP STORE CONNECT.** This copy is grounded in freshly fetched `origin/main` at `b7d39848e7d830bcb8d2ab31ff562293fc60151c`. It has not been entered in App Store Connect and does not imply that the app, production purchase configuration, privacy policy, or listing is approved or live. The privacy draft's effective-date placeholder remains exactly as written and must be filled on publication day.
 >
-> The privacy policy remains behind captain decision `approve-ramen-profitable-privacy-policy`. Approval means the captain has read and approved the exact public-policy copy in [`PRIVACY_POLICY_DRAFT.md`](./PRIVACY_POLICY_DRAFT.md), including its operator/contact/date and RevenueCat disclosures, before any publication or App Store privacy-policy use. Do not close that decision without the captain's answer.
+> Clayton Johnson is the responsible operator through his own Apple developer account. The captain supplied `ramenprofitablegame@gmail.com` as the direct support contact. These drafting decisions do not authorize publication: the captain must still read and approve the final dated copy in [`PRIVACY_POLICY_DRAFT.md`](./PRIVACY_POLICY_DRAFT.md) before it is published or used as an App Store privacy policy.
 
 ## Subtitle
 
@@ -79,6 +79,10 @@ Do not paste that sentence into another metadata field. Draft fresh What's New c
 - No price is hardcoded because the app displays RevenueCat's remotely configured current offering.
 - Screenshots are sponsor-perk scope and were not created, modified, audited for submission, or submitted in this task.
 - App Store Connect, RevenueCat dashboards, production credentials, and captain-owned purchase configuration were not accessed. The captain must confirm that the actual released product and paywall remain a one-time Go Indie unlock before using this copy.
+
+## Outstanding Support URL requirement — not built
+
+App Store Connect requires a Support URL that leads to a web page with actual contact information. The direct support email for the draft is `ramenprofitablegame@gmail.com`, but no Support URL web page was built or selected in this task. The URL remains outstanding and must be completed before App Store submission; it is not one of the text fields drafted above.
 
 ## Store-reference checks
 
