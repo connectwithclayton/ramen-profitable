@@ -8,6 +8,7 @@ import { C, R } from '../theme';
 import { presentGoIndiePaywall } from '../monetization/purchases';
 import PaywallDesigner from './PaywallDesigner';
 import { CelebrateIcon, RamenProfitableIcon } from './icons';
+import { handleApprovedVerdictAction } from './approvedVerdictActions';
 
 function Spinner() {
   const spin = useRef(new Animated.Value(0)).current;
@@ -51,7 +52,7 @@ function ReviewSheet({ appName }: { appName: string }) {
   );
 }
 
-export default function OverlayHost() {
+export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void }) {
   const overlay = useGame(s => s.overlay);
   const dismiss = useGame(s => s.dismissOverlay);
   const openGoIndiePaywall = useGame(s => s.openGoIndiePaywall);
@@ -90,7 +91,29 @@ export default function OverlayHost() {
             <MonoText style={{ color: C.gold, fontSize: 30, fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
               +{fmt(overlay.gain ?? 0)}/mo
             </MonoText>
-            <Btn label="Go Indie" onPress={openGoIndiePaywall} style={{ marginTop: 16 }} />
+            <Btn
+              label="Continue to Home"
+              onPress={() =>
+                handleApprovedVerdictAction('continue', {
+                  dismissOverlay: dismiss,
+                  returnHome: onReturnHome,
+                  openGoIndiePaywall,
+                })
+              }
+              style={{ marginTop: 16 }}
+            />
+            <Btn
+              label="Go Indie"
+              ghost
+              onPress={() =>
+                handleApprovedVerdictAction('go-indie', {
+                  dismissOverlay: dismiss,
+                  returnHome: onReturnHome,
+                  openGoIndiePaywall,
+                })
+              }
+              style={{ marginTop: 8 }}
+            />
           </>
         )}
 
