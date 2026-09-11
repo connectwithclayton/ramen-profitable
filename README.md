@@ -130,4 +130,4 @@ variable.
 
 ## Catvertising advertising
 
-The Store contains a real AdMob banner inside its fictional phone; Go Indie removes it. See [AdMob setup, release guards, and privacy handoff](docs/ADMOB_SETUP.md). Ads require a rebuilt native development client and resolved RevenueCat ownership. Preview/production builds intentionally fail until real iOS AdMob IDs are configured.
+The Store contains a real AdMob banner inside its fictional phone; Go Indie removes it. See [AdMob setup, release guards, and privacy handoff](docs/ADMOB_SETUP.md). Ads require a rebuilt native development client and resolved RevenueCat ownership. Preview/production builds intentionally fail until real iOS AdMob IDs and a captain-approved age policy are implemented.

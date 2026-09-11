@@ -23,8 +23,8 @@ let storageRead = async () => null;
 let consentAllowed = true;
 let privacyRequired = false;
 let initializationCalls = 0;
-let consentOptions;
-let requestConfiguration;
+let consentArguments;
+let admobConfig = require('../config/admob').TEST_IDS;
 const requests = [];
 const mockNative = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
@@ -34,18 +34,14 @@ const mockNative = {
 };
 const ads = {
   default: () => ({
-    setRequestConfiguration: async options => { requestConfiguration = options; },
-    initialize: async () => {
-      assert.deepEqual(requestConfiguration, { ageRestrictedTreatment: 'child' });
-      initializationCalls++;
-    },
+    setRequestConfiguration: async () => { throw new Error('unexpected request configuration'); },
+    initialize: async () => { initializationCalls++; },
   }),
-  AgeRestrictedTreatment: { CHILD: 'child' },
   BannerAdSize: { BANNER: 'BANNER' },
   AdsConsentPrivacyOptionsRequirementStatus: { REQUIRED: 'REQUIRED' },
   AdsConsent: {
-    gatherConsent: options => {
-      consentOptions = options;
+    gatherConsent: (...args) => {
+      consentArguments = args;
       return consent.promise;
     },
     getConsentInfo: async () => ({ canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' }),
@@ -60,7 +56,7 @@ const originalLoad = Module._load;
 Module._load = function (name, parent, main) {
   if (name === 'react-native') return mockNative;
   if (name === 'expo-constants') return { __esModule: true, default: { expoConfig: { extra: {
-    revenueCat: { testStoreApiKey: 'test_fixture' }, admob: require('../config/admob').TEST_IDS,
+    revenueCat: { testStoreApiKey: 'test_fixture' }, admob: admobConfig,
   } } } };
   if (name === '@react-native-async-storage/async-storage') return { getItem: () => storageRead(), setItem: async () => {} };
   if (name === 'react-native-svg') return new Proxy({ __esModule: true, default: 'Svg' }, { get: (obj, key) => obj[key] ?? String(key) });
@@ -106,8 +102,7 @@ test('Store billboard waits for ownership and consent, unmounts on purchase/rest
   await flush();
   assert.equal(banners().length, 1);
   assert.equal(requests[0].unitId, require('../config/admob').TEST_IDS.ios.bannerId);
-  assert.deepEqual(consentOptions, { tagForUnderAgeOfConsent: true });
-  assert.deepEqual(requestConfiguration, { ageRestrictedTreatment: 'child' });
+  assert.deepEqual(consentArguments, []);
   assert.equal(requests[0].requestOptions, undefined);
 
   let restore;
@@ -186,4 +181,22 @@ test('a paywall success without a confirmed go_indie entitlement fails closed', 
   assert.equal(await purchase, null);
   assert.equal(useGame.getState().goIndieResolved, false);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+});
+
+test('release runtime blocks ads while the captain age policy is unresolved', () => {
+  const modulePath = require.resolve('../src/monetization/ads.ts');
+  admobConfig = {
+    ios: {
+      appId: 'ca-app-pub-1111111111111111~1111111111',
+      bannerId: 'ca-app-pub-1111111111111111/1111111111',
+    },
+  };
+  global.__DEV__ = false;
+  delete require.cache[modulePath];
+  try {
+    assert.throws(() => require(modulePath), /captain age policy is unresolved/);
+  } finally {
+    global.__DEV__ = true;
+    delete require.cache[modulePath];
+  }
 });

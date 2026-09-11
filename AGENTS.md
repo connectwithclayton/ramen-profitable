@@ -41,7 +41,8 @@ zustand blob (key `ramen-profitable-v1`) in the app container's
 
 AdMob identifiers, native release guards, consent configuration, and the required privacy
 answers are documented in `docs/ADMOB_SETUP.md`; `config/admob.js` is the sole ID source.
-Use a Debug development client for sample ads. Release builds deliberately reject test IDs.
+Use a Debug development client for sample ads. Release remains blocked until its identifiers and
+captain-approved age policy satisfy the setup checklist.
 
 ## Emoji boundary
 

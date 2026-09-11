@@ -11,7 +11,10 @@ test('release rejects absent, malformed, sample app, and sample banner IDs', () 
   for (const ids of [{}, TEST_IDS.ios, { ...production, appId: TEST_IDS.ios.appId }, { ...production, bannerId: TEST_IDS.ios.bannerId }, { ...production, appId: 'invalid' }]) {
     assert.throws(() => resolveAdMob(false, { ADMOB_IOS_APP_ID: ids.appId, ADMOB_IOS_BANNER_ID: ids.bannerId }), /AdMob RELEASE BLOCKED/);
   }
-  assert.deepEqual(resolveAdMob(false, { ADMOB_IOS_APP_ID: production.appId, ADMOB_IOS_BANNER_ID: production.bannerId }).ios, production);
+  assert.throws(
+    () => resolveAdMob(false, { ADMOB_IOS_APP_ID: production.appId, ADMOB_IOS_BANNER_ID: production.bannerId }),
+    /captain age policy is unresolved/,
+  );
 });
 test('native build executable rejects test inventory regardless of environment', () => {
   const result = spawnSync(process.execPath, ['scripts/check-admob-release.js', TEST_IDS.ios.appId, TEST_IDS.ios.bannerId], { encoding: 'utf8', env: { ...process.env, NODE_ENV: 'development', EAS_BUILD_PROFILE: 'development' } });

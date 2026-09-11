@@ -4,11 +4,14 @@ The Store's **Your phone / Catvertising** unit contains a real native AdMob 320�
 
 ## Captain setup
 
-1. In AdMob, add an **iOS app** for `com.clayton.ramenprofitable`. Create one **Banner** ad unit for the phone billboard. Supply the app ID (`ca-app-pub-…~…`) and banner unit ID (`ca-app-pub-…/…`). These are public identifiers, not login credentials.
-2. Set `ADMOB_IOS_APP_ID` and `ADMOB_IOS_BANNER_ID` in the EAS **preview and production environments** (and locally when making a release). [`config/admob.js`](../config/admob.js) is the single configuration point; development always selects its clearly marked Google sample IDs, even when real IDs exist in the environment. No component edits are needed.
-3. In AdMob Privacy & messaging, configure and publish the required European regulations and applicable US state privacy messages for this app, with the approved public privacy-policy URL. The app marks every consent update for under-age treatment and every ad request for child age treatment. Configure the dashboard consistently, review consent behavior for relevant regions using registered test devices, and record any enabled personalization, mediation, or tracking features for the final privacy review. Do not infer production consent configuration from Google's sample account.
-4. Confirm the production RevenueCat iOS key, current offering, lifetime product and `go_indie` entitlement. Missing/unavailable purchase configuration intentionally means **no ads**, because ownership cannot be checked safely. Verify a real purchase and fresh-install restore with the production catalog in Apple's test environment.
-5. Update App Store Connect privacy answers below and publish the captain-approved policy before submission. Leave the App Store listing copy as-is; it already describes advertising and Go Indie removal.
+1. In AdMob, add an **iOS app** for `com.clayton.ramenprofitable`; choose unpublished if its App Store page is not public yet. Create one **Banner** ad unit for the phone billboard. Supply the app ID (`ca-app-pub-…~…`) and banner unit ID (`ca-app-pub-…/…`). These are public identifiers, not login credentials.
+2. Explicitly approve how the released app handles under-age users before enabling production advertising. The choice must fit the app's actual audience and legal obligations and must be implemented consistently at both the Mobile Ads and UMP boundaries. The app collects no age today, so preview/production config and release JavaScript remain blocked until that policy is chosen and implemented. Debug sample ads do not establish a production audience policy.
+3. Set `ADMOB_IOS_APP_ID` and `ADMOB_IOS_BANNER_ID` in the EAS **preview and production environments** (and locally when making a release). [`config/admob.js`](../config/admob.js) is the single identifier configuration point; development always selects its clearly marked Google sample IDs, even when real IDs exist in the environment. No component edits are needed.
+4. In AdMob Privacy & messaging, configure and publish the required European regulations and applicable US state privacy messages for this app, with the approved public privacy-policy URL. Configure the dashboard consistently with the approved age policy, review consent behavior for relevant regions using registered test devices, and record any enabled personalization, mediation, or tracking features for the final privacy review. Do not infer production consent configuration from Google's sample account.
+5. Confirm the production RevenueCat iOS key, current offering, lifetime product and `go_indie` entitlement. Missing/unavailable purchase configuration intentionally means **no ads**, because ownership cannot be checked safely. Verify a real purchase and fresh-install restore with the production catalog in Apple's test environment.
+6. Establish a developer website that can serve a file at its root, add that site to the App Store listing's **Marketing URL**, and confirm the public App Store page shows **Developer Website**. Publish AdMob's personalized seller record unchanged at `https://<developer-host>/app-ads.txt`; do not invent the publisher ID or copy another app's record. [Google's app-ads.txt setup](https://support.google.com/admob/answer/9363762) explains the required store-to-domain link.
+7. Once the app is publicly available, link its live App Store listing and store ID to the AdMob app. In **App settings → Verify app**, choose **Check for updates** and confirm the app-ads.txt file is found and verified. Then wait for the app-readiness status to reach **Ready**; full serving can remain limited beforehand. Resolve **Needs attention**, and complete AdMob account verification if the app remains **Getting ready**. See [app verification](https://support.google.com/admob/answer/14538460) and [app readiness](https://support.google.com/admob/answer/10564477).
+8. Update App Store Connect privacy answers below and publish the captain-approved policy before submission. Leave the App Store listing's advertising and Go Indie removal copy as-is.
 
 ## Official test identifiers
 
@@ -28,10 +31,10 @@ For local testing, set the existing `REVENUECAT_TEST_STORE_API_KEY`, then run `n
 
 ## Release safeguards — include in the PR description
 
-- Expo config rejects undeclared EAS profiles. It rejects absent, malformed and Google's sample publisher IDs for preview, production, and local `NODE_ENV=production` builds. Development mode cannot override these checks.
+- Expo config rejects undeclared EAS profiles. It rejects absent, malformed and Google's sample publisher IDs for preview, production, and local `NODE_ENV=production` builds, then blocks otherwise-valid production IDs while the captain's age policy remains unresolved. Development mode cannot override these checks.
 - The Expo safety plugin adds a **native Xcode build phase** that validates the IDs captured when native projects were generated, not whatever environment happens to be present at compile time. Thus a Debug prebuild later archived as Release still fails loudly. Regenerate the iOS native project after changing IDs; do not manually edit generated native files.
-- A release JavaScript bundle validates its embedded iOS IDs at module import, even if a purchased user would hide the ad. Stale sample runtime config fails loudly before gameplay.
-- There is no “allow test release” escape hatch. Debug/sample builds are for development only.
+- A release JavaScript bundle validates its embedded iOS IDs and the production-readiness gate at module import, even if a purchased user would hide the ad. It cannot request an ad while the age policy is unresolved.
+- There is no “allow test release” or unresolved-policy escape hatch. Debug/sample builds are for development only.
 
 ## Entitlements and consent
 
@@ -39,32 +42,32 @@ Ownership is unknown until RevenueCat returns CustomerInfo; unknown, offline fai
 
 UMP runs before Mobile Ads initialization. Errors and `canRequestAds=false` fail closed. A purchase arriving during consent/initialization cannot mount a late banner. Changing privacy choices first removes the current banner and checks UMP again afterward. Consent is refreshed on each application launch when a non-purchaser opens the Store. The Store exposes the privacy-options entry when UMP says it is required, including after purchase when UMP still requires the entry.
 
-The consent-information request is tagged for under-age treatment, and every ad request receives Google's child age treatment before SDK initialization. The app collects no age and applies this treatment to everyone. It requests no IDFA or tracking permission and passes no purchase identity or custom targeting. Native background or game overlay states unmount the creative; load failure leaves a fictional empty billboard.
+Debug sample builds call UMP without an app-wide under-age assertion and do not set a Mobile Ads age treatment. That developer-only behavior is not the production policy. Production configuration and release JavaScript fail before Mobile Ads initialization until the captain approves and the implementation applies an appropriate audience policy at both boundaries. The app collects no age, requests no IDFA or tracking permission, and passes no purchase identity or custom targeting. Native background or game overlay states unmount the creative; load failure leaves a fictional empty billboard.
 
 ## App Store Connect privacy answers
 
-**Change the existing RevenueCat-only disclosure before submitting this binary.** Data collection: **Yes** (including third-party SDK collection). For the configuration built here, use these categories/purposes. “Linked” is conservatively Yes for Google user/device-associated data: there is no verified pre-collection de-identification guarantee simply because the game has no login.
+**Change the existing RevenueCat-only disclosure before submitting this binary.** Data collection: **Yes** (including third-party SDK collection). The categories, purposes, and linked answers below are the current conservative handoff. Google-related tracking answers remain pending until the captain-approved age treatment, AdMob dashboard, and signed archive are reviewed together; do not submit a guessed Yes or No.
 
 | Data type | Purposes to declare | Linked to identity | Used for tracking |
 | --- | --- | --- | --- |
-| Coarse Location (inferred from IP; no location permission) | Third-Party Advertising, Analytics | Yes | No |
-| Device ID (app/device-scoped identifiers; no iOS IDFA authorization) | Third-Party Advertising, Analytics | Yes | No |
-| Advertising Data | Third-Party Advertising, Analytics | Yes | No |
-| Product Interaction | Third-Party Advertising, Analytics | Yes | No |
-| Crash Data | App Functionality, Third-Party Advertising, Analytics | No for Google's non-user-related crash logs | No |
-| Performance Data | App Functionality, Third-Party Advertising, Analytics | Yes | No |
+| Coarse Location (inferred from IP; no location permission) | Third-Party Advertising, Analytics | Yes | Pending final review |
+| Device ID (app/device-scoped identifiers; no iOS IDFA authorization) | Third-Party Advertising, Analytics | Yes | Pending final review |
+| Advertising Data | Third-Party Advertising, Analytics | Yes | Pending final review |
+| Product Interaction | Third-Party Advertising, Analytics | Yes | Pending final review |
+| Crash Data | App Functionality, Third-Party Advertising, Analytics | No for Google's non-user-related crash logs | Pending final review |
+| Performance Data | App Functionality, Third-Party Advertising, Analytics | Yes | Pending final review |
 | Purchase History (RevenueCat; retain existing disclosure) | App Functionality, Analytics | No under the existing anonymous RevenueCat configuration | No |
 
 Do not add contact information, precise location, fictional Chirp content, or gameplay progress as remotely collected based on this change. No distinct User ID is passed to Google by the application. Reconcile the final Xcode archive's privacy report with the SDK manifests and actual RevenueCat/AdMob dashboard settings; if the report or enabled features introduce further categories or tracking, resolve the mismatch before submitting.
 
-**ATT is not requested by this implementation.** Google documents child age treatment as preventing IDFA transmission. Reconcile the final AdMob dashboard settings and signed archive before submission; if either introduces tracking, block release until the implementation, ATT handling, and disclosures are reviewed together.
+**ATT is not requested by the current implementation.** That fact alone does not establish a **Tracking: No** answer. Reconcile the approved age handling, final AdMob dashboard, and signed archive before submission; if they introduce tracking, block release until the implementation, ATT handling, and disclosures are reviewed together.
 
 Disclosure sources: [Google SDK data disclosure](https://developers.google.com/admob/ios/privacy/data-disclosure), [Google age treatment](https://developers.google.com/admob/ios/targeting#set_the_age_treatment), [Google UMP](https://developers.google.com/admob/ios/privacy), [Apple App Privacy definitions](https://developer.apple.com/app-store/app-privacy-details/), and [RevenueCat Apple privacy guidance](https://www.revenuecat.com/docs/platform-resources/apple-platform-resources/apple-app-privacy).
 
 ## Validation evidence
 
-`npm test` exercises the actual Store React tree, Zustand state, and public RevenueCat purchase/restore APIs, with native/network doubles. It checks initial unknown ownership, delayed consent, age treatment at both SDK boundaries, purchase/restore while visible, immediate removal, remount, fresh-install restore, no-fill, and consent withdrawal. Config tests execute the configuration consumer and native guard executable, including production-profile overrides and independently swapped sample app/banner IDs. These tests are not proof of real ad fill, App Store purchases, or dashboard setup.
+`npm test` exercises the actual Store React tree, Zustand state, and public RevenueCat purchase/restore APIs, with native/network doubles. It checks initial unknown ownership, delayed consent, the absence of an invented debug age assertion, purchase/restore while visible, immediate removal, remount, fresh-install restore, no-fill, and consent withdrawal. Config tests execute the configuration consumer, release JavaScript guard, and native identifier guard, including the unresolved production-policy failure. These tests are not proof of real ad fill, App Store purchases, or dashboard setup.
 
 The local iOS Debug simulator build succeeded with Google Mobile Ads 13.5.0 and UMP 3.1.0. A native SDK rehearsal reached the banner request but returned `googleMobileAds/network-error: The network connection was lost`; actual creative rendering is **unverified**. With no local RevenueCat test key, this ignored, temporary rehearsal entry explicitly supplied non-purchaser state; it did not validate RevenueCat purchases, and was removed afterward.
 
-Signed release, actual Google fill, region-specific production consent, physical-device purchase and restore, and App Store Connect answers remain separate release evidence. See [the validation record](ADMOB_VALIDATION.md) for exact local checks and PR handoff.
+Signed release, actual Google fill, app-ads.txt verification, AdMob **Ready** status, region-specific production consent, physical-device purchase and restore, and App Store Connect answers remain separate release evidence. See [the validation record](ADMOB_VALIDATION.md) for exact local checks and PR handoff.

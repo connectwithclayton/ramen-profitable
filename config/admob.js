@@ -15,11 +15,16 @@ function assertProductionIds(ids) {
   }
 }
 
+function assertProductionReady(ids) {
+  assertProductionIds(ids);
+  throw new Error('AdMob RELEASE BLOCKED: captain age policy is unresolved.');
+}
+
 function resolveAdMob(development, env = process.env) {
   const production = {
     ios: { appId: env.ADMOB_IOS_APP_ID?.trim(), bannerId: env.ADMOB_IOS_BANNER_ID?.trim() },
   };
-  if (!development) assertProductionIds(production.ios);
+  if (!development) assertProductionReady(production.ios);
   return development ? TEST_IDS : production;
 }
-module.exports = { TEST_IDS, assertProductionIds, resolveAdMob };
+module.exports = { TEST_IDS, assertProductionIds, assertProductionReady, resolveAdMob };

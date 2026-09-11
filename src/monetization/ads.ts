@@ -16,14 +16,12 @@ export function bannerId(): string | null {
   if (Platform.OS !== 'ios') return null;
   const ids = Constants.expoConfig?.extra?.admob?.ios;
   if (!__DEV__) {
-    const { assertProductionIds } = require('../../config/admob');
-    assertProductionIds(ids);
+    const { assertProductionReady } = require('../../config/admob');
+    assertProductionReady(ids);
   }
   return ids?.bannerId ?? null;
 }
 
-// Runs at application import, including when an ad would otherwise be hidden.
-// A release JS bundle carrying stale sample config cannot silently run.
 bannerId();
 
 export function adsModule(): AdsModule | null {
@@ -43,12 +41,9 @@ export async function prepareAds(): Promise<boolean> {
   if (!mod) return false;
   if (!initialization) {
     initialization = (async () => {
-      await mod.default().setRequestConfiguration({
-        ageRestrictedTreatment: mod.AgeRestrictedTreatment.CHILD,
-      });
       // Fail closed on consent errors; do not treat an error as permission.
       if (!consentGathered) {
-        await mod.AdsConsent.gatherConsent({ tagForUnderAgeOfConsent: true });
+        await mod.AdsConsent.gatherConsent();
         consentGathered = true;
       }
       const consent = await mod.AdsConsent.getConsentInfo();
