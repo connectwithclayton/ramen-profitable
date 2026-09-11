@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
-import { Platform, View, Text, StyleSheet } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import {
+  Platform,
+  View,
+  Text,
+  StyleSheet,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 import { useGame } from '../state/gameStore';
 import { SHOP } from '../content/content';
@@ -19,7 +27,7 @@ import {
   money,
 } from '../components/ui';
 import { C } from '../theme';
-import PhoneBillboard from '../components/PhoneBillboard';
+import PhoneBillboard, { type BillboardViewportFrame } from '../components/PhoneBillboard';
 import { restoreGoIndiePurchases } from '../monetization/purchases';
 
 /**
@@ -47,6 +55,10 @@ export default function StoreScreen({ active = true }: { active?: boolean }) {
     openGoIndiePaywall: state.openGoIndiePaywall,
   })));
   const [restoring, setRestoring] = useState(false);
+  const [billboardInViewport, setBillboardInViewport] = useState(false);
+  const billboardInViewportRef = useRef(false);
+  const billboardFrameRef = useRef<BillboardViewportFrame | null>(null);
+  const viewportRef = useRef({ offsetY: 0, height: 0, insetTop: 0, insetBottom: 0 });
   const owned = SHOP.filter(i => s.upgrades[i.id]).length;
   const indie = s.indie;
   const catvertising = Platform.OS === 'ios';
@@ -57,6 +69,44 @@ export default function StoreScreen({ active = true }: { active?: boolean }) {
     : catvertising
       ? 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed.'
       : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.';
+
+  const updateBillboardVisibility = useCallback(() => {
+    const frame = billboardFrameRef.current;
+    const viewport = viewportRef.current;
+    const top = viewport.offsetY + viewport.insetTop;
+    const bottom = viewport.offsetY + viewport.height - viewport.insetBottom;
+    const visible = Boolean(
+      frame &&
+      frame.height > 0 &&
+      viewport.height > 0 &&
+      frame.y + frame.height > top &&
+      frame.y < bottom
+    );
+    if (billboardInViewportRef.current === visible) return;
+    billboardInViewportRef.current = visible;
+    setBillboardInViewport(visible);
+  }, []);
+
+  const onScreenLayout = useCallback((event: LayoutChangeEvent) => {
+    viewportRef.current.height = event.nativeEvent.layout.height;
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
+
+  const onScreenScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentInset, contentOffset, layoutMeasurement } = event.nativeEvent;
+    viewportRef.current = {
+      offsetY: contentOffset.y,
+      height: layoutMeasurement.height,
+      insetTop: contentInset?.top ?? 0,
+      insetBottom: contentInset?.bottom ?? 0,
+    };
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
+
+  const onBillboardFrameChange = useCallback((frame: BillboardViewportFrame) => {
+    billboardFrameRef.current = frame;
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
 
   const restore = async () => {
     if (restoring) return;
@@ -73,7 +123,10 @@ export default function StoreScreen({ active = true }: { active?: boolean }) {
   };
 
   return (
-    <Screen>
+    <Screen
+      onLayout={catvertising ? onScreenLayout : undefined}
+      onScroll={catvertising ? onScreenScroll : undefined}
+    >
       <ScreenTop
         day={s.day}
         right={owned > 0 ? `${owned} / ${SHOP.length} OWNED` : undefined}
@@ -141,7 +194,14 @@ export default function StoreScreen({ active = true }: { active?: boolean }) {
         );
       })}
 
-      {catvertising && <PhoneBillboard active={active} indie={indie} />}
+      {catvertising && (
+        <PhoneBillboard
+          active={active}
+          indie={indie}
+          onViewportFrameChange={onBillboardFrameChange}
+          viewportVisible={billboardInViewport}
+        />
+      )}
 
       <Section>
         <SectionHeader title="Go Indie" meta={indie ? 'ACTIVE' : undefined} metaColor={C.mint} />

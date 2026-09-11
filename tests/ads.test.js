@@ -157,12 +157,50 @@ const mountStore = async Store => {
   await act(async () => { tree = create(React.createElement(Store)); });
   return tree;
 };
-const setBillboardWidth = async (tree, width) => {
+const setStoreBillboardViewport = async (tree, {
+  scrollY = 0,
+  viewportHeight = 800,
+  sectionY = 100,
+  phoneY = 20,
+  billboardY = 30,
+  billboardHeight = 50,
+} = {}) => {
+  const scroll = tree.root.findAllByType('ScrollView')
+    .find(node => typeof node.props.onLayout === 'function' && typeof node.props.onScroll === 'function');
+  const section = tree.root.findAllByProps({ testID: 'catvertising-section' })[0];
+  const phone = tree.root.findAllByProps({ testID: 'catvertising-phone' })[0];
+  const billboard = tree.root.findAllByProps({ testID: 'catvertising-billboard-frame' })[0];
+  assert.ok(scroll, 'Store must expose its raw viewport handlers');
+  assert.ok(section && phone && billboard, 'Catvertising must expose its nested content-coordinate frames');
+  await act(async () => {
+    section.props.onLayout({ nativeEvent: { layout: { x: 0, y: sectionY, width: 390, height: 180 } } });
+    phone.props.onLayout({ nativeEvent: { layout: { x: 0, y: phoneY, width: 360, height: 140 } } });
+    billboard.props.onLayout({ nativeEvent: { layout: { x: 0, y: billboardY, width: 320, height: billboardHeight } } });
+    scroll.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: viewportHeight } } });
+    scroll.props.onScroll({
+      nativeEvent: {
+        contentOffset: { x: 0, y: scrollY },
+        contentSize: { width: 390, height: 1400 },
+        layoutMeasurement: { width: 390, height: viewportHeight },
+      },
+    });
+  });
+  await flush();
+};
+const setBillboardProbeWidth = async (tree, width) => {
   const layout = tree.root.findAllByType('View')
-    .find(node => node.props.collapsable === false && node.props.onLayout);
+    .find(node => (
+      node.props.testID !== 'catvertising-billboard-frame' &&
+      node.props.collapsable === false &&
+      node.props.onLayout
+    ));
   assert.ok(layout, 'an active Catvertising surface must expose its measurement probe');
   await act(async () => { layout.props.onLayout({ nativeEvent: { layout: { width } } }); });
   await flush();
+};
+const setBillboardWidth = async (tree, width) => {
+  await setStoreBillboardViewport(tree);
+  await setBillboardProbeWidth(tree, width);
 };
 const resetAdLifecycleState = () => {
   consentAllowed = true;
@@ -216,9 +254,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   let tree;
   await act(async () => { tree = create(React.createElement(StoreScreen)); });
   const banners = () => tree.root.findAllByType('NativeBanner');
-  const layout = () => tree.root.findAllByType('View')
-    .find(node => node.props.collapsable === false && node.props.onLayout);
-  await act(async () => { layout().props.onLayout({ nativeEvent: { layout: { width: 340 } } }); });
+  await setBillboardWidth(tree, 340);
   const visibleText = tree.root.findAllByType('Text').map(node => node.props.children);
   assert.equal(visibleText.includes('The cat is between sponsors.'), false);
   assert.equal(visibleText.includes('Go Indie. No ads. Just you and the cat.'), false);
@@ -245,7 +281,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await act(async () => { restored.resolve(info(true)); assert.equal(await restore, true); });
   assert.equal(banners().length, 0, 'restored lifetime entitlement must remain ad free');
   await act(async () => { tree.unmount(); tree = create(React.createElement(StoreScreen)); });
-  await act(async () => { layout().props.onLayout({ nativeEvent: { layout: { width: 340 } } }); });
+  await setBillboardWidth(tree, 340);
   assert.equal(banners().length, 0, 'remount cannot resurrect a restored purchaser ad');
 
   await act(async () => { listener(info(false)); });
@@ -268,7 +304,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   // A fresh install starts unknown, even if a persisted flag says not purchased.
   useGame.setState({ goIndieActive: false, goIndieResolved: false });
   await act(async () => { tree = create(React.createElement(StoreScreen)); });
-  await act(async () => { layout().props.onLayout({ nativeEvent: { layout: { width: 340 } } }); });
+  await setBillboardWidth(tree, 340);
   const before = requests.length;
   restored = deferred();
   await act(async () => { restore = purchases.restoreGoIndiePurchases(); });
@@ -556,6 +592,176 @@ test('App retains loaded banners and reloads only after due foregrounds', async 
   assert.strictEqual(banners()[0], foregroundReplacement);
   assert.equal(requests.length, 3, 'loading the foreground replacement must not request again');
   assert.deepEqual(foregroundTimerDelays, [], 'suspension recovery must not schedule a timer');
+});
+
+test('scroll intersection returns replace one expired creative without timers', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalSetTimeout = global.setTimeout;
+  const originalSetInterval = global.setInterval;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  const timeoutDelays = [];
+  const intervalDelays = [];
+  t.after(async () => {
+    Date.now = originalNow;
+    global.setTimeout = originalSetTimeout;
+    global.setInterval = originalSetInterval;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+    useGame.setState({ overlay: null });
+  });
+
+  const FreshApp = loadFreshApp();
+  await act(async () => { tree = create(React.createElement(FreshApp)); });
+  const tab = label => tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => (
+      node.props.testID !== 'catvertising-billboard-frame' &&
+      node.props.collapsable === false &&
+      node.props.onLayout
+    ));
+  const storeScroll = () => tree.root.findAllByType('ScrollView')
+    .find(node => typeof node.props.onLayout === 'function' && typeof node.props.onScroll === 'function');
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+  const scrollTo = async y => {
+    const scroll = storeScroll();
+    assert.ok(scroll, 'Store must expose its raw viewport handlers');
+    await act(async () => {
+      scroll.props.onScroll({
+        nativeEvent: {
+          contentOffset: { x: 0, y },
+          contentSize: { width: 390, height: 1400 },
+          layoutMeasurement: { width: 390, height: 600 },
+        },
+      });
+    });
+    await flush();
+  };
+
+  await act(async () => { tab('Store').props.onPress(); });
+  await setStoreBillboardViewport(tree, {
+    scrollY: 0,
+    viewportHeight: 600,
+    sectionY: 600,
+    phoneY: 80,
+    billboardY: 20,
+    billboardHeight: 50,
+  });
+  await scrollTo(0);
+  assert.equal(probes().length, 0, 'an offscreen billboard must not expose an ad measurement boundary');
+  assert.equal(requests.length, 0, 'an initially offscreen billboard must not request an advert');
+
+  await scrollTo(101);
+  assert.equal(probes().length, 1, 'one pixel of vertical intersection must activate measurement');
+  await setBillboardProbeWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  assert.equal(banners().length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+  const loadedInstanceId = loadedBanner.props.nativeInstanceId;
+  assert.equal(bannerConcealed(), false);
+
+  global.setTimeout = (_callback, delay) => {
+    timeoutDelays.push(delay);
+    return {};
+  };
+  global.setInterval = (_callback, delay) => {
+    intervalDelays.push(delay);
+    return {};
+  };
+
+  await act(async () => { tab('Home').props.onPress(); });
+  await flush();
+  assert.equal(probes().length, 0);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await act(async () => { tab('Store').props.onPress(); });
+  await flush();
+  assert.equal(probes().length, 1, 'a Store return must use the shared measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  await flush();
+  assert.equal(probes().length, 0);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.equal(probes().length, 1, 'an overlay dismissal must use the shared measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.equal(probes().length, 0);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.equal(probes().length, 1, 'foregrounding must use the shared measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  await scrollTo(750);
+  assert.equal(probes().length, 0, 'zero vertical intersection must conceal the billboard');
+  assert.strictEqual(banners()[0], loadedBanner, 'scrolling away must retain the loaded native banner');
+  assert.equal(bannerConcealed(), true);
+  now += 60 * 60_000;
+  await flush();
+  assert.equal(requests.length, 1, 'expiry while offscreen must not issue a request');
+
+  await scrollTo(749);
+  assert.equal(probes().length, 1, 'a positive vertical intersection must create a fresh measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner, 'an expired return must await fresh width');
+  assert.equal(bannerConcealed(), true);
+  assert.equal(requests.length, 1);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'the expired scroll return must issue exactly one replacement');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+  assert.notEqual(banners()[0].props.nativeInstanceId, loadedInstanceId);
+  assert.deepEqual(requests.map(request => request.width), [320, 320]);
+  assert.deepEqual(nativeWidthTeardowns, []);
+  const replacement = banners()[0];
+
+  await scrollTo(749);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], replacement);
+  assert.equal(requests.length, 2, 'repeated visible scroll events must not duplicate the replacement');
+  await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
+  await scrollTo(749);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], replacement);
+  assert.equal(requests.length, 2, 'settling the replacement must not create another request');
+  assert.deepEqual(timeoutDelays, [], 'visibility recovery must not schedule timers');
+  assert.deepEqual(intervalDelays, [], 'visibility recovery must not schedule loops');
 });
 
 test('visibility returns replace creatives one hour after the latest native load', async t => {

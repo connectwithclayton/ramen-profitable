@@ -1,5 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AppState, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { useGame } from '../state/gameStore';
 import { adsModule, bannerId, mayRequestAds, prepareAds, privacyOptionsRequired, showAdPrivacyOptions } from '../monetization/ads';
 import { Btn, MonoText, Section, SectionHeader, Unit } from './ui';
@@ -9,8 +9,19 @@ const NON_PERSONALIZED_REQUEST = { requestNonPersonalizedAdsOnly: true } as cons
 const RETRY_INTERVAL_MS = 60_000;
 const CREATIVE_EXPIRY_MS = 60 * 60_000;
 type CreativeState = 'idle' | 'pending' | 'loaded' | 'failed' | 'retrying';
+export type BillboardViewportFrame = { y: number; height: number };
 
-export default function PhoneBillboard({ active = true, indie }: { active?: boolean; indie: boolean }) {
+export default function PhoneBillboard({
+  active = true,
+  indie,
+  onViewportFrameChange,
+  viewportVisible,
+}: {
+  active?: boolean;
+  indie: boolean;
+  onViewportFrameChange: (frame: BillboardViewportFrame) => void;
+  viewportVisible: boolean;
+}) {
   const eligible = useGame(mayRequestAds);
   const overlay = useGame(s => s.overlay !== null);
   const [ready, setReady] = useState(false);
@@ -31,7 +42,11 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const [creativeState, setCreativeState] = useState<CreativeState>('idle');
   const creativeStateRef = useRef(creativeState);
   const [requestKey, setRequestKey] = useState(0);
-  const retainedVisibilityActive = active && foreground && !overlay;
+  const sectionYRef = useRef<number | null>(null);
+  const phoneYRef = useRef<number | null>(null);
+  const billboardLayoutRef = useRef<{ y: number; height: number } | null>(null);
+  const surfaceActive = active && foreground && !overlay;
+  const retainedVisibilityActive = surfaceActive && viewportVisible;
   const measurementActive = retainedVisibilityActive && !privacyBusy;
   const requestable = measurementActive && layoutReady && eligible && width > 0;
   const nativeRequestInFlight = ready && (creativeState === 'pending' || creativeState === 'retrying');
@@ -62,8 +77,35 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
     creativeStateRef.current = creativeState;
   }, [creativeState]);
 
-  // Store-tab returns, game/paywall overlay dismissals, and app foreground returns recheck retained creatives.
-  // Privacy or ownership changes unmount them; layout only completes the visibility boundary.
+  const reportViewportFrame = useCallback(() => {
+    const sectionY = sectionYRef.current;
+    const phoneY = phoneYRef.current;
+    const billboard = billboardLayoutRef.current;
+    if (sectionY === null || phoneY === null || billboard === null) return;
+    onViewportFrameChange({
+      y: sectionY + phoneY + billboard.y,
+      height: billboard.height,
+    });
+  }, [onViewportFrameChange]);
+
+  const captureSectionLayout = useCallback((event: LayoutChangeEvent) => {
+    sectionYRef.current = event.nativeEvent.layout.y;
+    reportViewportFrame();
+  }, [reportViewportFrame]);
+
+  const capturePhoneLayout = useCallback((event: LayoutChangeEvent) => {
+    phoneYRef.current = event.nativeEvent.layout.y;
+    reportViewportFrame();
+  }, [reportViewportFrame]);
+
+  const captureBillboardLayout = useCallback((event: LayoutChangeEvent) => {
+    const { height, y } = event.nativeEvent.layout;
+    billboardLayoutRef.current = { y, height };
+    reportViewportFrame();
+  }, [reportViewportFrame]);
+
+  // Measured billboard-to-ScrollView intersection joins presentation state into one visibility signal;
+  // route-by-route proxy enumeration was tried and kept missing cases.
   useLayoutEffect(() => {
     if (retainedVisibilityActive === wasRetainedVisibilityActiveRef.current) return;
     wasRetainedVisibilityActiveRef.current = retainedVisibilityActive;
@@ -83,6 +125,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       const isRenderable = () => (
         !cancelled &&
         active &&
+        viewportVisible &&
         widthRef.current > 0 &&
         AppState.currentState === 'active' &&
         useGame.getState().overlay === null
@@ -108,7 +151,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       if (!cancelled) setPrivacyRequired(required);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [active, creativeState, noFill, ready, requestable, revision, width]);
+  }, [active, creativeState, noFill, ready, requestable, revision, viewportVisible, width]);
 
   useEffect(() => {
     setReady(false);
@@ -179,20 +222,22 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const bannerMounted = Boolean(show);
   const geometryCurrent = layoutReady && width === bannerWidth;
   const bannerConcealed = retryingWithFallback || !geometryCurrent;
-  const concealed = !active || !foreground || overlay || privacyBusy || expiredVisibilityReturnDue || (creativeState === 'loaded' && !geometryCurrent);
+  const concealed = !retainedVisibilityActive || privacyBusy || expiredVisibilityReturnDue || (creativeState === 'loaded' && !geometryCurrent);
 
   useEffect(() => {
     if (bannerMounted) lastRequestAtRef.current = Date.now();
   }, [bannerMounted, bannerWidth, requestKey, revision]);
 
   return (
-    <Section style={st.section}>
+    <Section onLayout={captureSectionLayout} style={st.section} testID="catvertising-section">
       <SectionHeader title="Your phone" meta="CATVERTISING" />
-      <Unit style={st.phone}>
+      <Unit onLayout={capturePhoneLayout} style={st.phone} testID="catvertising-phone">
         <View style={st.speaker} />
         <MonoText style={st.label}>BILLBOARD · ADVERTISEMENT</MonoText>
         <View
+          onLayout={captureBillboardLayout}
           style={st.billboard}
+          testID="catvertising-billboard-frame"
         >
           {measurementActive && (
             <View

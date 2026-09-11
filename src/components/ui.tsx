@@ -131,7 +131,7 @@ export function Screen({ children, onLayout, onScroll, scrollEventThrottle }: Sc
       showsVerticalScrollIndicator={false}
       onLayout={onLayout}
       onScroll={onScroll}
-      scrollEventThrottle={scrollEventThrottle}
+      scrollEventThrottle={scrollEventThrottle ?? (onScroll ? 16 : undefined)}
     >
       {children}
     </ScrollView>
@@ -217,12 +217,14 @@ export function Section({
   children,
   style,
   onLayout,
+  testID,
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
   onLayout?: ViewProps['onLayout'];
+  testID?: string;
 }) {
-  return <View style={[st.section, style]} onLayout={onLayout}>{children}</View>;
+  return <View style={[st.section, style]} onLayout={onLayout} testID={testID}>{children}</View>;
 }
 
 /** A genuine unit: something that is one thing. The only shape that still gets a border. */
@@ -231,13 +233,15 @@ export function Unit({
   style,
   tone,
   onLayout,
+  testID,
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
   tone?: string;
   onLayout?: ViewProps['onLayout'];
+  testID?: string;
 }) {
-  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]} onLayout={onLayout}>{children}</View>;
+  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]} onLayout={onLayout} testID={testID}>{children}</View>;
 }
 
 export function Divider() {
