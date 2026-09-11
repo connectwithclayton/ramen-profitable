@@ -26,15 +26,24 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const wasBackgroundedRef = useRef(AppState.currentState === 'background');
   const [loadedForegroundReturnAt, setLoadedForegroundReturnAt] = useState<number | null>(null);
-  const wasActiveRef = useRef(active);
-  const [loadedStoreReturnAt, setLoadedStoreReturnAt] = useState<number | null>(null);
+  const [loadedVisibilityReturnAt, setLoadedVisibilityReturnAt] = useState<number | null>(null);
   const [noFill, setNoFill] = useState(false);
   const [creativeState, setCreativeState] = useState<CreativeState>('idle');
   const creativeStateRef = useRef(creativeState);
   const [requestKey, setRequestKey] = useState(0);
-  const measurementActive = active && foreground && !overlay && !privacyBusy;
+  const retainedVisibilityActive = active && foreground && !overlay;
+  const measurementActive = retainedVisibilityActive && !privacyBusy;
   const requestable = measurementActive && layoutReady && eligible && width > 0;
   const nativeRequestInFlight = ready && (creativeState === 'pending' || creativeState === 'retrying');
+  const wasRetainedVisibilityActiveRef = useRef(retainedVisibilityActive);
+  const expiredVisibilityReturnDue = (
+    creativeState === 'loaded' &&
+    loadedVisibilityReturnAt !== null &&
+    lastLoadedAtRef.current !== null &&
+    loadedVisibilityReturnAt - lastLoadedAtRef.current >= CREATIVE_EXPIRY_MS &&
+    lastRequestAtRef.current !== null &&
+    loadedVisibilityReturnAt - lastRequestAtRef.current >= RETRY_INTERVAL_MS
+  );
   const wasRequestableRef = useRef(requestable);
 
   useEffect(() => {
@@ -53,15 +62,15 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
     creativeStateRef.current = creativeState;
   }, [creativeState]);
 
+  // Store-tab returns, game/paywall overlay dismissals, and app foreground returns recheck retained creatives.
+  // Privacy or ownership changes unmount them; layout only completes the visibility boundary.
   useLayoutEffect(() => {
-    if (active === wasActiveRef.current) return;
-    wasActiveRef.current = active;
-    setLoadedStoreReturnAt(
-      active && AppState.currentState === 'active' && creativeStateRef.current === 'loaded'
-        ? Date.now()
-        : null,
+    if (retainedVisibilityActive === wasRetainedVisibilityActiveRef.current) return;
+    wasRetainedVisibilityActiveRef.current = retainedVisibilityActive;
+    setLoadedVisibilityReturnAt(
+      retainedVisibilityActive && creativeStateRef.current === 'loaded' ? Date.now() : null,
     );
-  }, [active]);
+  }, [retainedVisibilityActive]);
 
   useLayoutEffect(() => {
     if (!measurementActive) setLayoutReady(false);
@@ -118,22 +127,15 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       requestAt !== null &&
       loadedForegroundReturnAt - requestAt >= RETRY_INTERVAL_MS
     );
-    const loadedAt = lastLoadedAtRef.current;
-    const reloadExpiredAfterStoreReturn = (
-      creativeState === 'loaded' &&
-      loadedStoreReturnAt !== null &&
-      loadedAt !== null &&
-      loadedStoreReturnAt - loadedAt >= CREATIVE_EXPIRY_MS
-    );
     if (loadedForegroundReturnAt !== null) setLoadedForegroundReturnAt(null);
-    if (loadedStoreReturnAt !== null) setLoadedStoreReturnAt(null);
-    if (width === bannerWidth && !reloadLoadedAfterForeground && !reloadExpiredAfterStoreReturn) return;
+    if (loadedVisibilityReturnAt !== null) setLoadedVisibilityReturnAt(null);
+    if (width === bannerWidth && !reloadLoadedAfterForeground && !expiredVisibilityReturnDue) return;
     if (creativeState === 'loaded') {
       setCreativeState('pending');
       setRequestKey(value => value + 1);
     }
     setBannerWidth(width);
-  }, [bannerWidth, creativeState, loadedForegroundReturnAt, loadedStoreReturnAt, nativeRequestInFlight, requestable, width]);
+  }, [bannerWidth, creativeState, expiredVisibilityReturnDue, loadedForegroundReturnAt, loadedVisibilityReturnAt, nativeRequestInFlight, requestable, width]);
 
   // Any unloaded creative retries only on a qualifying return after any existing request cooldown.
   useEffect(() => {
@@ -177,13 +179,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const bannerMounted = Boolean(show);
   const geometryCurrent = layoutReady && width === bannerWidth;
   const bannerConcealed = retryingWithFallback || !geometryCurrent;
-  const expiredStoreReturnPending = (
-    creativeState === 'loaded' &&
-    loadedStoreReturnAt !== null &&
-    lastLoadedAtRef.current !== null &&
-    loadedStoreReturnAt - lastLoadedAtRef.current >= CREATIVE_EXPIRY_MS
-  );
-  const concealed = !active || !foreground || overlay || privacyBusy || expiredStoreReturnPending || (creativeState === 'loaded' && !geometryCurrent);
+  const concealed = !active || !foreground || overlay || privacyBusy || expiredVisibilityReturnDue || (creativeState === 'loaded' && !geometryCurrent);
 
   useEffect(() => {
     if (bannerMounted) lastRequestAtRef.current = Date.now();

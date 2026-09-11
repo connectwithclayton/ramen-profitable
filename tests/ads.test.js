@@ -558,7 +558,7 @@ test('App retains loaded banners and reloads only after due foregrounds', async 
   assert.deepEqual(foregroundTimerDelays, [], 'suspension recovery must not schedule a timer');
 });
 
-test('Store returns replace creatives one hour after the latest native load', async t => {
+test('visibility returns replace creatives one hour after the latest native load', async t => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
   const originalNow = Date.now;
@@ -582,6 +582,15 @@ test('Store returns replace creatives one hour after the latest native load', as
   const banners = () => tree.root.findAllByType('NativeBanner');
   const probes = () => tree.root.findAllByType('View')
     .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
 
   await act(async () => { tab('Store').props.onPress(); });
   await setBillboardWidth(tree, 320);
@@ -613,22 +622,45 @@ test('Store returns replace creatives one hour after the latest native load', as
 
   await act(async () => { loadedBanner.props.onAdLoaded({ width: 320, height: 50 }); });
   assert.equal(requests.length, 1, 'an automatic refresh load must keep the native instance');
-  await returnToStoreAfter(3_599_999);
-  assert.strictEqual(banners()[0], loadedBanner, 'expiry must be measured from the latest automatic refresh load');
-  assert.equal(requests.length, 1);
-
   await act(async () => { useGame.getState().openGoIndiePaywall(); });
-  now += 1;
+  now += 3_599_999;
+  await flush();
+  assert.equal(requests.length, 1, 'a hidden billboard must not request before a visibility return');
   await act(async () => { useGame.getState().dismissOverlay(); });
   await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'a pre-expiry overlay dismissal must await fresh geometry');
+  assert.equal(bannerConcealed(), true);
   await setBillboardWidth(tree, 320);
-  assert.strictEqual(banners()[0], loadedBanner, 'overlay closure must not reload an expired creative');
-  assert.equal(requests.length, 1, 'elapsed time alone must not issue a request');
+  assert.strictEqual(banners()[0], loadedBanner, 'expiry must be measured from the latest automatic refresh load');
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
 
-  await act(async () => { tab('Home').props.onPress(); });
-  await act(async () => { tab('Store').props.onPress(); });
+  const refreshFailure = Object.assign(new Error('refresh unavailable'), { code: 'googleMobileAds/network-error' });
+  await act(async () => { loadedBanner.props.onAdFailedToLoad(refreshFailure); });
+  assert.strictEqual(banners()[0], loadedBanner, 'a post-load refresh failure must retain the loaded creative');
+  assert.equal(requests.length, 1);
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  now += 1;
   await flush();
-  assert.strictEqual(banners()[0], loadedBanner, 'expiry replacement must await returned Store geometry');
+  assert.equal(requests.length, 1, 'reaching expiry while hidden must not issue a request');
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'an expired return inside the request cooldown must retain its state');
+  assert.equal(bannerConcealed(), true, 'overlay dismissal must await fresh geometry');
+  assert.equal(requests.length, 1);
+  await setBillboardWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner, 'replacement must defer until a later visibility transition');
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  now += 59_999;
+  await flush();
+  assert.equal(requests.length, 1, 'elapsed cooldown time alone must not issue a replacement');
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'expiry replacement must await returned overlay geometry');
+  assert.equal(bannerConcealed(), true, 'the due expired creative must remain concealed after overlay dismissal');
   assert.equal(requests.length, 1);
   const returnedProbe = probes()[0];
   assert.ok(returnedProbe);
@@ -637,7 +669,7 @@ test('Store returns replace creatives one hour after the latest native load', as
     returnedProbe.props.onLayout({ nativeEvent: { layout: { width: 320 } } });
   });
   await flush();
-  assert.equal(requests.length, 2, 'the exact-expiry Store return must issue one replacement request');
+  assert.equal(requests.length, 2, 'the next due overlay dismissal must issue one replacement request');
   assert.notStrictEqual(banners()[0], loadedBanner);
   assert.notEqual(banners()[0].props.nativeInstanceId, loadedInstanceId);
   assert.equal(banners()[0].props.width, 320, 'the replacement must use the latest coalesced width');
