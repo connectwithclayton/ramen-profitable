@@ -29,5 +29,14 @@
     "web": "expo start --web",
     "test": "node --experimental-strip-types --test tests/*.test.js"
   },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "exclude": [
+          "react-native-google-mobile-ads"
+        ]
+      }
+    }
+  },
   "private": true
 }

@@ -44,9 +44,6 @@ export default function StoreScreen() {
     if (restoring) return;
     setRestoring(true);
     const active = await restoreGoIndiePurchases();
-    if (active !== null) {
-      s.setGoIndieActive(active);
-    }
     if (active === true) {
       s.pushNotif('Purchases restored. Go Indie is active.', 'growth');
     } else if (active === false) {

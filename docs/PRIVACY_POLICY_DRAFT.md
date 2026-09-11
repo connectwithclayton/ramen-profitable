@@ -40,15 +40,15 @@ RevenueCat processes purchase information as a service provider so the app can v
 
 #### Permissions and device features
 
-The app uses device haptics for tap and result feedback and uses an internet connection for purchases, Google consent messages, and advertising. The current application code does not request or use access to your camera, microphone, contacts, precise or coarse location, photos, media library, push notifications, notification permission, or tracking permission.
+The app uses device haptics for tap and result feedback and uses an internet connection for purchases, Google consent messages, and advertising. The current application code does not request access to your camera, microphone, contacts, device location services, photos, media library, push notifications, notification permission, or tracking permission. Google may estimate a device's general location from its IP address as described below; the app does not request device-location permission or access device-provided location.
 
 #### Advertising and privacy choices
 
 The free game displays a real Google AdMob banner inside the fictional phone billboard in the Store. The one-time Go Indie unlock removes these ads. Ads remain hidden while purchase ownership is unresolved and during purchase or restore operations.
 
-Google's Mobile Ads SDK processes network addresses (including IP-derived approximate location), device or app identifiers, ad impressions and interactions, and diagnostic/performance information for advertising, measurement, fraud prevention, and service operation. Non-personalized ads still involve data processing; they are not anonymous or data-free.
+Google's Mobile Ads SDK processes network addresses (including IP-derived approximate location), device or app identifiers, ad impressions and interactions, and diagnostic/performance information for advertising, measurement, fraud prevention, and service operation. Age-restricted ads still involve data processing; they are not anonymous or data-free.
 
-The iOS app requests non-personalized ads, disables Google's publisher first-party ID, and does not request access to Apple's advertising identifier (IDFA) or tracking permission. It does not send game progress, fictional Chirp posts, a name, email address, or RevenueCat identity to Google. Advertising services can still process other app/device identifiers. Google's privacy-preserving SKAdNetwork attribution may be used.
+The iOS app applies Google's child age treatment to every ad request and marks every consent-information request for under-age treatment. It does not collect an age from you or request access to Apple's advertising identifier (IDFA) or tracking permission. It does not send game progress, fictional Chirp posts, a name, email address, or RevenueCat identity to Google. Advertising services can still process other app/device identifiers.
 
 Before requesting ads, the app uses Google's User Messaging Platform to check whether a consent message is needed and display it when required. Where required, you can revisit your choices through **Ad privacy choices** in the Store. If consent cannot be established or ads cannot load, play continues without an ad. See [Google's privacy policy](https://policies.google.com/privacy) and [how Google uses information from apps that use its services](https://policies.google.com/technologies/partner-sites).
 
@@ -74,17 +74,17 @@ This section is review evidence, not part of the public-policy copy. Updated for
 
 - [`src/state/gameStore.ts`](../src/state/gameStore.ts) owns local persistence. Entitlement resolution and purchase-pending state are transient. Fresh RevenueCat results take precedence over delayed disk hydration.
 - [`src/monetization/purchases.ts`](../src/monetization/purchases.ts) receives RevenueCat CustomerInfo updates and synchronously applies purchase/restore ownership. Missing purchase configuration leaves ownership unresolved and advertising disabled.
-- [`src/monetization/ads.ts`](../src/monetization/ads.ts) gates initialization on resolved non-ownership and UMP permission. It does not persist a permission decision across launches.
-- [`src/components/PhoneBillboard.tsx`](../src/components/PhoneBillboard.tsx) mounts the native fixed-size banner only when eligible, consent-ready, foregrounded, unobscured by a game overlay, and wide enough to fit it intact. Every request explicitly asks for non-personalized ads. No RevenueCat IDs, custom targeting, PPID, or mediation adapters are supplied.
-- [`app.config.js`](../app.config.js) delays SDK app measurement until initialization and includes Google's SKAdNetwork ID. [`plugins/with-admob-safety.js`](../plugins/with-admob-safety.js) disables publisher first-party ID at iOS native startup. It does not call SDK initialization there. The app does not install an ATT request API or set `NSUserTrackingUsageDescription`.
+- [`src/monetization/ads.ts`](../src/monetization/ads.ts) gates initialization on resolved non-ownership and UMP permission, marks UMP updates for under-age treatment, and applies child age treatment to every ad request. It does not persist a permission decision across launches.
+- [`src/components/PhoneBillboard.tsx`](../src/components/PhoneBillboard.tsx) mounts the native fixed-size banner only when eligible, consent-ready, foregrounded, unobscured by a game overlay, and wide enough to fit it intact. No RevenueCat identity or custom targeting is supplied.
+- [`app.config.js`](../app.config.js) delays SDK app measurement until initialization and configures AdMob only for iOS. The app does not install an ATT request API or set `NSUserTrackingUsageDescription`; Android excludes the ads module from native autolinking.
 - Google Mobile Ads and UMP are third-party network/diagnostic processors even without IDFA. Their bundled privacy manifests must be included in the final Xcode privacy report; that report does not automatically update App Store Connect.
 
 ### App Store Connect changes required before submission
 
 The captain must change the former RevenueCat-only questionnaire to the iOS answers in [`ADMOB_SETUP.md`](./ADMOB_SETUP.md#app-store-connect-privacy-answers). This includes advertising-related data, device identifiers, coarse location, usage, and diagnostics. Do not retain the prior “no third-party advertising” or “no identifiers” claims.
 
-**ATT is not requested or required for the non-tracking iOS configuration built here.** This is a configuration-specific conclusion, not a claim that any AdMob integration avoids ATT. Non-personalized ads alone do not establish that conclusion: it also depends on not requesting IDFA, not passing cross-company identifiers, disabling publisher first-party ID, and keeping AdMob mediation/IDFA messages and tracking features disabled. Enabling tracking or personalization later requires renewed implementation/privacy review and, where applicable, ATT authorization before tracking.
+**ATT is not requested by the iOS implementation built here.** Every request receives Google's child age treatment, which Google documents as preventing IDFA transmission. The final AdMob dashboard configuration and signed archive still require review before submission. Any configuration that introduces tracking requires renewed implementation/privacy review and, where applicable, ATT authorization before tracking.
 
-Android development also uses Google's sample banner inventory and UMP. Android can expose an advertising ID through the SDK's merged manifest; the iOS no-IDFA statement is not an Android privacy claim. Android production remains blocked until its own identifiers, final permission inventory, and Play Data Safety disclosure are supplied/reviewed.
+Catvertising is iOS-only in this change. Android production remains deferred and the ads native module is not linked into Android builds.
 
 See [`ADMOB_SETUP.md`](./ADMOB_SETUP.md) for sources, configuration, release safeguards, and remaining signed-binary/dashboard verification. Publication of the exact final policy still needs the captain's approval and publication-day effective date. Do not edit the App Store listing copy to remove advertising.

@@ -23,6 +23,8 @@ let storageRead = async () => null;
 let consentAllowed = true;
 let privacyRequired = false;
 let initializationCalls = 0;
+let consentOptions;
+let requestConfiguration;
 const requests = [];
 const mockNative = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
@@ -31,12 +33,21 @@ const mockNative = {
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
 };
 const ads = {
-  default: () => ({ setRequestConfiguration: async () => {}, initialize: async () => { initializationCalls++; } }),
-  MaxAdContentRating: { PG: 'PG' },
+  default: () => ({
+    setRequestConfiguration: async options => { requestConfiguration = options; },
+    initialize: async () => {
+      assert.deepEqual(requestConfiguration, { ageRestrictedTreatment: 'child' });
+      initializationCalls++;
+    },
+  }),
+  AgeRestrictedTreatment: { CHILD: 'child' },
   BannerAdSize: { BANNER: 'BANNER' },
   AdsConsentPrivacyOptionsRequirementStatus: { REQUIRED: 'REQUIRED' },
   AdsConsent: {
-    gatherConsent: () => consent.promise,
+    gatherConsent: options => {
+      consentOptions = options;
+      return consent.promise;
+    },
     getConsentInfo: async () => ({ canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' }),
     showPrivacyOptionsForm: async () => { consentAllowed = false; },
   },
@@ -95,7 +106,9 @@ test('Store billboard waits for ownership and consent, unmounts on purchase/rest
   await flush();
   assert.equal(banners().length, 1);
   assert.equal(requests[0].unitId, require('../config/admob').TEST_IDS.ios.bannerId);
-  assert.deepEqual(requests[0].requestOptions, { requestNonPersonalizedAdsOnly: true });
+  assert.deepEqual(consentOptions, { tagForUnderAgeOfConsent: true });
+  assert.deepEqual(requestConfiguration, { ageRestrictedTreatment: 'child' });
+  assert.equal(requests[0].requestOptions, undefined);
 
   let restore;
   await act(async () => { restore = purchases.restoreGoIndiePurchases(); });

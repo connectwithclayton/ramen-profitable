@@ -13,11 +13,11 @@ export function mayRequestAds(state: Pick<GameState, 'goIndieActive' | 'goIndieR
 }
 
 export function bannerId(): string | null {
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return null;
-  const ids = Constants.expoConfig?.extra?.admob?.[Platform.OS];
+  if (Platform.OS !== 'ios') return null;
+  const ids = Constants.expoConfig?.extra?.admob?.ios;
   if (!__DEV__) {
     const { assertProductionIds } = require('../../config/admob');
-    assertProductionIds(ids, Platform.OS);
+    assertProductionIds(ids);
   }
   return ids?.bannerId ?? null;
 }
@@ -28,7 +28,7 @@ bannerId();
 
 export function adsModule(): AdsModule | null {
   if (sdk) return sdk;
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return null;
+  if (Platform.OS !== 'ios') return null;
   try {
     sdk = require('react-native-google-mobile-ads');
     return sdk;
@@ -43,15 +43,16 @@ export async function prepareAds(): Promise<boolean> {
   if (!mod) return false;
   if (!initialization) {
     initialization = (async () => {
+      await mod.default().setRequestConfiguration({
+        ageRestrictedTreatment: mod.AgeRestrictedTreatment.CHILD,
+      });
       // Fail closed on consent errors; do not treat an error as permission.
       if (!consentGathered) {
-        await mod.AdsConsent.gatherConsent();
+        await mod.AdsConsent.gatherConsent({ tagForUnderAgeOfConsent: true });
         consentGathered = true;
       }
       const consent = await mod.AdsConsent.getConsentInfo();
       if (!consent.canRequestAds || !mayRequestAds(useGame.getState())) return false;
-      await mod.default().setRequestConfiguration({ maxAdContentRating: mod.MaxAdContentRating.PG });
-      if (!mayRequestAds(useGame.getState())) return false;
       await mod.default().initialize();
       return true;
     })().catch(error => {

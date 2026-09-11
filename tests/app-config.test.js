@@ -53,4 +53,13 @@ test('release configuration excludes the Test Store key', () => {
     androidApiKey: undefined,
   });
   assert.equal('testStoreApiKey' in config.extra.revenueCat, false);
+  assert.deepEqual(config.extra.admob, {
+    ios: {
+      appId: 'ca-app-pub-1111111111111111~1111111111',
+      bannerId: 'ca-app-pub-1111111111111111/1111111111',
+    },
+  });
+  assert.deepEqual(config.plugins, [
+    ['./plugins/with-admob-safety', config.extra.admob],
+  ]);
 });

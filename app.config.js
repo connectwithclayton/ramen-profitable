@@ -4,6 +4,9 @@ const RELEASE_PROFILES = new Set(['preview', 'production']);
 
 function buildMode() {
   const profile = process.env.EAS_BUILD_PROFILE;
+  if (profile && !DEVELOPMENT_PROFILES.has(profile) && !RELEASE_PROFILES.has(profile)) {
+    throw new Error(`Unsupported EAS_BUILD_PROFILE="${profile}".`);
+  }
   const profileMode =
     profile && DEVELOPMENT_PROFILES.has(profile)
       ? 'development'
@@ -64,21 +67,11 @@ module.exports = ({ config }) => {
           androidApiKey: releaseKey('REVENUECAT_ANDROID_API_KEY', 'goog_'),
         };
 
-  // Production profiles, local production exports, and unknown EAS profiles
-  // cannot inherit sample identifiers from a development override.
-  const adDevelopment = mode === 'development' && process.env.NODE_ENV !== 'production' &&
-    (!process.env.EAS_BUILD_PROFILE || DEVELOPMENT_PROFILES.has(process.env.EAS_BUILD_PROFILE));
-  const admob = resolveAdMob(adDevelopment, process.env.EAS_BUILD_PLATFORM || 'ios');
+  const admob = resolveAdMob(mode === 'development');
   return {
     ...config,
     plugins: [
       ...(config.plugins || []),
-      ['react-native-google-mobile-ads', {
-        iosAppId: admob.ios.appId,
-        androidAppId: admob.android.appId,
-        delayAppMeasurementInit: true,
-        skAdNetworkItems: ['cstr6suwn9.skadnetwork'],
-      }],
       ['./plugins/with-admob-safety', admob],
     ],
     extra: {

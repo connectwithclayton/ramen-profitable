@@ -57,7 +57,6 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   const overlay = useGame(s => s.overlay);
   const dismiss = useGame(s => s.dismissOverlay);
   const openGoIndiePaywall = useGame(s => s.openGoIndiePaywall);
-  const setGoIndieActive = useGame(s => s.setGoIndieActive);
   const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
   const [goIndiePending, setGoIndiePending] = useState(false);
