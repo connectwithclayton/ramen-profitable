@@ -24,7 +24,23 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     for (const file of ['package.json', 'app.json', 'app.config.js']) fs.copyFileSync(path.join(root, file), path.join(fixture, file));
     for (const dir of ['config', 'plugins', 'scripts', 'assets']) fs.cpSync(path.join(root, dir), path.join(fixture, dir), { recursive: true });
     fs.symlinkSync(path.join(root, 'node_modules'), path.join(fixture, 'node_modules'), 'dir');
-    const env = { ...process.env, CI: '1', NODE_ENV: 'development', EAS_BUILD_PROFILE: 'development', REVENUECAT_BUILD_MODE: '' };
+    const clearedVariables = [
+      'EAS_BUILD_PROFILE',
+      'NODE_ENV',
+      'REVENUECAT_BUILD_MODE',
+      'CONFIGURATION',
+      'REVENUECAT_TEST_STORE_API_KEY',
+      'REVENUECAT_IOS_API_KEY',
+      'REVENUECAT_ANDROID_API_KEY',
+      'ADMOB_IOS_APP_ID',
+      'ADMOB_IOS_BANNER_ID',
+    ];
+    const cleanEnvironment = additional => {
+      const result = { ...process.env };
+      for (const variable of clearedVariables) delete result[variable];
+      return Object.assign(result, additional);
+    };
+    const env = cleanEnvironment({ CI: '1', NODE_ENV: 'development', EAS_BUILD_PROFILE: 'development', REVENUECAT_BUILD_MODE: '' });
     const prebuild = additional => spawnSync(process.execPath, [path.join(root, 'node_modules/expo/bin/cli'), 'prebuild', '--platform', 'ios', '--no-install'], { cwd: fixture, env: { ...env, ...additional }, encoding: 'utf8' });
     const phase = () => {
       const project = xcode.project(path.join(fixture, 'ios/RamenProfitable.xcodeproj/project.pbxproj')).parseSync();
@@ -32,21 +48,13 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       assert.equal(phases.length, 1, 'one native release guard after every prebuild');
       return JSON.parse(phases[0].shellScript.replace(/\n/g, '\\n'));
     };
-    const runPhase = configuration => spawnSync('/bin/sh', ['-c', phase()], { cwd: fixture, env: { ...env, SRCROOT: path.join(fixture, 'ios'), CONFIGURATION: configuration }, encoding: 'utf8' });
+    const runPhase = (configuration, additional = {}) => spawnSync('/bin/sh', ['-c', phase()], {
+      cwd: fixture,
+      env: cleanEnvironment({ CI: '1', SRCROOT: path.join(fixture, 'ios'), CONFIGURATION: configuration, ...additional }),
+      encoding: 'utf8',
+    });
     const constantsConfig = additional => {
-      const constantsEnvironment = { ...process.env };
-      for (const variable of [
-        'EAS_BUILD_PROFILE',
-        'NODE_ENV',
-        'REVENUECAT_BUILD_MODE',
-        'CONFIGURATION',
-        'REVENUECAT_TEST_STORE_API_KEY',
-        'REVENUECAT_IOS_API_KEY',
-        'REVENUECAT_ANDROID_API_KEY',
-        'ADMOB_IOS_APP_ID',
-        'ADMOB_IOS_BANNER_ID',
-      ]) delete constantsEnvironment[variable];
-      Object.assign(constantsEnvironment, additional);
+      const constantsEnvironment = cleanEnvironment(additional);
       const result = spawnSync(
         process.execPath,
         [path.join(root, 'node_modules/expo-constants/scripts/build/getAppConfig.js'), fixture, path.join(fixture, 'ios')],
@@ -74,7 +82,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.equal(production.status, 0, production.stdout + production.stderr);
     const productionInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
     assert.equal(productionInfo.GADApplicationIdentifier, productionIds.ADMOB_IOS_APP_ID);
-    assert.equal(runPhase('Release').status, 0);
+    assert.equal(runPhase('Release', productionIds).status, 0);
     assert.deepEqual(constantsConfig({ CONFIGURATION: 'Release' }).extra.admob.ios, {});
     const releaseRuntime = constantsConfig({ CONFIGURATION: 'Release', ...productionIds });
     assert.deepEqual(releaseRuntime.extra.admob.ios, {
@@ -86,7 +94,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     let captured;
     try {
       fs.writeFileSync(validatorPath, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
-      captured = runPhase('Release');
+      captured = runPhase('Release', productionIds);
     } finally {
       fs.writeFileSync(validatorPath, validator);
     }
@@ -95,6 +103,30 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       releaseRuntime.extra.admob.ios.appId,
       releaseRuntime.extra.admob.ios.bannerId,
     ]);
+    const changedProductionIds = {
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~4444444444',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/5555555555',
+    };
+    const changedRuntime = constantsConfig({ CONFIGURATION: 'Release', ...changedProductionIds });
+    assert.deepEqual(changedRuntime.extra.admob.ios, {
+      appId: changedProductionIds.ADMOB_IOS_APP_ID,
+      bannerId: changedProductionIds.ADMOB_IOS_BANNER_ID,
+    });
+    const mismatched = runPhase('Release', changedProductionIds);
+    assert.equal(mismatched.status, 1, mismatched.stdout + mismatched.stderr);
+    assert.match(mismatched.stderr, /do not match the identifiers captured during prebuild/);
+    const sampleRuntime = runPhase('Release', {
+      ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
+      ADMOB_IOS_BANNER_ID: TEST_IDS.ios.bannerId,
+    });
+    assert.equal(sampleRuntime.status, 1, sampleRuntime.stdout + sampleRuntime.stderr);
+    assert.match(sampleRuntime.stderr, /Google TEST identifier/);
+    const malformedRuntime = runPhase('Release', {
+      ...productionIds,
+      ADMOB_IOS_BANNER_ID: 'not-an-admob-banner-id',
+    });
+    assert.equal(malformedRuntime.status, 1, malformedRuntime.stdout + malformedRuntime.stderr);
+    assert.match(malformedRuntime.stderr, /iOS bannerId/);
     assert.deepEqual(constantsConfig({ CONFIGURATION: 'Debug' }).extra.admob, TEST_IDS);
     for (const variable of ['ADMOB_IOS_APP_ID', 'ADMOB_IOS_BANNER_ID']) {
       const marker = path.join(fixture, `injected-${variable}`);
@@ -106,7 +138,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
         [variable]: payload,
       });
       assert.equal(generated.status, 0, generated.stdout + generated.stderr);
-      const rejected = runPhase('Release');
+      const rejected = runPhase('Release', productionIds);
       assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
       assert.equal(fs.existsSync(marker), false, `${variable} escaped its generated shell argument`);
     }
