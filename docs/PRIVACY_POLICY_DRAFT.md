@@ -44,7 +44,7 @@ The app uses device haptics for tap and result feedback and uses an internet con
 
 #### Advertising and privacy choices
 
-The free game displays a real Google AdMob banner inside the fictional phone billboard in the Store. The one-time Go Indie unlock removes these ads. Ads remain hidden while purchase ownership is unresolved.
+On iPhone and iPad, Ramen Profitable shows advertising supplied by Google AdMob inside the game. Purchasing Go Indie removes it. The Android version contains no advertising.
 
 Google's Mobile Ads SDK processes network addresses (including IP-derived approximate location), device or app identifiers, ad impressions and interactions, and diagnostic/performance information for advertising, measurement, fraud prevention, and service operation. Ads still involve data processing; they are not anonymous or data-free.
 
