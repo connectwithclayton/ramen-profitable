@@ -70,6 +70,7 @@ export async function prepareAds(isRenderable: AdsPreparationEligibility): Promi
   try {
     await refreshConsentSession();
     if (!preparationEligible(isRenderable)) return false;
+    // UMP combines loading and presentation; accept its in-flight window and recheck after dismissal.
     await showConsentFormIfRequired(mod);
     if (!preparationEligible(isRenderable)) return false;
     const consent = await mod.AdsConsent.getConsentInfo();

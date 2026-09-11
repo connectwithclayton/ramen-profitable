@@ -34,7 +34,7 @@ let admobConfig = require('../config/admob').TEST_IDS;
 const requests = [];
 const appStateListeners = new Set();
 const mockNative = {
-  Platform: { OS: 'ios', select: options => options.ios ?? options.default },
+  Platform: { OS: 'ios', select: options => options[mockNative.Platform.OS] ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1 },
   AppState: {
     currentState: 'active',
@@ -398,4 +398,40 @@ test('backgrounding blocks consent presentation and Mobile Ads initialization', 
   assert.equal(initializationCalls, 1);
   assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
   await act(async () => { tree.unmount(); });
+});
+
+test('Android omits Catvertising and describes only the offline Go Indie benefit', async () => {
+  const previousOS = mockNative.Platform.OS;
+  const visibleText = tree => tree.root.findAllByType('Text')
+    .flatMap(node => React.Children.toArray(node.props.children))
+    .filter(value => typeof value === 'string');
+  let store;
+  let overlay;
+  try {
+    mockNative.Platform.OS = 'android';
+    useGame.setState({ goIndieActive: false, goIndieResolved: true, overlay: null });
+    store = await mountStore(StoreScreen);
+
+    assert.equal(visibleText(store).includes('Your phone'), false);
+    assert.equal(visibleText(store).includes('CATVERTISING'), false);
+    assert.ok(visibleText(store).includes('Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.'));
+    assert.equal(visibleText(store).some(value => value.includes('removes ads')), false);
+
+    await act(async () => { useGame.setState({ goIndieActive: true }); });
+    assert.ok(visibleText(store).includes('Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'));
+    assert.equal(visibleText(store).some(value => value.includes('Ads are removed')), false);
+    await act(async () => { store.unmount(); });
+    store = null;
+
+    useGame.setState({ overlay: { type: 'paywall' } });
+    const OverlayHost = require('../src/components/OverlayHost.tsx').default;
+    await act(async () => { overlay = create(React.createElement(OverlayHost, { onReturnHome() {} })); });
+    assert.ok(visibleText(overlay).includes('Make your character an indie operator. Go Indie doubles offline earnings in this game.'));
+    assert.equal(visibleText(overlay).some(value => value.includes('removes ads')), false);
+  } finally {
+    if (store) await act(async () => { store.unmount(); });
+    if (overlay) await act(async () => { overlay.unmount(); });
+    mockNative.Platform.OS = previousOS;
+    useGame.setState({ overlay: null });
+  }
 });

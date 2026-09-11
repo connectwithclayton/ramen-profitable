@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Platform, View, Text, StyleSheet } from 'react-native';
 import { useGame } from '../state/gameStore';
 import { SHOP } from '../content/content';
 import {
@@ -39,6 +39,14 @@ export default function StoreScreen() {
   const [restoring, setRestoring] = useState(false);
   const owned = SHOP.filter(i => s.upgrades[i.id]).length;
   const indie = s.goIndieResolved && s.goIndieActive;
+  const catvertising = Platform.OS === 'ios';
+  const indieCopy = indie
+    ? catvertising
+      ? 'Indie operator status is active. Ads are removed. Offline earnings are doubled — capped at 8 hours, same as always.'
+      : 'Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'
+    : catvertising
+      ? 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed.'
+      : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.';
 
   const restore = async () => {
     if (restoring) return;
@@ -123,16 +131,12 @@ export default function StoreScreen() {
         );
       })}
 
-      <PhoneBillboard indie={indie} />
+      {catvertising && <PhoneBillboard indie={indie} />}
 
       <Section>
         <SectionHeader title="Go Indie" meta={indie ? 'ACTIVE' : undefined} metaColor={C.mint} />
         <Unit tone={indie ? C.mint : C.gold} style={st.indie}>
-          <Text style={st.indieCopy}>
-            {indie
-              ? 'Indie operator status is active. Ads are removed. Offline earnings are doubled — capped at 8 hours, same as always.'
-              : 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed.'}
-          </Text>
+          <Text style={st.indieCopy}>{indieCopy}</Text>
           <Btn label="Go Indie" ghost={indie} onPress={s.openGoIndiePaywall} style={{ marginTop: 14 }} />
           <Btn
             small

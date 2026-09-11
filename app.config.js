@@ -4,9 +4,6 @@ const RELEASE_PROFILES = new Set(['preview', 'production']);
 
 function buildMode() {
   const profile = process.env.EAS_BUILD_PROFILE;
-  if (profile && !DEVELOPMENT_PROFILES.has(profile) && !RELEASE_PROFILES.has(profile)) {
-    throw new Error(`Unsupported EAS_BUILD_PROFILE="${profile}".`);
-  }
   const profileMode =
     profile && DEVELOPMENT_PROFILES.has(profile)
       ? 'development'

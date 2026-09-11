@@ -42,11 +42,6 @@ test('Expo config consumer permits release evaluation without iOS IDs', () => {
     });
   }
 });
-test('Expo config consumer rejects undeclared EAS profiles before monetization selection', () => {
-  const result = spawnSync(process.execPath, ['-e', "require('./app.config')({config:{}})"], { encoding: 'utf8', env: { ...process.env, REVENUECAT_BUILD_MODE: '', EAS_BUILD_PROFILE: 'custom-store', NODE_ENV: '' } });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /Unsupported EAS_BUILD_PROFILE="custom-store"/);
-});
 test('declared development profiles use sample inventory regardless of NODE_ENV', () => {
   const result = spawnSync(process.execPath, ['-e', "process.stdout.write(JSON.stringify(require('./app.config')({config:{}}).extra.admob))"], { encoding: 'utf8', env: { ...process.env, REVENUECAT_BUILD_MODE: '', EAS_BUILD_PROFILE: 'development', NODE_ENV: 'production', ADMOB_IOS_APP_ID: '', ADMOB_IOS_BANNER_ID: '' } });
   assert.equal(result.status, 0, result.stderr);

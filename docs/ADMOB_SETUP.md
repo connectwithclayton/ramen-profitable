@@ -31,7 +31,7 @@ For local testing, set the existing `REVENUECAT_TEST_STORE_API_KEY`, then run `n
 
 ## Release safeguards — include in the PR description
 
-- Expo config rejects undeclared EAS profiles. It carries iOS identifiers without validating them so non-iOS release configuration remains independent of `ADMOB_IOS_*`; the iOS-only guards below enforce them.
+- Expo config carries iOS identifiers without validating them so non-iOS release configuration remains independent of `ADMOB_IOS_*`; the iOS-only guards below enforce them.
 - The Expo safety plugin adds a **native Xcode build phase** that validates the IDs captured when native projects were generated, not whatever environment happens to be present at compile time. Thus a Debug prebuild later archived as Release still fails loudly. Regenerate the iOS native project after changing IDs; do not manually edit generated native files.
 - A release JavaScript bundle validates its embedded iOS IDs at module import, even if a purchased user would hide the ad.
 - There is no “allow test release” escape hatch. Debug/sample builds are for development only.

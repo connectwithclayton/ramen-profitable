@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Animated, Easing } from 'react-native';
+import { Platform, View, Text, ScrollView, StyleSheet, Animated, Easing } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useGame } from '../state/gameStore';
 import { REVIEW_MSGS } from '../content/content';
@@ -133,7 +133,11 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
           <>
             <Eyebrow>A wild paywall appears</Eyebrow>
             <Text style={st.h1}>Go Indie</Text>
-            <Text style={st.body}>Make your character an indie operator. Go Indie removes ads and doubles offline earnings in this game.</Text>
+            <Text style={st.body}>
+              {Platform.OS === 'ios'
+                ? 'Make your character an indie operator. Go Indie removes ads and doubles offline earnings in this game.'
+                : 'Make your character an indie operator. Go Indie doubles offline earnings in this game.'}
+            </Text>
             <MonoText style={{ color: C.dim, fontSize: 11, textAlign: 'center', marginVertical: 12 }}>
               [ RevenueCat Paywall · remotely configured ]
             </MonoText>
