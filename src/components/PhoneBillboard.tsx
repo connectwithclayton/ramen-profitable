@@ -27,6 +27,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const [requestKey, setRequestKey] = useState(0);
   const measurementActive = active && foreground && !overlay && !privacyBusy;
   const requestable = measurementActive && layoutReady && eligible && width > 0;
+  const nativeRequestInFlight = ready && (creativeState === 'pending' || creativeState === 'retrying');
   const wasRequestableRef = useRef(requestable);
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
         if (!cancelled) {
           setReady(allowed);
           if (allowed) {
+            setBannerWidth(widthRef.current);
             if (creativeState === 'idle') setCreativeState('pending');
           } else {
             if (creativeState === 'retrying' && lastRequestAtRef.current !== null) {
@@ -80,13 +82,13 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   }, [eligible, privacyBusy, revision]);
 
   useEffect(() => {
-    if (!requestable || width === bannerWidth) return;
+    if (!requestable || width === bannerWidth || nativeRequestInFlight) return;
     if (creativeState === 'loaded') {
       setCreativeState('pending');
       setRequestKey(value => value + 1);
     }
     setBannerWidth(width);
-  }, [bannerWidth, creativeState, requestable, width]);
+  }, [bannerWidth, creativeState, nativeRequestInFlight, requestable, width]);
 
   // Any unloaded creative retries only on a qualifying return after any existing request cooldown.
   useEffect(() => {
@@ -104,8 +106,9 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       if (lastRequestAt !== null) lastRequestAtRef.current = Date.now();
       setCreativeState('retrying');
       setRequestKey(value => value + 1);
+      setBannerWidth(width);
     }
-  }, [creativeState, requestable]);
+  }, [creativeState, requestable, width]);
 
   const privacy = async () => {
     setPrivacyBusy(true); // Unmount the native banner before changing consent.
@@ -128,6 +131,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const show = eligible && !privacyBusy && ready && bannerActive && (!noFill || creativeState === 'retrying') && bannerWidth > 0 && Banner && id;
   const bannerMounted = Boolean(show);
   const geometryCurrent = layoutReady && width === bannerWidth;
+  const bannerConcealed = retryingWithFallback || !geometryCurrent;
   const concealed = !active || !foreground || overlay || privacyBusy || (creativeState === 'loaded' && !geometryCurrent);
 
   useEffect(() => {
@@ -165,10 +169,10 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
           >
             {show && (
               <View
-                accessibilityElementsHidden={retryingWithFallback}
-                importantForAccessibility={retryingWithFallback ? 'no-hide-descendants' : 'auto'}
-                pointerEvents={retryingWithFallback ? 'none' : 'auto'}
-                style={retryingWithFallback && st.pendingBanner}
+                accessibilityElementsHidden={bannerConcealed}
+                importantForAccessibility={bannerConcealed ? 'no-hide-descendants' : 'auto'}
+                pointerEvents={bannerConcealed ? 'none' : 'auto'}
+                style={bannerConcealed && st.pendingBanner}
               >
                 <Banner
                   key={`${revision}:${requestKey}`}
@@ -178,6 +182,13 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
                   maxHeight={50}
                   requestOptions={NON_PERSONALIZED_REQUEST}
                   onAdLoaded={() => {
+                    const latestWidth = widthRef.current;
+                    if (requestable && latestWidth > 0 && latestWidth !== bannerWidth) {
+                      setCreativeState(state => state === 'loaded' ? 'pending' : state);
+                      setRequestKey(value => value + 1);
+                      setBannerWidth(latestWidth);
+                      return;
+                    }
                     lastRequestAtRef.current = null;
                     setNoFill(false);
                     setCreativeState('loaded');

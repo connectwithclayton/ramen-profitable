@@ -33,6 +33,7 @@ let consentInfoUpdateArguments;
 let consentFormCalls = 0;
 let admobConfig = require('../config/admob').TEST_IDS;
 const requests = [];
+const nativeWidthTeardowns = [];
 let nextBannerInstanceId = 0;
 const appStateListeners = new Set();
 const mockNative = {
@@ -84,8 +85,17 @@ const ads = {
   },
   BannerAd: props => {
     const instanceId = React.useRef(null);
+    const previousWidth = React.useRef(null);
     if (instanceId.current === null) instanceId.current = ++nextBannerInstanceId;
     React.useLayoutEffect(() => {
+      if (previousWidth.current !== null && previousWidth.current !== props.width) {
+        nativeWidthTeardowns.push({
+          nativeInstanceId: instanceId.current,
+          from: previousWidth.current,
+          to: props.width,
+        });
+      }
+      previousWidth.current = props.width;
       requests.push({ ...props, nativeInstanceId: instanceId.current });
     }, [props.width]);
     return React.createElement('NativeBanner', { ...props, nativeInstanceId: instanceId.current });
@@ -169,6 +179,7 @@ const resetAdLifecycleState = () => {
   consentFormCalls = 0;
   admobConfig = require('../config/admob').TEST_IDS;
   requests.length = 0;
+  nativeWidthTeardowns.length = 0;
   appStateListeners.clear();
   mockNative.AppState.currentState = 'active';
   useGame.setState({ goIndieActive: false, goIndieResolved: true, overlay: null });
@@ -353,28 +364,36 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   assert.equal(banners()[0].props.nativeInstanceId, initialInstanceId);
   await act(async () => { banners()[0].props.onAdLoaded({ width: 339, height: 50 }); });
 
-  for (const [layout, width] of [
-    ['iPad Split View-sized', 344],
-    ['iPad Slide Over-sized', 284],
-  ]) {
-    const previousInstanceId = banners()[0].props.nativeInstanceId;
-    const requestCount = requests.length;
-    await setBillboardWidth(tree, width);
-    assert.equal(banners().length, 1, `${layout} layout must mount Catvertising`);
-    assert.equal(banners()[0].props.size, 'INLINE_ADAPTIVE_BANNER');
-    assert.equal(banners()[0].props.width, width, `${layout} layout must use its measured width`);
-    assert.equal(banners()[0].props.maxHeight, 50);
-    assert.deepEqual(banners()[0].props.requestOptions, { requestNonPersonalizedAdsOnly: true });
-    assert.equal(requests.length, requestCount + 1, `${layout} resize must issue exactly one native request`);
-    assert.notStrictEqual(
-      banners()[0].props.nativeInstanceId,
-      previousInstanceId,
-      `${layout} resize must replace the loaded native banner before changing width`,
-    );
-    assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
-    assert.equal(hasNoFillCopy(), false);
-    await act(async () => { banners()[0].props.onAdLoaded({ width, height: 50 }); });
-  }
+  await setBillboardWidth(tree, 344);
+  assert.equal(banners().length, 1, 'iPad Split View-sized layout must mount Catvertising');
+  assert.equal(banners()[0].props.size, 'INLINE_ADAPTIVE_BANNER');
+  assert.equal(banners()[0].props.width, 344, 'iPad Split View-sized layout must use its measured width');
+  assert.equal(banners()[0].props.maxHeight, 50);
+  assert.deepEqual(banners()[0].props.requestOptions, { requestNonPersonalizedAdsOnly: true });
+  assert.equal(requests.length, 2, 'the completed resize must issue exactly one native request');
+  assert.notStrictEqual(banners()[0].props.nativeInstanceId, initialInstanceId);
+  const splitViewRequest = banners()[0];
+
+  await setBillboardWidth(tree, 330);
+  await setBillboardWidth(tree, 284);
+  assert.strictEqual(banners()[0], splitViewRequest, 'in-flight resizing must retain the native request');
+  assert.equal(banners()[0].props.width, 344, 'in-flight resizing must not mutate the committed native width');
+  assert.equal(requests.length, 2, 'continuous in-flight resizing must not issue native requests');
+  assert.deepEqual(nativeWidthTeardowns, [], 'the native wrapper must never receive an in-place width change');
+
+  await act(async () => { splitViewRequest.props.onAdLoaded({ width: 344, height: 50 }); });
+  assert.equal(banners().length, 1, 'the latest iPad Slide Over-sized layout must mount Catvertising');
+  assert.notStrictEqual(banners()[0], splitViewRequest, 'settlement must replace the stale-width native request');
+  assert.equal(banners()[0].props.width, 284, 'settlement must coalesce to the latest measured width');
+  assert.equal(requests.length, 3, 'settlement must issue one latest-width replacement request');
+  assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
+  assert.equal(hasNoFillCopy(), false);
+  assert.deepEqual(nativeWidthTeardowns, []);
+
+  const slideOverRequest = banners()[0];
+  await act(async () => { slideOverRequest.props.onAdLoaded({ width: 284, height: 50 }); });
+  assert.strictEqual(banners()[0], slideOverRequest);
+  assert.equal(requests.length, 3, 'the latest-width load must not issue another request');
   assert.deepEqual(requests.map(request => request.width), [339, 344, 284]);
 
   const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
@@ -544,43 +563,61 @@ test('no-fill retries only on a Store return after sixty seconds', async () => {
     assert.equal(banners()[0].props.width, 284);
     assert.equal(hasNoFillCopy(), true, 'the confirmed fallback must remain while replacement loads');
 
-    const retryingInstanceId = banners()[0].props.nativeInstanceId;
-    const requestCount = requests.length;
+    const retryingBanner = banners()[0];
     await setBillboardWidth(tree, 270);
-    assert.equal(requests.length, requestCount + 1, 'a retrying resize must issue exactly one native request');
-    assert.equal(banners().length, 1, 'a retrying resize must keep its native banner mounted');
-    assert.equal(banners()[0].props.nativeInstanceId, retryingInstanceId, 'a retrying resize must reuse the in-flight native banner');
-    assert.equal(banners()[0].props.width, 270);
-    assert.equal(hasNoFillCopy(), true, 'a retrying resize must retain the confirmed fallback');
+    await setBillboardWidth(tree, 250);
+    assert.equal(requests.length, 2, 'continuous retrying resizes must not issue native requests');
+    assert.strictEqual(banners()[0], retryingBanner, 'retrying resizes must retain the in-flight native request');
+    assert.equal(banners()[0].props.width, 284, 'retrying resizes must keep the committed native width immutable');
+    assert.deepEqual(nativeWidthTeardowns, [], 'retrying resizes must not trigger native teardown');
+    assert.equal(hasNoFillCopy(), true, 'retrying resizes must retain the confirmed fallback');
 
-    await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
+    await act(async () => { retryingBanner.props.onAdFailedToLoad(networkError); });
     await flush();
     assert.equal(banners().length, 0);
-    assert.equal(hasNoFillCopy(), true, 'a failed replacement must retain the confirmed fallback');
-    assert.equal(requests.length, 3, 'a failed replacement must not start a retry loop');
+    assert.equal(hasNoFillCopy(), true, 'a stale-width failure must retain the confirmed fallback');
+    assert.equal(requests.length, 2, 'a stale-width failure must not request the coalesced width');
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
-    await setBillboardWidth(tree, 270);
+    await setBillboardWidth(tree, 250);
     await flush();
-    assert.equal(requests.length, 3, 'an immediate return after failure must honor the retry interval');
+    assert.equal(requests.length, 2, 'an immediate return after failure must honor the retry interval');
     assert.equal(hasNoFillCopy(), true);
 
     now += 60_000;
     await flush();
-    assert.equal(requests.length, 3, 'elapsed time alone must not issue a replacement request');
+    assert.equal(requests.length, 2, 'elapsed time alone must not issue a replacement request');
     await act(async () => { setAppState('background'); });
     await flush();
-    assert.equal(requests.length, 3, 'no request may run while the app is backgrounded');
+    assert.equal(requests.length, 2, 'no request may run while the app is backgrounded');
     await act(async () => { setAppState('active'); });
-    await setBillboardWidth(tree, 270);
+    await setBillboardWidth(tree, 250);
     await flush();
-    assert.equal(requests.length, 4, 'foregrounding into Store must recover on a qualifying return');
+    assert.equal(requests.length, 3, 'foregrounding into Store must recover on a qualifying return');
     assert.equal(hasNoFillCopy(), true, 'the fallback must remain until the replacement reports loaded');
+    const recoveredBanner = banners()[0];
+    assert.equal(recoveredBanner.props.width, 250);
+
+    await setBillboardWidth(tree, 240);
+    await setBillboardWidth(tree, 230);
+    assert.strictEqual(banners()[0], recoveredBanner, 'recovery resizes must retain the in-flight native request');
+    assert.equal(banners()[0].props.width, 250);
+    assert.equal(requests.length, 3, 'recovery resizes must not issue native requests');
+    assert.equal(hasNoFillCopy(), true);
+
+    await act(async () => { recoveredBanner.props.onAdLoaded({ width: 250, height: 50 }); });
+    assert.equal(requests.length, 4, 'retry settlement must issue one request at the latest width');
+    assert.notStrictEqual(banners()[0], recoveredBanner, 'retry settlement must replace the stale native request');
+    assert.equal(banners()[0].props.width, 230, 'retry settlement must use only the latest measured width');
+    assert.equal(hasNoFillCopy(), true, 'a stale-width load must not clear the confirmed fallback');
+    assert.deepEqual(nativeWidthTeardowns, []);
+
     const replacement = banners()[0];
-    await act(async () => { replacement.props.onAdLoaded({ width: 270, height: 50 }); });
-    assert.strictEqual(banners()[0], replacement, 'loading must reveal the replacement without remounting it');
+    await act(async () => { replacement.props.onAdLoaded({ width: 230, height: 50 }); });
+    assert.strictEqual(banners()[0], replacement, 'the latest-width load must reveal the replacement without remounting it');
     assert.equal(hasNoFillCopy(), false, 'only a loaded replacement may clear the fallback');
     assert.equal(requests.length, 4);
+    assert.deepEqual(requests.map(request => request.width), [320, 284, 250, 230]);
   } finally {
     Date.now = originalNow;
     mockNative.AppState.currentState = 'active';
