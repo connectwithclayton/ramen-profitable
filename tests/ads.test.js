@@ -396,10 +396,14 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   assert.equal(requests.length, 3, 'the latest-width load must not issue another request');
   assert.deepEqual(requests.map(request => request.width), [339, 344, 284]);
 
-  const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
-  await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
-  assert.equal(banners().length, 0, 'a failed unloaded banner must leave the native tree');
-  assert.equal(hasNoFillCopy(), false, 'a network error is not no-fill');
+  const refreshNoFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+  await act(async () => { slideOverRequest.props.onAdFailedToLoad(refreshNoFill); });
+  assert.equal(banners().length, 1, 'an automatic-refresh failure must retain the loaded banner');
+  assert.strictEqual(banners()[0], slideOverRequest);
+  assert.equal(banners()[0].props.nativeInstanceId, slideOverRequest.props.nativeInstanceId);
+  assert.equal(requests.length, 3);
+  assert.equal(hasNoFillCopy(), false, 'a refresh failure must not replace a loaded advert with no-fill copy');
+  assert.deepEqual(nativeWidthTeardowns, []);
   await act(async () => { tree.unmount(); });
 });
 

@@ -10,7 +10,9 @@ function buildMode() {
       : profile && RELEASE_PROFILES.has(profile)
         ? 'release'
         : undefined;
+  const xcodeMode = process.env.CONFIGURATION === 'Release' ? 'release' : undefined;
   const defaultMode = process.env.NODE_ENV === 'production' ? 'release' : 'development';
+  const inferredMode = profileMode ?? xcodeMode ?? defaultMode;
   const explicitMode = process.env.REVENUECAT_BUILD_MODE;
   if (explicitMode) {
     if (explicitMode !== 'development' && explicitMode !== 'release') {
@@ -18,11 +20,14 @@ function buildMode() {
         'REVENUECAT_BUILD_MODE must be either "development" or "release".',
       );
     }
-    const inferredMode = profileMode ?? defaultMode;
     if (explicitMode !== inferredMode) {
       const source = profileMode
         ? `EAS_BUILD_PROFILE="${profile}"`
-        : 'NODE_ENV="production"';
+        : xcodeMode
+          ? 'CONFIGURATION="Release"'
+          : process.env.NODE_ENV === 'production'
+            ? 'NODE_ENV="production"'
+            : 'development defaults';
       throw new Error(
         `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
           `this configuration requires "${inferredMode}" mode.`,
@@ -31,7 +36,7 @@ function buildMode() {
     return inferredMode;
   }
 
-  return profileMode ?? defaultMode;
+  return inferredMode;
 }
 
 function cleanKey(value) {

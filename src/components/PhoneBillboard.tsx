@@ -219,6 +219,8 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
                     if (__DEV__) console.warn('[Catvertising] Banner unavailable.', error);
                     const failedNoFill = (error as Error & { code?: string }).code === 'googleMobileAds/no-fill';
                     lastRequestAtRef.current = Date.now();
+                    const failedState = creativeStateRef.current;
+                    if (failedState !== 'pending' && failedState !== 'retrying') return;
                     if (failedNoFill) setNoFill(true);
                     setCreativeState('failed');
                   }}

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const xcode = require('xcode');
 const plist = require('@expo/plist').default;
+const { TEST_IDS } = require('../config/admob');
 
 test('Expo autolinking excludes the ads native module from Android', () => {
   const root = path.resolve(__dirname, '..');
@@ -32,10 +33,32 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       return JSON.parse(phases[0].shellScript.replace(/\n/g, '\\n'));
     };
     const runPhase = configuration => spawnSync('/bin/sh', ['-c', phase()], { cwd: fixture, env: { ...env, SRCROOT: path.join(fixture, 'ios'), CONFIGURATION: configuration }, encoding: 'utf8' });
+    const constantsConfig = additional => {
+      const constantsEnvironment = { ...process.env };
+      for (const variable of [
+        'EAS_BUILD_PROFILE',
+        'NODE_ENV',
+        'REVENUECAT_BUILD_MODE',
+        'CONFIGURATION',
+        'REVENUECAT_TEST_STORE_API_KEY',
+        'REVENUECAT_IOS_API_KEY',
+        'REVENUECAT_ANDROID_API_KEY',
+        'ADMOB_IOS_APP_ID',
+        'ADMOB_IOS_BANNER_ID',
+      ]) delete constantsEnvironment[variable];
+      Object.assign(constantsEnvironment, additional);
+      const result = spawnSync(
+        process.execPath,
+        [path.join(root, 'node_modules/expo-constants/scripts/build/getAppConfig.js'), fixture, path.join(fixture, 'ios')],
+        { cwd: fixture, env: constantsEnvironment, encoding: 'utf8' },
+      );
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      return JSON.parse(fs.readFileSync(path.join(fixture, 'ios/app.config'), 'utf8'));
+    };
     const development = prebuild();
     assert.equal(development.status, 0, development.stdout + development.stderr);
     const info = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
-    assert.equal(info.GADApplicationIdentifier, require('../config/admob').TEST_IDS.ios.appId);
+    assert.equal(info.GADApplicationIdentifier, TEST_IDS.ios.appId);
     assert.equal(info.GADDelayAppMeasurementInit, true);
     assert.equal(info.NSUserTrackingUsageDescription, undefined);
     assert.equal(info.SKAdNetworkItems, undefined);
@@ -52,6 +75,27 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     const productionInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
     assert.equal(productionInfo.GADApplicationIdentifier, productionIds.ADMOB_IOS_APP_ID);
     assert.equal(runPhase('Release').status, 0);
+    assert.deepEqual(constantsConfig({ CONFIGURATION: 'Release' }).extra.admob.ios, {});
+    const releaseRuntime = constantsConfig({ CONFIGURATION: 'Release', ...productionIds });
+    assert.deepEqual(releaseRuntime.extra.admob.ios, {
+      appId: productionIds.ADMOB_IOS_APP_ID,
+      bannerId: productionIds.ADMOB_IOS_BANNER_ID,
+    });
+    const validatorPath = path.join(fixture, 'scripts/check-admob-release.js');
+    const validator = fs.readFileSync(validatorPath, 'utf8');
+    let captured;
+    try {
+      fs.writeFileSync(validatorPath, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+      captured = runPhase('Release');
+    } finally {
+      fs.writeFileSync(validatorPath, validator);
+    }
+    assert.equal(captured.status, 0, captured.stdout + captured.stderr);
+    assert.deepEqual(JSON.parse(captured.stdout), [
+      releaseRuntime.extra.admob.ios.appId,
+      releaseRuntime.extra.admob.ios.bannerId,
+    ]);
+    assert.deepEqual(constantsConfig({ CONFIGURATION: 'Debug' }).extra.admob, TEST_IDS);
     for (const variable of ['ADMOB_IOS_APP_ID', 'ADMOB_IOS_BANNER_ID']) {
       const marker = path.join(fixture, `injected-${variable}`);
       const payload = `'; touch ${marker}; $(touch ${marker}); exit 0; #`;
