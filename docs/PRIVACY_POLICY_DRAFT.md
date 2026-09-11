@@ -6,7 +6,7 @@
 >
 > **Captain-supplied support contact:** `ramenprofitablegame@gmail.com`
 >
-> **Publication boundary:** the captain's drafting decisions supplied the operator name and support email but did not authorize publication. Publication approval must cover the exact final public-policy copy, the publication-day effective date, RevenueCat disclosures, and the assumption that the released build and captain-owned RevenueCat configuration match the audited implementation. Any material change to the app's data flows, SDK configuration, third-party integrations, contact route, or policy text requires a fresh review.
+> **Publication boundary:** the captain's drafting decisions supplied the operator name and support email but did not authorize publication. Publication approval must cover the exact final public-policy copy, the publication-day effective date, RevenueCat and AdMob disclosures, and the assumption that the released build and captain-owned RevenueCat and AdMob configuration match the audited implementation. Any material change to the app's data flows, SDK configuration, third-party integrations, contact route, or policy text requires a fresh review.
 
 ## Public-policy copy
 
@@ -34,23 +34,33 @@ For those purposes, RevenueCat may process:
 - technical information such as device type and operating system;
 - transaction information such as the last time the app was used, an Apple receipt or Google purchase token, purchase history, product and offering information, and entitlement status.
 
-Ramen Profitable does not create user accounts and does not give RevenueCat your name, email address, phone number, or a custom account identifier. The current app does not use advertising identifiers or attribution integrations. Apple or Google handles payment credentials; neither Ramen Profitable nor RevenueCat receives your full card details through this app.
+Ramen Profitable does not create user accounts and does not give RevenueCat your name, email address, phone number, or a custom account identifier. The app does not send advertising identifiers to RevenueCat or enable RevenueCat attribution integrations. Apple or Google handles payment credentials; neither Ramen Profitable nor RevenueCat receives your full card details through this app.
 
 RevenueCat processes purchase information as a service provider so the app can validate purchases, provide the purchased feature, support restoration, prevent purchase fraud, and provide purchase analytics. RevenueCat describes its practices in its [privacy policy](https://www.revenuecat.com/privacy) and [data and compliance documentation](https://www.revenuecat.com/docs/welcome/set-up-revenuecat/data-and-compliance).
 
 #### Permissions and device features
 
-The app uses device haptics for tap and result feedback and uses an internet connection for purchase-related RevenueCat and app-store requests. The current application code does not request or use access to your camera, microphone, contacts, precise or coarse location, photos, media library, push notifications, notification permission, or tracking permission.
+The app uses device haptics for tap and result feedback and uses an internet connection for purchases, Google consent messages, and advertising. The current application code does not request or use access to your camera, microphone, contacts, precise or coarse location, photos, media library, push notifications, notification permission, or tracking permission.
 
-#### Analytics, advertising, and fictional content
+#### Advertising and privacy choices
 
-The current app contains no third-party advertising, general-purpose analytics SDK, crash-reporting service, or custom developer-operated server endpoint. Chirp is a fictional feed generated and stored within the game. Its posts and reactions are not sent to a social network and are not user-generated public content.
+The free game displays a real Google AdMob banner inside the fictional phone billboard in the Store. The one-time Go Indie unlock removes these ads. Ads remain hidden while purchase ownership is unresolved and during purchase or restore operations.
 
-Ramen Profitable does not sell personal information or use purchase information to track you across other companies' apps or websites for advertising.
+Google's Mobile Ads SDK processes network addresses (including IP-derived approximate location), device or app identifiers, ad impressions and interactions, and diagnostic/performance information for advertising, measurement, fraud prevention, and service operation. Non-personalized ads still involve data processing; they are not anonymous or data-free.
+
+The iOS app requests non-personalized ads, disables Google's publisher first-party ID, and does not request access to Apple's advertising identifier (IDFA) or tracking permission. It does not send game progress, fictional Chirp posts, a name, email address, or RevenueCat identity to Google. Advertising services can still process other app/device identifiers. Google's privacy-preserving SKAdNetwork attribution may be used.
+
+Before requesting ads, the app uses Google's User Messaging Platform to check whether a consent message is needed and display it when required. Where required, you can revisit your choices through **Ad privacy choices** in the Store. If consent cannot be established or ads cannot load, play continues without an ad. See [Google's privacy policy](https://policies.google.com/privacy) and [how Google uses information from apps that use its services](https://policies.google.com/technologies/partner-sites).
+
+#### Analytics and fictional content
+
+The app has no separate general-purpose analytics SDK or developer-operated gameplay server. RevenueCat purchase analytics and Google's advertising analytics/diagnostics are described above. Chirp is a fictional feed generated and stored within the game; its posts and reactions are not sent to a social network.
+
+The app does not sell personal information or use purchase information for advertising across other companies' apps or websites.
 
 #### Retention and requests
 
-Local game data remains on the device until the app or its app data is removed. Purchase records may be retained by Apple or Google and by RevenueCat according to their own legal obligations and service terms so that purchases can be validated and restored.
+Local game data remains on the device until the app or its app data is removed. Google retains advertising and consent information under its own retention practices, privacy policy, and legal obligations; deleting the app does not necessarily erase those records. Purchase records may be retained by Apple or Google and by RevenueCat according to their own legal obligations and service terms so that purchases can be validated and restored.
 
 To ask a privacy question or make a request concerning information processed for Ramen Profitable, email Clayton Johnson at ramenprofitablegame@gmail.com. Because the app has no account and does not connect purchase records to a name or email address, it may not always be possible to match an anonymous RevenueCat record to a particular person without additional purchase information from the app store.
 
@@ -60,49 +70,21 @@ If Ramen Profitable's data practices change, this policy will be updated before 
 
 ## Implementation audit and evidence
 
-This section is review evidence and is **not part of the public-policy copy**. Audit basis: freshly fetched `origin/main` at commit `b7d39848e7d830bcb8d2ab31ff562293fc60151c` on 2026-08-19. No App Store Connect, RevenueCat dashboard, production credential, purchase configuration, or screenshot surface was accessed.
+This section is review evidence, not part of the public-policy copy. Updated for the AdMob integration on 2026-09-10; the earlier August audit described a binary without ads and is superseded. This draft targets the iOS configuration in this change, not an assertion that a signed release has shipped. No App Store Connect or AdMob dashboard answers were submitted, and no public policy was published.
 
-### Data-flow findings
+- [`src/state/gameStore.ts`](../src/state/gameStore.ts) owns local persistence. Entitlement resolution and purchase-pending state are transient. Fresh RevenueCat results take precedence over delayed disk hydration.
+- [`src/monetization/purchases.ts`](../src/monetization/purchases.ts) receives RevenueCat CustomerInfo updates and synchronously applies purchase/restore ownership. Missing purchase configuration leaves ownership unresolved and advertising disabled.
+- [`src/monetization/ads.ts`](../src/monetization/ads.ts) gates initialization on resolved non-ownership and UMP permission. It does not persist a permission decision across launches.
+- [`src/components/PhoneBillboard.tsx`](../src/components/PhoneBillboard.tsx) mounts the native fixed-size banner only when eligible, consent-ready, foregrounded, unobscured by a game overlay, and wide enough to fit it intact. Every request explicitly asks for non-personalized ads. No RevenueCat IDs, custom targeting, PPID, or mediation adapters are supplied.
+- [`app.config.js`](../app.config.js) delays SDK app measurement until initialization and includes Google's SKAdNetwork ID. [`plugins/with-admob-safety.js`](../plugins/with-admob-safety.js) disables publisher first-party ID at iOS native startup. It does not call SDK initialization there. The app does not install an ATT request API or set `NSUserTrackingUsageDescription`.
+- Google Mobile Ads and UMP are third-party network/diagnostic processors even without IDFA. Their bundled privacy manifests must be included in the final Xcode privacy report; that report does not automatically update App Store Connect.
 
-| Finding | Audited implementation evidence |
-| --- | --- |
-| Game state is persisted locally under `ramen-profitable-v1`. | [`src/state/gameStore.ts`](../src/state/gameStore.ts#L86-L100) enumerates the saved gameplay fields. [`src/state/gameStore.ts`](../src/state/gameStore.ts#L352-L373) uses Zustand JSON persistence backed by AsyncStorage and excludes transient notifications, overlays, and entitlement-resolution state. |
-| Offline earnings use only an on-device timestamp and game values. | [`src/state/gameStore.ts`](../src/state/gameStore.ts#L337-L350) computes capped offline earnings from `lastSeen`; [`src/systems/useGameLoop.ts`](../src/systems/useGameLoop.ts#L12-L31) reacts to local app lifecycle changes. |
-| Chirp is generated locally, not posted to a network. | [`src/state/gameStore.ts`](../src/state/gameStore.ts#L141-L152) creates, stores, and likes local posts. [`src/screens/ChirpScreen.tsx`](../src/screens/ChirpScreen.tsx#L16-L84) only renders and mutates that local state. |
-| RevenueCat starts at app launch when a valid environment key is available. | [`App.tsx`](../App.tsx#L26-L42) invokes `initPurchases`. [`src/monetization/purchases.ts`](../src/monetization/purchases.ts#L126-L159) selects a platform key, configures the SDK without a custom App User ID, and immediately calls `getCustomerInfo`. RevenueCat documents that this configuration creates and caches a random anonymous ID when no custom ID is supplied: [Identifying Customers](https://www.revenuecat.com/docs/customers/identifying-customers#anonymous-app-user-ids). |
-| Offerings, purchase UI, entitlement refresh, and restore are the only application-level purchase calls. | [`src/monetization/purchases.ts`](../src/monetization/purchases.ts#L115-L124) reads CustomerInfo; [`src/monetization/purchases.ts`](../src/monetization/purchases.ts#L162-L193) fetches the current offering and presents its paywall; [`src/monetization/purchases.ts`](../src/monetization/purchases.ts#L195-L210) restores purchases and checks entitlement state. [`src/screens/StoreScreen.tsx`](../src/screens/StoreScreen.tsx#L36-L57) ties restore to an explicit user action. |
-| Development/Test Store and release key paths are separated and fail closed. | [`app.config.js`](../app.config.js#L1-L34) resolves development versus release mode; [`app.config.js`](../app.config.js#L41-L64) embeds only the matching key class. [`src/monetization/purchases.ts`](../src/monetization/purchases.ts#L36-L78) uses Test Store keys only in development and platform keys only in release. Missing, wrong, unsupported, or unavailable native configuration remains in mock mode without calling `Purchases.configure`. [`eas.json`](../eas.json#L6-L36) assigns development and release modes to the corresponding build profiles. |
-| Go Indie is a one-time lifetime entitlement, not an ad-removal or monthly-subscription product. | [`src/monetization/purchases.ts`](../src/monetization/purchases.ts#L1-L8) defines it as a non-consumable unlock; [`README.md`](../README.md#L38-L47) records the lifetime `go_indie` behavior and restore path; [`README.md`](../README.md#L51-L60) records the intended lifetime catalog product. [`src/state/gameStore.ts`](../src/state/gameStore.ts#L337-L348) implements only the doubled offline-earnings benefit. |
-| No custom identity, contact attribute, advertising-ID, attribution, analytics, crash-reporting, ad, or custom endpoint call exists in application source. | Repository-wide audit of `App.tsx`, `index.ts`, `src/**`, `app.config.js`, `app.json`, and `eas.json` found no direct `fetch`, XHR, WebSocket, analytics SDK, ad SDK, account/login flow, RevenueCat `logIn`, subscriber-attribute setter, or device-identifier collection call. The direct dependency list is in [`package.json`](../package.json#L5-L17); RevenueCat is the purchase-network exception documented above. RevenueCat's own App Privacy guidance says purchase history is required, while custom IDs, advertising IDs, contact data, and analytics SDK disclosures are conditional: [Apple App Privacy](https://www.revenuecat.com/docs/platform-resources/apple-platform-resources/apple-app-privacy). |
-| Expo/native use is limited to config constants, haptics, status-bar presentation, AppState lifecycle, AsyncStorage, SVG rendering, and the RevenueCat native modules. | Imports are visible in [`App.tsx`](../App.tsx#L1-L15), [`src/components/OverlayHost.tsx`](../src/components/OverlayHost.tsx#L1-L10), [`src/components/PaywallDesigner.tsx`](../src/components/PaywallDesigner.tsx#L1-L8), [`src/screens/CodeScreen.tsx`](../src/screens/CodeScreen.tsx#L1-L17), and [`src/systems/useGameLoop.ts`](../src/systems/useGameLoop.ts#L1-L3). No location, camera, contacts, notification, media, or tracking module is installed or imported. |
+### App Store Connect changes required before submission
 
-### Native permission check
+The captain must change the former RevenueCat-only questionnaire to the iOS answers in [`ADMOB_SETUP.md`](./ADMOB_SETUP.md#app-store-connect-privacy-answers). This includes advertising-related data, device identifiers, coarse location, usage, and diagnostics. Do not retain the prior “no third-party advertising” or “no identifiers” claims.
 
-The release-mode Expo SDK 57 prebuild config was inspected without loading any RevenueCat credentials:
+**ATT is not requested or required for the non-tracking iOS configuration built here.** This is a configuration-specific conclusion, not a claim that any AdMob integration avoids ATT. Non-personalized ads alone do not establish that conclusion: it also depends on not requesting IDFA, not passing cross-company identifiers, disabling publisher first-party ID, and keeping AdMob mediation/IDFA messages and tracking features disabled. Enabling tracking or personalization later requires renewed implementation/privacy review and, where applicable, ATT authorization before tracking.
 
-```sh
-env -u REVENUECAT_TEST_STORE_API_KEY \
-  -u REVENUECAT_IOS_API_KEY \
-  -u REVENUECAT_ANDROID_API_KEY \
-  NODE_ENV=production \
-  EAS_BUILD_PROFILE=production \
-  REVENUECAT_BUILD_MODE=release \
-  node node_modules/expo/bin/cli config --type prebuild --json
-```
+Android development also uses Google's sample banner inventory and UMP. Android can expose an advertising ID through the SDK's merged manifest; the iOS no-IDFA statement is not an Android privacy claim. Android production remains blocked until its own identifiers, final permission inventory, and Play Data Safety disclosure are supplied/reviewed.
 
-The resolved iOS configuration has no privacy-sensitive usage-description keys. The resolved Android configuration includes `INTERNET` plus legacy `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` manifest entries; the haptics dependency also declares `VIBRATE`. Current application code never requests runtime storage access or reads external media/files. The legacy storage declarations should be rechecked against the final signed release artifact, because this audit did not build or inspect that artifact.
-
-### Release versus development behavior
-
-- **Release with a valid platform key:** RevenueCat configures at launch, creates or reuses an anonymous SDK identity, retrieves CustomerInfo, and can later fetch the current offering, present the paywall, validate a purchase, and restore purchases.
-- **Development/Test Store with a valid `test_` key:** the same application calls use RevenueCat's Test Store environment and verbose local SDK logging. Test Store transactions are development behavior, not evidence of production purchase configuration.
-- **Expo Go, missing key, wrong key type, unsupported platform, or unavailable native module:** purchase functions return mock/unavailable results and the app continues without configuring RevenueCat. Base game state and offline earnings still operate locally.
-- **Developer tooling:** `expo-dev-client` is installed for development builds, but application source does not import it or call an Expo-hosted runtime service. EAS configuration is build infrastructure, not evidence that the released app sends gameplay data to Expo.
-
-### App Store privacy-label implication — not submitted
-
-Based on the audited code and RevenueCat's current guidance, the likely minimum App Store privacy disclosure is **Purchase History**, used for **App Functionality** and **Analytics**, not linked to identity and not used for tracking. This is an implementation-derived draft only. The captain must reconcile it with the actual release artifact and captain-owned RevenueCat project settings, including any dashboard integrations, before answering App Store Connect's privacy questionnaire.
-
-### App Store support URL
-
-The outstanding Support URL requirement is owned by [`APP_STORE_METADATA_DRAFT.md`](./APP_STORE_METADATA_DRAFT.md); this privacy draft does not supply or imply a URL.
+See [`ADMOB_SETUP.md`](./ADMOB_SETUP.md) for sources, configuration, release safeguards, and remaining signed-binary/dashboard verification. Publication of the exact final policy still needs the captain's approval and publication-day effective date. Do not edit the App Store listing copy to remove advertising.

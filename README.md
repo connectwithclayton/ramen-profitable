@@ -127,3 +127,7 @@ variable.
 | App MRR roll | `resolveReview` | $40–200 base |
 | Win condition | `MRR_GOAL` | $2,000 MRR |
 | Day length | `slowTick` | ~30s real time |
+
+## Catvertising advertising
+
+The Store contains a real AdMob banner inside its fictional phone; Go Indie removes it. See [AdMob setup, release guards, and privacy handoff](docs/ADMOB_SETUP.md). Ads require a rebuilt native development client and resolved RevenueCat ownership. Preview/production builds intentionally fail until real platform AdMob IDs are configured.

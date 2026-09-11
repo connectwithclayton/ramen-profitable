@@ -9,6 +9,7 @@
  */
 
 import Constants from 'expo-constants';
+import { useGame } from '../state/gameStore';
 
 type NativePlatform = 'ios' | 'android';
 
@@ -80,6 +81,7 @@ export function selectRevenueCatApiKey(
 let Purchases: any = null;
 let RevenueCatUI: any = null;
 let mockMode = true;
+let customerInfoRevision = 0;
 let initializationPromise: Promise<boolean | null> | null = null;
 
 const GO_INDIE_ENTITLEMENT = 'go_indie';
@@ -115,8 +117,12 @@ function isGoIndieActive(customerInfo: any): boolean {
 async function refreshGoIndieEntitlement(): Promise<boolean | null> {
   if (mockMode || !Purchases) return null;
   try {
+    const revision = customerInfoRevision;
     const info = await Purchases.getCustomerInfo();
-    return isGoIndieActive(info);
+    if (revision !== customerInfoRevision) return useGame.getState().goIndieActive;
+    const active = isGoIndieActive(info);
+    useGame.getState().setGoIndieActive(active);
+    return active;
   } catch (e) {
     console.warn('[purchases] Could not refresh CustomerInfo.', e);
     return null;
@@ -143,6 +149,10 @@ async function configurePurchases(): Promise<boolean | null> {
     Purchases.setLogHandler(handleRevenueCatLog);
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
+    Purchases.addCustomerInfoUpdateListener((info: any) => {
+      customerInfoRevision++;
+      useGame.getState().setGoIndieActive(isGoIndieActive(info));
+    });
     mockMode = false;
     console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
     return refreshGoIndieEntitlement();
@@ -160,6 +170,16 @@ export function initPurchases(): Promise<boolean | null> {
 }
 
 export async function presentGoIndiePaywall(): Promise<boolean | null> {
+  if (useGame.getState().purchasePending) return null;
+  useGame.setState({ purchasePending: true });
+  try {
+    return await presentPaywall();
+  } finally {
+    useGame.setState({ purchasePending: false });
+  }
+}
+
+async function presentPaywall(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
   try {
@@ -182,7 +202,14 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
 
     const result = await RevenueCatUI.presentPaywall({ offering });
     if (result === uiMod.PAYWALL_RESULT.PURCHASED || result === uiMod.PAYWALL_RESULT.RESTORED) {
-      return refreshGoIndieEntitlement();
+      // The UI result alone is not the go_indie entitlement. Keep ads hidden
+      // while checking CustomerInfo, and fail closed if confirmation is missing.
+      const active = await refreshGoIndieEntitlement();
+      if (active !== true) {
+        useGame.setState({ goIndieResolved: false });
+        return null;
+      }
+      return true;
     }
     return null;
   } catch (e) {
@@ -192,11 +219,24 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
 }
 
 export async function restoreGoIndiePurchases(): Promise<boolean | null> {
+  if (useGame.getState().purchasePending) return null;
+  useGame.setState({ purchasePending: true });
+  try {
+    return await restorePurchases();
+  } finally {
+    useGame.setState({ purchasePending: false });
+  }
+}
+
+async function restorePurchases(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
   try {
     const customerInfo = await Purchases.restorePurchases();
-    return isGoIndieActive(customerInfo);
+    customerInfoRevision++;
+    const active = isGoIndieActive(customerInfo);
+    useGame.getState().setGoIndieActive(active);
+    return active;
   } catch (e) {
     console.warn('[purchases] restore failed', e);
     return null;

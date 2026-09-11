@@ -42,6 +42,8 @@ test('release configuration excludes the Test Store key', () => {
       REVENUECAT_BUILD_MODE: 'release',
       REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
       REVENUECAT_IOS_API_KEY: 'appl_release_value',
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~1111111111',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/1111111111',
     },
     () => appConfig({ config: {} }),
   );

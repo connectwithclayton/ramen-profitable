@@ -37,6 +37,12 @@ silently does nothing. To exercise rich game states without grinding, overwrite 
 zustand blob (key `ramen-profitable-v1`) in the app container's
 `Library/Application Support/<bundle id>/RCTAsyncLocalStorage_V1/manifest.json`, then relaunch.
 
+## Advertising builds
+
+AdMob identifiers, native release guards, consent configuration, and the required privacy
+answers are documented in `docs/ADMOB_SETUP.md`; `config/admob.js` is the sole ID source.
+Use a Debug development client for sample ads. Release builds deliberately reject test IDs.
+
 ## Emoji boundary
 
 UI chrome uses the drawn icons in `src/components/icons.tsx`. Chirp post text remains user-style

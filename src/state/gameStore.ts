@@ -105,6 +105,7 @@ export type GameState = {
   overlay: Overlay;
   goIndieActive: boolean;
   goIndieResolved: boolean;
+  purchasePending: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
   lastSeen: number; // epoch ms; identity for base offline credit and pending owner bonus
@@ -167,6 +168,7 @@ const initial: GameState = {
   overlay: null,
   goIndieActive: false,
   goIndieResolved: false,
+  purchasePending: false,
   won: false,
   achievements: {},
   lastSeen: Date.now(),
@@ -546,6 +548,8 @@ export const useGame = create<GameState & Actions>()(
       merge: (persisted, current) => ({
         ...current,
         ...selectPersistedState(persisted, BETA_TESTER),
+        // A late disk read must not overwrite fresh RevenueCat ownership.
+        ...(current.goIndieResolved ? { goIndieActive: current.goIndieActive } : {}),
       }),
       partialize: s => selectPersistedState(s, BETA_TESTER),
     }

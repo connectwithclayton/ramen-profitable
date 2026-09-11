@@ -57,17 +57,11 @@ function HydratedGame() {
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
-  const setGoIndieActive = useGame(s => s.setGoIndieActive);
 
   useGameLoop();
 
   useEffect(() => {
-    let cancelled = false;
-    void initPurchases().then(active => {
-      if (!cancelled && active !== null) {
-        setGoIndieActive(active);
-      }
-    });
+    void initPurchases();
     const t1 = setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900);
     const t2 = setTimeout(() => {
       const s = useGame.getState();
@@ -76,11 +70,10 @@ function HydratedGame() {
       }
     }, 3000);
     return () => {
-      cancelled = true;
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [setGoIndieActive]);
+  }, []);
 
   return (
     <SafeAreaView style={st.root}>

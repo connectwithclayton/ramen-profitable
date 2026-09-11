@@ -18,6 +18,7 @@ import {
   money,
 } from '../components/ui';
 import { C } from '../theme';
+import PhoneBillboard from '../components/PhoneBillboard';
 import { restoreGoIndiePurchases } from '../monetization/purchases';
 
 /**
@@ -125,13 +126,15 @@ export default function StoreScreen() {
         );
       })}
 
+      <PhoneBillboard />
+
       <Section>
         <SectionHeader title="Go Indie" meta={indie ? 'ACTIVE' : undefined} metaColor={C.mint} />
         <Unit tone={indie ? C.mint : C.gold} style={st.indie}>
           <Text style={st.indieCopy}>
             {indie
-              ? 'Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'
-              : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.'}
+              ? 'Indie operator status is active. Ads are removed. Offline earnings are doubled — capped at 8 hours, same as always.'
+              : 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed.'}
           </Text>
           <Btn label="Go Indie" ghost={indie} onPress={s.openGoIndiePaywall} style={{ marginTop: 14 }} />
           <Btn
