@@ -27,11 +27,11 @@ Sources: [Google iOS setup](https://developers.google.com/admob/ios/quick-start)
 
 **Expo Go cannot display these ads. Rebuild the native development client.** Installing the JS package or restarting Metro is insufficient. This repo uses Expo 57, React Native 0.86 and `react-native-google-mobile-ads`; both Google ads and RevenueCat need native modules. Read against the [versioned Expo 57 documentation](https://docs.expo.dev/versions/v57.0.0/), plus the [wrapper's installation guide](https://docs.page/invertase/react-native-google-mobile-ads).
 
-For local testing, set the existing `REVENUECAT_TEST_STORE_API_KEY`, then run `npx expo run:ios --device <udid> --port <free-port>`. Use a Debug build, or the EAS `development` / `ios-simulator` profile. Preview/TestFlight/store builds are Release and require real iOS AdMob IDs. Simulators get test ads even with real units; register physical test devices in AdMob before testing real IDs. Never click live ads.
+For local testing, set the existing `REVENUECAT_TEST_STORE_API_KEY`, then run `npx expo run:ios --device <udid> --port <free-port>`. Use a Debug build, or the EAS `development` / `ios-simulator` profile. iOS Preview/TestFlight/store builds are Release and require real iOS AdMob IDs. Simulators get test ads even with real units; register physical test devices in AdMob before testing real IDs. Never click live ads.
 
 ## Release safeguards — include in the PR description
 
-- Expo config rejects undeclared EAS profiles and rejects absent, malformed, and Google sample publisher IDs for preview, production, and local `NODE_ENV=production` builds. Valid production IDs pass; development mode cannot override these checks.
+- Expo config rejects undeclared EAS profiles. It carries iOS identifiers without validating them so non-iOS release configuration remains independent of `ADMOB_IOS_*`; the iOS-only guards below enforce them.
 - The Expo safety plugin adds a **native Xcode build phase** that validates the IDs captured when native projects were generated, not whatever environment happens to be present at compile time. Thus a Debug prebuild later archived as Release still fails loudly. Regenerate the iOS native project after changing IDs; do not manually edit generated native files.
 - A release JavaScript bundle validates its embedded iOS IDs at module import, even if a purchased user would hide the ad.
 - There is no “allow test release” escape hatch. Debug/sample builds are for development only.
@@ -66,7 +66,7 @@ Disclosure sources: [Google SDK data disclosure](https://developers.google.com/a
 
 ## Validation evidence
 
-`npm test` exercises the application root and Store React tree, Zustand state, and public RevenueCat purchase/restore APIs, with native/network doubles. It checks initial unknown ownership, one untagged UMP refresh per launch, the paid-user privacy entry, non-personalized banner requests, delayed consent, confirmed purchase and restore removal, remount, fresh-install restore, no-fill, and consent withdrawal. Config tests execute the configuration consumer, release JavaScript guard, and native identifier guard for invalid and valid production IDs. These tests are not proof of real ad fill, App Store purchases, or dashboard setup.
+`npm test` exercises the application root and Store React tree, Zustand state, and public RevenueCat purchase/restore APIs, with native/network doubles. It checks initial unknown ownership, one untagged UMP refresh per launch, the paid-user privacy entry, non-personalized banner requests, delayed consent, confirmed purchase and restore removal, remount, fresh-install restore, no-fill, and consent withdrawal. Config tests execute platform-neutral release configuration without iOS IDs and the native identifier guard with missing, sample, and valid IDs; ads tests execute the valid release JavaScript path. These tests are not proof of real ad fill, App Store purchases, or dashboard setup.
 
 The local iOS Debug simulator build succeeded with Google Mobile Ads 13.5.0 and UMP 3.1.0. A native SDK rehearsal reached the banner request but returned `googleMobileAds/network-error: The network connection was lost`; actual creative rendering is **unverified**. With no local RevenueCat test key, this ignored, temporary rehearsal entry explicitly supplied non-purchaser state; it did not validate RevenueCat purchases, and was removed afterward.
 
