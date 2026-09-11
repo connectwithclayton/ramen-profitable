@@ -27,6 +27,7 @@ let privacyRequired = false;
 let consentInfoGate = null;
 let consentInfoCalls = 0;
 let initializationCalls = 0;
+let initializationFailuresRemaining = 0;
 let consentInfoUpdateCalls = 0;
 let consentInfoUpdateArguments;
 let consentFormCalls = 0;
@@ -53,7 +54,13 @@ const setAppState = state => {
 const ads = {
   default: () => ({
     setRequestConfiguration: async () => { throw new Error('unexpected request configuration'); },
-    initialize: async () => { initializationCalls++; },
+    initialize: async () => {
+      initializationCalls++;
+      if (initializationFailuresRemaining > 0) {
+        initializationFailuresRemaining--;
+        throw new Error('initialization unavailable');
+      }
+    },
   }),
   BannerAdSize: { INLINE_ADAPTIVE_BANNER: 'INLINE_ADAPTIVE_BANNER' },
   AdsConsentPrivacyOptionsRequirementStatus: { REQUIRED: 'REQUIRED' },
@@ -149,6 +156,7 @@ const resetAdLifecycleState = () => {
   consentInfoUpdate = deferred();
   consentForm = deferred();
   initializationCalls = 0;
+  initializationFailuresRemaining = 0;
   consentInfoUpdateCalls = 0;
   consentInfoUpdateArguments = undefined;
   consentFormCalls = 0;
@@ -342,11 +350,8 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
 
   const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
   await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
+  assert.equal(banners().length, 0, 'a failed unloaded banner must leave the native tree');
   assert.equal(hasNoFillCopy(), false, 'a network error is not no-fill');
-  const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
-  await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
-  assert.equal(banners().length, 0);
-  assert.equal(hasNoFillCopy(), true, 'only genuine no-fill may show sponsor copy');
   await act(async () => { tree.unmount(); });
 });
 
@@ -497,6 +502,152 @@ test('no-fill retries only on a Store return after sixty seconds', async () => {
     assert.equal(hasNoFillCopy(), false, 'only a loaded replacement may clear the fallback');
     assert.equal(requests.length, 3);
   } finally {
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  }
+});
+
+test('unloaded banners recover only on qualifying Store returns', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  let now = originalNow();
+  Date.now = () => now;
+  const retryTimerDelays = [];
+  const retryTimerHandles = new Set();
+  let tree;
+  try {
+    const FreshApp = loadFreshApp();
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const banners = () => tree.root.findAllByType('NativeBanner');
+    const hasNoFillCopy = () => tree.root.findAllByType('Text')
+      .some(node => node.props.children === 'The cat is between sponsors.');
+    const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
+    global.setTimeout = (callback, delay, ...args) => {
+      if (typeof delay === 'number' && delay >= 60_000) {
+        retryTimerDelays.push(delay);
+        const handle = { callback, args };
+        retryTimerHandles.add(handle);
+        return handle;
+      }
+      return originalSetTimeout(callback, delay, ...args);
+    };
+    global.clearTimeout = handle => {
+      if (retryTimerHandles.delete(handle)) return;
+      return originalClearTimeout(handle);
+    };
+
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(requests.length, 1);
+    assert.equal(banners().length, 1);
+    assert.equal(hasNoFillCopy(), false, 'an unresolved request is not no-fill');
+
+    await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
+    await flush();
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), false, 'a network failure must not claim genuine no-fill');
+
+    now += 59_999;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 1, 'a failed advert must honor the retry interval');
+
+    now += 1;
+    await flush();
+    assert.equal(requests.length, 1, 'elapsed time alone must not retry a failed advert');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 2, 'a qualifying return must recover a network failure');
+    assert.equal(banners().length, 1);
+    assert.equal(hasNoFillCopy(), false);
+
+    now += 59_999;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 2, 'an unresolved request must honor the retry interval');
+
+    now += 1;
+    await flush();
+    assert.equal(requests.length, 2, 'elapsed time alone must not retry an unresolved request');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 3, 'the next qualifying return must replace an advert that never loaded');
+    const replacement = banners()[0];
+    await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
+
+    now += 60_000;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 3, 'a loaded creative must be reused without another request');
+    assert.strictEqual(banners()[0], replacement);
+    assert.deepEqual(retryTimerDelays, [], 'banner recovery must not schedule a background timer');
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  }
+});
+
+test('SDK preparation failure retries without a loop', async () => {
+  resetAdLifecycleState();
+  initializationFailuresRemaining = 1;
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  try {
+    const FreshApp = loadFreshApp();
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const banners = () => tree.root.findAllByType('NativeBanner');
+
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(initializationCalls, 1);
+    assert.equal(requests.length, 0);
+    await flush();
+    assert.equal(initializationCalls, 1, 'a preparation failure must not create a retry loop');
+
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(initializationCalls, 2, 'the next Store return must retry preparation before any banner request exists');
+    assert.equal(requests.length, 1);
+    const replacement = banners()[0];
+    await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
+
+    now += 60_000;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(initializationCalls, 2);
+    assert.equal(requests.length, 1, 'loaded creative must survive later returns');
+    assert.strictEqual(banners()[0], replacement);
+  } finally {
+    initializationFailuresRemaining = 0;
     Date.now = originalNow;
     mockNative.AppState.currentState = 'active';
     if (tree) await act(async () => { tree.unmount(); });

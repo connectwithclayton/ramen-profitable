@@ -6,7 +6,8 @@ import { Btn, MonoText, Section, SectionHeader, Unit } from './ui';
 import { C, S } from '../theme';
 
 const NON_PERSONALIZED_REQUEST = { requestNonPersonalizedAdsOnly: true } as const;
-const NO_FILL_RETRY_INTERVAL_MS = 60_000;
+const RETRY_INTERVAL_MS = 60_000;
+type CreativeState = 'idle' | 'pending' | 'loaded' | 'failed' | 'retrying';
 
 export default function PhoneBillboard({ active = true, indie }: { active?: boolean; indie: boolean }) {
   const eligible = useGame(mayRequestAds);
@@ -20,7 +21,8 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const lastRequestAtRef = useRef<number | null>(null);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [noFill, setNoFill] = useState(false);
-  const [retryingNoFill, setRetryingNoFill] = useState(false);
+  const [creativeState, setCreativeState] = useState<CreativeState>('idle');
+  const [requestKey, setRequestKey] = useState(0);
   const requestable = active && eligible && foreground && !overlay && !privacyBusy && width > 0;
   const wasRequestableRef = useRef(requestable);
 
@@ -31,7 +33,8 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
 
   useEffect(() => {
     let cancelled = false;
-    if (!ready && (!noFill || retryingNoFill) && active && eligible && foreground && !overlay && !privacyBusy && width > 0) {
+    const needsPreparation = creativeState === 'idle' || creativeState === 'retrying';
+    if (!ready && needsPreparation && (!noFill || creativeState === 'retrying') && active && eligible && foreground && !overlay && !privacyBusy && width > 0) {
       const isRenderable = () => (
         !cancelled &&
         active &&
@@ -42,9 +45,13 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       void prepareAds(isRenderable).then(async allowed => {
         if (!cancelled) {
           setReady(allowed);
-          if (!allowed && retryingNoFill) {
-            lastRequestAtRef.current = Date.now();
-            setRetryingNoFill(false);
+          if (allowed) {
+            if (creativeState === 'idle') setCreativeState('pending');
+          } else {
+            if (creativeState === 'retrying' && lastRequestAtRef.current !== null) {
+              lastRequestAtRef.current = Date.now();
+            }
+            setCreativeState('failed');
           }
         }
         const required = await privacyOptionsRequired().catch(() => false);
@@ -55,31 +62,34 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       if (!cancelled) setPrivacyRequired(required);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [active, eligible, foreground, noFill, overlay, privacyBusy, ready, retryingNoFill, revision, width]);
+  }, [active, creativeState, eligible, foreground, noFill, overlay, privacyBusy, ready, revision, width]);
 
   useEffect(() => {
     setReady(false);
-    setRetryingNoFill(retrying => {
-      if (retrying) lastRequestAtRef.current = Date.now();
-      return false;
+    setCreativeState(state => {
+      if (state === 'failed') return state;
+      return state === 'retrying' ? 'failed' : 'idle';
     });
   }, [eligible, privacyBusy, revision, width]);
 
+  // Any unloaded creative retries only on a qualifying return after any existing request cooldown.
   useEffect(() => {
     const returning = requestable && !wasRequestableRef.current;
     wasRequestableRef.current = requestable;
     const lastRequestAt = lastRequestAtRef.current;
+    const retryDue = lastRequestAt === null
+      ? creativeState === 'failed'
+      : Date.now() - lastRequestAt >= RETRY_INTERVAL_MS;
     if (
       returning &&
-      noFill &&
-      !retryingNoFill &&
-      lastRequestAt !== null &&
-      Date.now() - lastRequestAt >= NO_FILL_RETRY_INTERVAL_MS
+      creativeState !== 'loaded' &&
+      retryDue
     ) {
-      lastRequestAtRef.current = Date.now();
-      setRetryingNoFill(true);
+      if (lastRequestAt !== null) lastRequestAtRef.current = Date.now();
+      setCreativeState('retrying');
+      setRequestKey(value => value + 1);
     }
-  }, [noFill, requestable, retryingNoFill]);
+  }, [creativeState, requestable]);
 
   const privacy = async () => {
     setPrivacyBusy(true); // Unmount the native banner before changing consent.
@@ -97,8 +107,15 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const mod = ready ? adsModule() : null;
   const id = bannerId();
   const Banner = mod?.BannerAd;
-  const show = eligible && !privacyBusy && ready && (!noFill || retryingNoFill) && width > 0 && Banner && id;
+  const bannerActive = creativeState === 'pending' || creativeState === 'loaded' || creativeState === 'retrying';
+  const retryingWithFallback = noFill && creativeState === 'retrying';
+  const show = eligible && !privacyBusy && ready && bannerActive && (!noFill || creativeState === 'retrying') && width > 0 && Banner && id;
+  const bannerMounted = Boolean(show);
   const concealed = !active || !foreground || overlay || privacyBusy;
+
+  useEffect(() => {
+    if (bannerMounted) lastRequestAtRef.current = Date.now();
+  }, [bannerMounted, requestKey, revision]);
 
   return (
     <Section style={st.section}>
@@ -123,31 +140,29 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
           >
             {show && (
               <View
-                accessibilityElementsHidden={retryingNoFill}
-                importantForAccessibility={retryingNoFill ? 'no-hide-descendants' : 'auto'}
-                pointerEvents={retryingNoFill ? 'none' : 'auto'}
-                style={retryingNoFill && st.pendingBanner}
+                accessibilityElementsHidden={retryingWithFallback}
+                importantForAccessibility={retryingWithFallback ? 'no-hide-descendants' : 'auto'}
+                pointerEvents={retryingWithFallback ? 'none' : 'auto'}
+                style={retryingWithFallback && st.pendingBanner}
               >
                 <Banner
-                  key={revision}
+                  key={`${revision}:${requestKey}`}
                   unitId={id}
                   size={mod.BannerAdSize.INLINE_ADAPTIVE_BANNER}
                   width={width}
                   maxHeight={50}
                   requestOptions={NON_PERSONALIZED_REQUEST}
                   onAdLoaded={() => {
-                    if (retryingNoFill) {
-                      lastRequestAtRef.current = null;
-                      setNoFill(false);
-                      setRetryingNoFill(false);
-                    }
+                    lastRequestAtRef.current = null;
+                    setNoFill(false);
+                    setCreativeState('loaded');
                   }}
                   onAdFailedToLoad={error => {
                     if (__DEV__) console.warn('[Catvertising] Banner unavailable.', error);
                     const failedNoFill = (error as Error & { code?: string }).code === 'googleMobileAds/no-fill';
-                    if (failedNoFill || retryingNoFill) lastRequestAtRef.current = Date.now();
+                    lastRequestAtRef.current = Date.now();
                     if (failedNoFill) setNoFill(true);
-                    if (retryingNoFill) setRetryingNoFill(false);
+                    setCreativeState('failed');
                   }}
                 />
               </View>
