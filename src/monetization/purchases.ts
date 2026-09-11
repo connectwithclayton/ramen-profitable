@@ -170,16 +170,6 @@ export function initPurchases(): Promise<boolean | null> {
 }
 
 export async function presentGoIndiePaywall(): Promise<boolean | null> {
-  if (useGame.getState().purchasePending) return null;
-  useGame.setState({ purchasePending: true });
-  try {
-    return await presentPaywall();
-  } finally {
-    useGame.setState({ purchasePending: false });
-  }
-}
-
-async function presentPaywall(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
   try {
@@ -202,8 +192,7 @@ async function presentPaywall(): Promise<boolean | null> {
 
     const result = await RevenueCatUI.presentPaywall({ offering });
     if (result === uiMod.PAYWALL_RESULT.PURCHASED || result === uiMod.PAYWALL_RESULT.RESTORED) {
-      // The UI result alone is not the go_indie entitlement. Keep ads hidden
-      // while checking CustomerInfo, and fail closed if confirmation is missing.
+      // The UI result alone is not the go_indie entitlement. Fail closed if confirmation is missing.
       const active = await refreshGoIndieEntitlement();
       if (active !== true) {
         useGame.setState({ goIndieResolved: false });
@@ -219,16 +208,6 @@ async function presentPaywall(): Promise<boolean | null> {
 }
 
 export async function restoreGoIndiePurchases(): Promise<boolean | null> {
-  if (useGame.getState().purchasePending) return null;
-  useGame.setState({ purchasePending: true });
-  try {
-    return await restorePurchases();
-  } finally {
-    useGame.setState({ purchasePending: false });
-  }
-}
-
-async function restorePurchases(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
   try {

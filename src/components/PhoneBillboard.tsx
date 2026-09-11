@@ -5,6 +5,8 @@ import { adsModule, bannerId, mayRequestAds, prepareAds, privacyOptionsRequired,
 import { Btn, MonoText, Section, SectionHeader, Unit } from './ui';
 import { C, S } from '../theme';
 
+const NON_PERSONALIZED_REQUEST = { requestNonPersonalizedAdsOnly: true } as const;
+
 /** A fictional phone is the unit; Google's real 320x50 creative stays intact. */
 export default function PhoneBillboard() {
   const eligible = useGame(mayRequestAds);
@@ -70,6 +72,7 @@ export default function PhoneBillboard() {
               key={revision}
               unitId={id}
               size={mod.BannerAdSize.BANNER}
+              requestOptions={NON_PERSONALIZED_REQUEST}
               onAdFailedToLoad={error => {
                 if (__DEV__) console.warn('[Catvertising] Banner unavailable.', error);
                 setFailed(true);

@@ -44,19 +44,19 @@ The app uses device haptics for tap and result feedback and uses an internet con
 
 #### Advertising and privacy choices
 
-The free game displays a real Google AdMob banner inside the fictional phone billboard in the Store. The one-time Go Indie unlock removes these ads. Ads remain hidden while purchase ownership is unresolved and during purchase or restore operations.
+The free game displays a real Google AdMob banner inside the fictional phone billboard in the Store. The one-time Go Indie unlock removes these ads. Ads remain hidden while purchase ownership is unresolved.
 
 Google's Mobile Ads SDK processes network addresses (including IP-derived approximate location), device or app identifiers, ad impressions and interactions, and diagnostic/performance information for advertising, measurement, fraud prevention, and service operation. Ads still involve data processing; they are not anonymous or data-free.
 
-The app does not collect an age from you. Production advertising remains blocked until the operator approves how the released app handles under-age users and that choice is implemented consistently in Google Mobile Ads and its consent flow. This draft must describe the approved behavior before publication. Development builds use Google sample ads without making an app-wide age assertion; that does not establish production behavior. The current code does not request tracking permission or send game progress, fictional Chirp posts, a name, email address, or RevenueCat identity to Google. Advertising services can still process app/device identifiers.
+The app is configured for a general audience. It does not collect or ask for your age, mark users as children or under age of consent, or send those age-treatment signals to Google. Each banner request asks Google for non-personalized advertising only. The current code does not request tracking permission or send game progress, fictional Chirp posts, a name, email address, or RevenueCat identity to Google. Advertising services can still process app/device identifiers.
 
-Before requesting ads, the app uses Google's User Messaging Platform to check whether a consent message is needed and display it when required. Where required, you can revisit your choices through **Ad privacy choices** in the Store. If consent cannot be established or ads cannot load, play continues without an ad. See [Google's privacy policy](https://policies.google.com/privacy) and [how Google uses information from apps that use its services](https://policies.google.com/technologies/partner-sites).
+On iOS, the app asks Google's User Messaging Platform to refresh consent information at launch for every user, including Go Indie owners. UMP does not expose whether a prior consent record exists until that update is initiated. The launch refresh does not automatically show a consent message to Go Indie owners, initialize Mobile Ads, or request a banner; where required, it preserves the **Ad privacy choices** entry in the Store. Before requesting an ad for a free user, the app displays a consent message when required and checks whether ads may be requested. If consent cannot be established or ads cannot load, play continues without an ad. See [Google's privacy policy](https://policies.google.com/privacy) and [how Google uses information from apps that use its services](https://policies.google.com/technologies/partner-sites).
 
 #### Analytics and fictional content
 
 The app has no separate general-purpose analytics SDK or developer-operated gameplay server. RevenueCat purchase analytics and Google's advertising analytics/diagnostics are described above. Chirp is a fictional feed generated and stored within the game; its posts and reactions are not sent to a social network.
 
-The app does not sell personal information or use purchase information for advertising across other companies' apps or websites.
+Ramen Profitable does not pass purchase information to Google for advertising purposes.
 
 #### Retention and requests
 
@@ -72,10 +72,10 @@ If Ramen Profitable's data practices change, this policy will be updated before 
 
 This section is review evidence, not part of the public-policy copy. Updated for the AdMob integration on 2026-09-10; the earlier August audit described a binary without ads and is superseded. This draft targets the iOS configuration in this change, not an assertion that a signed release has shipped. No App Store Connect or AdMob dashboard answers were submitted, and no public policy was published.
 
-- [`src/state/gameStore.ts`](../src/state/gameStore.ts) owns local persistence. Entitlement resolution and purchase-pending state are transient. Fresh RevenueCat results take precedence over delayed disk hydration.
+- [`src/state/gameStore.ts`](../src/state/gameStore.ts) owns local persistence. Entitlement resolution is transient. Fresh RevenueCat results take precedence over delayed disk hydration.
 - [`src/monetization/purchases.ts`](../src/monetization/purchases.ts) receives RevenueCat CustomerInfo updates and synchronously applies purchase/restore ownership. Missing purchase configuration leaves ownership unresolved and advertising disabled.
-- [`src/monetization/ads.ts`](../src/monetization/ads.ts) gates initialization on resolved non-ownership and UMP permission. Debug sample ads make no app-wide age assertion. Release JavaScript fails its production-readiness guard while the age policy remains unresolved, and no permission decision is persisted across launches.
-- [`src/components/PhoneBillboard.tsx`](../src/components/PhoneBillboard.tsx) mounts the native fixed-size banner only when eligible, consent-ready, foregrounded, unobscured by a game overlay, and wide enough to fit it intact. No RevenueCat identity or custom targeting is supplied.
+- [`src/monetization/ads.ts`](../src/monetization/ads.ts) attempts one untagged UMP refresh per launch and gates Mobile Ads initialization on resolved non-ownership and UMP permission. The app keeps no duplicate consent cache; UMP retains its own consent state across launches. Release JavaScript validates its embedded production IDs.
+- [`src/components/PhoneBillboard.tsx`](../src/components/PhoneBillboard.tsx) mounts the native fixed-size banner only when eligible, consent-ready, foregrounded, unobscured by a game overlay, and wide enough to fit it intact. Every banner request is non-personalized and supplies no RevenueCat identity or custom targeting.
 - [`app.config.js`](../app.config.js) delays SDK app measurement until initialization and configures AdMob only for iOS. The app does not install an ATT request API or set `NSUserTrackingUsageDescription`; Android excludes the ads module from native autolinking.
 - Google Mobile Ads and UMP are third-party network/diagnostic processors even without IDFA. Their bundled privacy manifests must be included in the final Xcode privacy report; that report does not automatically update App Store Connect.
 
@@ -83,7 +83,7 @@ This section is review evidence, not part of the public-policy copy. Updated for
 
 The captain must change the former RevenueCat-only questionnaire to the iOS answers in [`ADMOB_SETUP.md`](./ADMOB_SETUP.md#app-store-connect-privacy-answers). This includes advertising-related data, device identifiers, coarse location, usage, and diagnostics. Do not retain the prior “no third-party advertising” or “no identifiers” claims.
 
-**ATT is not requested by the iOS implementation built here.** This alone does not establish the App Store tracking answer. The captain-approved age handling, final AdMob dashboard configuration, and signed archive still require joint review before submission. Any configuration that introduces tracking requires renewed implementation/privacy review and, where applicable, ATT authorization before tracking.
+**ATT is not requested by the iOS implementation built here.** This alone does not establish the App Store tracking answer. The final AdMob dashboard configuration and signed archive still require joint review before submission. Any configuration that introduces tracking requires renewed implementation/privacy review and, where applicable, ATT authorization before tracking.
 
 Catvertising is iOS-only in this change. Android production remains deferred and the ads native module is not linked into Android builds.
 

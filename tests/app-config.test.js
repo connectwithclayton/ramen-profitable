@@ -35,20 +35,21 @@ test('rejects a development override for a production EAS profile', () => {
   );
 });
 
-test('release configuration blocks an unresolved captain age policy', () => {
-  assert.throws(
-    () =>
-      withEnvironment(
-        {
-          EAS_BUILD_PROFILE: 'production',
-          REVENUECAT_BUILD_MODE: 'release',
-          REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
-          REVENUECAT_IOS_API_KEY: 'appl_release_value',
-          ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~1111111111',
-          ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/1111111111',
-        },
-        () => appConfig({ config: {} }),
-      ),
-    /captain age policy is unresolved/,
+test('release configuration accepts valid production AdMob identifiers', () => {
+  const configured = withEnvironment(
+    {
+      EAS_BUILD_PROFILE: 'production',
+      REVENUECAT_BUILD_MODE: 'release',
+      REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
+      REVENUECAT_IOS_API_KEY: 'appl_release_value',
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~1111111111',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/1111111111',
+    },
+    () => appConfig({ config: {} }),
   );
+  assert.deepEqual(configured.extra.admob.ios, {
+    appId: 'ca-app-pub-1111111111111111~1111111111',
+    bannerId: 'ca-app-pub-1111111111111111/1111111111',
+  });
+  assert.equal(configured.extra.revenueCat.testStoreApiKey, undefined);
 });

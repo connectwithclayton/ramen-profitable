@@ -15,7 +15,7 @@ test('Expo autolinking excludes the ads native module from Android', () => {
   assert.equal(config.dependencies['react-native-google-mobile-ads'], undefined);
 });
 
-test('Expo prebuild emits iOS configuration and blocks unresolved production policy', () => {
+test('Expo prebuild emits iOS configuration and enforces release identifiers', () => {
   const root = path.resolve(__dirname, '..');
   fs.mkdirSync(path.join(root, '.expo'), { recursive: true });
   const fixture = fs.mkdtempSync(path.join(root, '.expo/admob-prebuild-test-'));
@@ -44,8 +44,10 @@ test('Expo prebuild emits iOS configuration and blocks unresolved production pol
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /AdMob RELEASE BLOCKED/);
     const production = prebuild({ NODE_ENV: 'production', EAS_BUILD_PROFILE: 'production', ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~2222222222', ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/3333333333' });
-    assert.equal(production.status, 1, production.stdout + production.stderr);
-    assert.match(production.stdout + production.stderr, /captain age policy is unresolved/);
+    assert.equal(production.status, 0, production.stdout + production.stderr);
+    const productionInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
+    assert.equal(productionInfo.GADApplicationIdentifier, 'ca-app-pub-1111111111111111~2222222222');
+    assert.equal(runPhase('Release').status, 0);
   } finally {
     fs.rmSync(fixture, { recursive: true, force: true });
   }

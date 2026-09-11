@@ -17,20 +17,24 @@ const info = active => ({ entitlements: { active: active ? { go_indie: {} } : {}
 let customer = deferred();
 let restored = deferred();
 let paywall = deferred();
-let consent = deferred();
+let consentInfoUpdate = deferred();
+let consentForm = deferred();
 let listener;
 let storageRead = async () => null;
 let consentAllowed = true;
+let consentStatus = 'UNKNOWN';
 let privacyRequired = false;
 let initializationCalls = 0;
-let consentArguments;
+let consentInfoUpdateCalls = 0;
+let consentInfoUpdateArguments;
+let consentFormCalls = 0;
 let admobConfig = require('../config/admob').TEST_IDS;
 const requests = [];
 const mockNative = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1 },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
-  View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
+  View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', SafeAreaView: 'SafeAreaView',
 };
 const ads = {
   default: () => ({
@@ -40,11 +44,16 @@ const ads = {
   BannerAdSize: { BANNER: 'BANNER' },
   AdsConsentPrivacyOptionsRequirementStatus: { REQUIRED: 'REQUIRED' },
   AdsConsent: {
-    gatherConsent: (...args) => {
-      consentArguments = args;
-      return consent.promise;
+    requestInfoUpdate: (...args) => {
+      consentInfoUpdateCalls++;
+      consentInfoUpdateArguments = args;
+      return consentInfoUpdate.promise;
     },
-    getConsentInfo: async () => ({ canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' }),
+    loadAndShowConsentFormIfRequired: () => {
+      consentFormCalls++;
+      return consentForm.promise;
+    },
+    getConsentInfo: async () => ({ status: consentStatus, canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' }),
     showPrivacyOptionsForm: async () => { consentAllowed = false; },
   },
   BannerAd: props => {
@@ -59,6 +68,8 @@ Module._load = function (name, parent, main) {
     revenueCat: { testStoreApiKey: 'test_fixture' }, admob: admobConfig,
   } } } };
   if (name === '@react-native-async-storage/async-storage') return { getItem: () => storageRead(), setItem: async () => {} };
+  if (name === 'expo-status-bar') return { StatusBar: 'StatusBar' };
+  if (name === 'expo-haptics') return { selectionAsync: async () => {}, notificationAsync: async () => {}, NotificationFeedbackType: {} };
   if (name === 'react-native-svg') return new Proxy({ __esModule: true, default: 'Svg' }, { get: (obj, key) => obj[key] ?? String(key) });
   if (name === 'react-native-google-mobile-ads') return ads;
   if (name === 'react-native-purchases') return { default: {
@@ -77,12 +88,38 @@ for (const ext of ['.ts', '.tsx']) Module._extensions[ext] = (module, filename) 
 };
 const { useGame } = require('../src/state/gameStore.ts');
 const purchases = require('../src/monetization/purchases.ts');
+const App = require('../App.tsx').default;
 const StoreScreen = require('../src/screens/StoreScreen.tsx').default;
 const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
 
+test('app launch refreshes paid-user privacy state without requesting an ad', async () => {
+  useGame.setState({ goIndieActive: true, goIndieResolved: true, overlay: null, notifs: [] });
+  let tree;
+  await act(async () => { tree = create(React.createElement(App)); });
+  await flush();
+  assert.equal(consentInfoUpdateCalls, 1, 'UMP must refresh once at launch');
+  assert.deepEqual(consentInfoUpdateArguments, [], 'general-audience refresh must not send an age tag');
+
+  consentStatus = 'OBTAINED';
+  privacyRequired = true;
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  const storeTab = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
+  await act(async () => { storeTab.props.onPress(); });
+  await flush();
+
+  assert.ok(tree.root.findAllByType('Pressable').some(node => node.props.accessibilityLabel === 'Ad privacy choices'));
+  assert.equal(consentFormCalls, 0, 'paid users must not receive a consent form');
+  assert.equal(initializationCalls, 0, 'paid users must not initialize Mobile Ads');
+  assert.equal(requests.length, 0, 'paid users must not request a banner');
+  await act(async () => { tree.unmount(); });
+  privacyRequired = false;
+  consentStatus = 'NOT_REQUIRED';
+});
+
 // Exercise the mounted Store screen, real Zustand state, and public purchase APIs.
 // Only native/network boundaries are doubles; removing the production gate must fail.
-test('Store billboard waits for ownership and consent, unmounts on purchase/restore, and honors privacy changes', async () => {
+test('Store billboard waits for ownership and consent, honors purchases, and handles privacy changes', async () => {
+  useGame.setState({ goIndieActive: false, goIndieResolved: false, overlay: null, notifs: [] });
   let tree;
   await act(async () => { tree = create(React.createElement(StoreScreen)); });
   const banners = () => tree.root.findAllByType('NativeBanner');
@@ -92,9 +129,9 @@ test('Store billboard waits for ownership and consent, unmounts on purchase/rest
   await flush();
   assert.equal(banners().length, 0, 'unknown ownership must not render ads');
   assert.equal(initializationCalls, 0);
-  await act(async () => { customer.resolve(info(false)); await initial; });
+  await act(async () => { customer.resolve(info(false)); consentInfoUpdate.resolve(); await initial; });
   assert.equal(banners().length, 0, 'consent is still pending');
-  await act(async () => { listener(info(true)); consent.resolve(); });
+  await act(async () => { listener(info(true)); consentForm.resolve(); });
   await flush();
   assert.equal(banners().length, 0, 'a purchase during consent must cancel the late ad');
   assert.equal(initializationCalls, 0, 'purchasers must not initialize ads after consent');
@@ -102,12 +139,12 @@ test('Store billboard waits for ownership and consent, unmounts on purchase/rest
   await flush();
   assert.equal(banners().length, 1);
   assert.equal(requests[0].unitId, require('../config/admob').TEST_IDS.ios.bannerId);
-  assert.deepEqual(consentArguments, []);
-  assert.equal(requests[0].requestOptions, undefined);
+  assert.equal(consentInfoUpdateCalls, 1, 'free ads must reuse the launch UMP refresh');
+  assert.equal(consentFormCalls, 1);
+  assert.deepEqual(requests[0].requestOptions, { requestNonPersonalizedAdsOnly: true });
 
   let restore;
   await act(async () => { restore = purchases.restoreGoIndiePurchases(); });
-  assert.equal(banners().length, 0, 'restore hides an existing ad while awaiting the store');
   await act(async () => { restored.resolve(info(true)); assert.equal(await restore, true); });
   assert.equal(banners().length, 0, 'restored lifetime entitlement must remain ad free');
   await act(async () => { tree.unmount(); tree = create(React.createElement(StoreScreen)); });
@@ -119,7 +156,6 @@ test('Store billboard waits for ownership and consent, unmounts on purchase/rest
   assert.equal(banners().length, 1);
   let purchase;
   await act(async () => { purchase = purchases.presentGoIndiePaywall(); });
-  assert.equal(banners().length, 0, 'native paywall activity suppresses ads');
   await act(async () => { customer = { promise: Promise.resolve(info(true)) }; paywall.resolve('PURCHASED'); assert.equal(await purchase, true); });
   assert.equal(banners().length, 0, 'purchase suppresses without a restart');
 
@@ -183,7 +219,7 @@ test('a paywall success without a confirmed go_indie entitlement fails closed', 
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
 });
 
-test('release runtime blocks ads while the captain age policy is unresolved', () => {
+test('release runtime accepts valid production identifiers', () => {
   const modulePath = require.resolve('../src/monetization/ads.ts');
   admobConfig = {
     ios: {
@@ -194,7 +230,7 @@ test('release runtime blocks ads while the captain age policy is unresolved', ()
   global.__DEV__ = false;
   delete require.cache[modulePath];
   try {
-    assert.throws(() => require(modulePath), /captain age policy is unresolved/);
+    assert.equal(require(modulePath).bannerId(), admobConfig.ios.bannerId);
   } finally {
     global.__DEV__ = true;
     delete require.cache[modulePath];

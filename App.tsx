@@ -5,6 +5,7 @@ import Svg, { Defs, LinearGradient, Rect as SvgRect, Stop } from 'react-native-s
 import { useGame } from './src/state/gameStore';
 import { useGameLoop } from './src/systems/useGameLoop';
 import { initPurchases } from './src/monetization/purchases';
+import { refreshConsentSession } from './src/monetization/ads';
 import NotifStack from './src/components/NotifStack';
 import OverlayHost from './src/components/OverlayHost';
 import HomeScreen from './src/screens/HomeScreen';
@@ -62,6 +63,7 @@ function HydratedGame() {
 
   useEffect(() => {
     void initPurchases();
+    void refreshConsentSession().catch(() => {});
     const t1 = setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900);
     const t2 = setTimeout(() => {
       const s = useGame.getState();

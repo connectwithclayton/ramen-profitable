@@ -105,7 +105,6 @@ export type GameState = {
   overlay: Overlay;
   goIndieActive: boolean;
   goIndieResolved: boolean;
-  purchasePending: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
   lastSeen: number; // epoch ms; identity for base offline credit and pending owner bonus
@@ -168,7 +167,6 @@ const initial: GameState = {
   overlay: null,
   goIndieActive: false,
   goIndieResolved: false,
-  purchasePending: false,
   won: false,
   achievements: {},
   lastSeen: Date.now(),
