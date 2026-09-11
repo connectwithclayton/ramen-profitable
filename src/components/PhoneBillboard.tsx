@@ -7,6 +7,7 @@ import { C, S } from '../theme';
 
 const NON_PERSONALIZED_REQUEST = { requestNonPersonalizedAdsOnly: true } as const;
 const RETRY_INTERVAL_MS = 60_000;
+const CREATIVE_EXPIRY_MS = 60 * 60_000;
 type CreativeState = 'idle' | 'pending' | 'loaded' | 'failed' | 'retrying';
 
 export default function PhoneBillboard({ active = true, indie }: { active?: boolean; indie: boolean }) {
@@ -21,9 +22,12 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const [layoutReady, setLayoutReady] = useState(false);
   const widthRef = useRef(0);
   const lastRequestAtRef = useRef<number | null>(null);
+  const lastLoadedAtRef = useRef<number | null>(null);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const wasBackgroundedRef = useRef(AppState.currentState === 'background');
   const [loadedForegroundReturnAt, setLoadedForegroundReturnAt] = useState<number | null>(null);
+  const wasActiveRef = useRef(active);
+  const [loadedStoreReturnAt, setLoadedStoreReturnAt] = useState<number | null>(null);
   const [noFill, setNoFill] = useState(false);
   const [creativeState, setCreativeState] = useState<CreativeState>('idle');
   const creativeStateRef = useRef(creativeState);
@@ -48,6 +52,16 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   useLayoutEffect(() => {
     creativeStateRef.current = creativeState;
   }, [creativeState]);
+
+  useLayoutEffect(() => {
+    if (active === wasActiveRef.current) return;
+    wasActiveRef.current = active;
+    setLoadedStoreReturnAt(
+      active && AppState.currentState === 'active' && creativeStateRef.current === 'loaded'
+        ? Date.now()
+        : null,
+    );
+  }, [active]);
 
   useLayoutEffect(() => {
     if (!measurementActive) setLayoutReady(false);
@@ -104,14 +118,22 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       requestAt !== null &&
       loadedForegroundReturnAt - requestAt >= RETRY_INTERVAL_MS
     );
+    const loadedAt = lastLoadedAtRef.current;
+    const reloadExpiredAfterStoreReturn = (
+      creativeState === 'loaded' &&
+      loadedStoreReturnAt !== null &&
+      loadedAt !== null &&
+      loadedStoreReturnAt - loadedAt >= CREATIVE_EXPIRY_MS
+    );
     if (loadedForegroundReturnAt !== null) setLoadedForegroundReturnAt(null);
-    if (width === bannerWidth && !reloadLoadedAfterForeground) return;
+    if (loadedStoreReturnAt !== null) setLoadedStoreReturnAt(null);
+    if (width === bannerWidth && !reloadLoadedAfterForeground && !reloadExpiredAfterStoreReturn) return;
     if (creativeState === 'loaded') {
       setCreativeState('pending');
       setRequestKey(value => value + 1);
     }
     setBannerWidth(width);
-  }, [bannerWidth, creativeState, loadedForegroundReturnAt, nativeRequestInFlight, requestable, width]);
+  }, [bannerWidth, creativeState, loadedForegroundReturnAt, loadedStoreReturnAt, nativeRequestInFlight, requestable, width]);
 
   // Any unloaded creative retries only on a qualifying return after any existing request cooldown.
   useEffect(() => {
@@ -155,7 +177,13 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const bannerMounted = Boolean(show);
   const geometryCurrent = layoutReady && width === bannerWidth;
   const bannerConcealed = retryingWithFallback || !geometryCurrent;
-  const concealed = !active || !foreground || overlay || privacyBusy || (creativeState === 'loaded' && !geometryCurrent);
+  const expiredStoreReturnPending = (
+    creativeState === 'loaded' &&
+    loadedStoreReturnAt !== null &&
+    lastLoadedAtRef.current !== null &&
+    loadedStoreReturnAt - lastLoadedAtRef.current >= CREATIVE_EXPIRY_MS
+  );
+  const concealed = !active || !foreground || overlay || privacyBusy || expiredStoreReturnPending || (creativeState === 'loaded' && !geometryCurrent);
 
   useEffect(() => {
     if (bannerMounted) lastRequestAtRef.current = Date.now();
@@ -205,6 +233,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
                   maxHeight={50}
                   requestOptions={NON_PERSONALIZED_REQUEST}
                   onAdLoaded={() => {
+                    lastLoadedAtRef.current = Date.now();
                     const latestWidth = widthRef.current;
                     if (requestable && latestWidth > 0 && latestWidth !== bannerWidth) {
                       setCreativeState(state => state === 'loaded' ? 'pending' : state);

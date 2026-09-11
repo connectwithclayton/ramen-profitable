@@ -103,18 +103,32 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       releaseRuntime.extra.admob.ios.appId,
       releaseRuntime.extra.admob.ios.bannerId,
     ]);
-    const changedProductionIds = {
-      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~4444444444',
-      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/5555555555',
-    };
-    const changedRuntime = constantsConfig({ CONFIGURATION: 'Release', ...changedProductionIds });
-    assert.deepEqual(changedRuntime.extra.admob.ios, {
-      appId: changedProductionIds.ADMOB_IOS_APP_ID,
-      bannerId: changedProductionIds.ADMOB_IOS_BANNER_ID,
-    });
-    const mismatched = runPhase('Release', changedProductionIds);
-    assert.equal(mismatched.status, 1, mismatched.stdout + mismatched.stderr);
-    assert.match(mismatched.stderr, /do not match the identifiers captured during prebuild/);
+    const changedProductionIds = [
+      {
+        name: 'app ID',
+        ids: {
+          ...productionIds,
+          ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~4444444444',
+        },
+      },
+      {
+        name: 'banner ID',
+        ids: {
+          ...productionIds,
+          ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/5555555555',
+        },
+      },
+    ];
+    for (const { name, ids } of changedProductionIds) {
+      const changedRuntime = constantsConfig({ CONFIGURATION: 'Release', ...ids });
+      assert.deepEqual(changedRuntime.extra.admob.ios, {
+        appId: ids.ADMOB_IOS_APP_ID,
+        bannerId: ids.ADMOB_IOS_BANNER_ID,
+      });
+      const mismatched = runPhase('Release', ids);
+      assert.equal(mismatched.status, 1, `${name} drift was accepted\n${mismatched.stdout}${mismatched.stderr}`);
+      assert.match(mismatched.stderr, /do not match the identifiers captured during prebuild/);
+    }
     const sampleRuntime = runPhase('Release', {
       ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
       ADMOB_IOS_BANNER_ID: TEST_IDS.ios.bannerId,
