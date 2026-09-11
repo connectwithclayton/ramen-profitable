@@ -1,6 +1,6 @@
 # Catvertising: AdMob setup and release handoff
 
-The Store's **Your phone / Catvertising** unit contains a real native AdMob 320Ã—50 banner. It is part of the fictional phone, not a global banner. The creative is not scaled, clipped, overlaid with artwork, rewarded, or disguised as a game control. On widths that cannot fit 320 points intact, it stays empty. Go Indie removes advertising and retains the existing double offline earnings benefit.
+The Store's **Your phone / Catvertising** unit contains a real native AdMob inline adaptive banner. It is part of the fictional phone, not a global banner. The request uses the measured billboard width and a 50-point maximum height, so compact iPad windows request a fitting ad size without scaling or clipping any returned creative. The creative is not overlaid with artwork, rewarded, or disguised as a game control. Go Indie removes advertising and retains the existing double offline earnings benefit.
 
 ## Captain setup
 
@@ -17,11 +17,11 @@ The Store's **Your phone / Catvertising** unit contains a real native AdMob 320Ã
 
 Looked up from Google's current documentation on 2026-09-10; these are development-only sample inventory, not our publisher account:
 
-| Platform | App ID | Fixed-size banner unit ID |
+| Platform | App ID | Inline adaptive banner unit ID |
 | --- | --- | --- |
-| iOS | `ca-app-pub-3940256099942544~1458002511` | `ca-app-pub-3940256099942544/2934735716` |
+| iOS | `ca-app-pub-3940256099942544~1458002511` | `ca-app-pub-3940256099942544/2435281174` |
 
-Sources: [Google iOS setup](https://developers.google.com/admob/ios/quick-start) and [Google iOS test ads](https://developers.google.com/admob/ios/test-ads). The fixed-size banner ID is deliberately different from the adaptive-banner ID.
+Sources: [Google iOS setup](https://developers.google.com/admob/ios/quick-start) and [Google iOS test ads](https://developers.google.com/admob/ios/test-ads).
 
 ## Required build
 
@@ -42,7 +42,7 @@ Ownership is unknown until RevenueCat returns CustomerInfo; unknown, offline fai
 
 UMP refreshes consent information once at each application launch before Mobile Ads initialization. Its public API cannot distinguish a prior consent record from a user who has never contacted UMP before initiating that refresh, so the refresh is attempted for every user, including Go Indie owners. A player already known to own Go Indie never receives the automatic consent form or initializes Mobile Ads; the refresh only preserves a required privacy-options entry. If ownership is confirmed while consent or initialization is already in flight, that operation may finish before the post-operation ownership check suppresses the banner. This deliberate window never presents advertising to a confirmed owner. Errors and `canRequestAds=false` fail closed for ads. Changing privacy choices first removes the current banner and re-checks UMP state afterward.
 
-The app is configured for a general audience. Debug and release builds call UMP without an under-age tag and do not set a Mobile Ads child-directed or age-restricted treatment. The app collects no age, requests no IDFA or tracking permission, and passes no purchase identity or custom targeting. Every banner request explicitly asks for non-personalized ads only. Native background or game overlay states unmount the creative; load failure leaves a fictional empty billboard.
+The app is configured for a general audience. Debug and release builds call UMP without an under-age tag and do not set a Mobile Ads child-directed or age-restricted treatment. The app collects no age, requests no IDFA or tracking permission, and passes no purchase identity or custom targeting. Every banner request explicitly asks for non-personalized ads only. Native background or game overlay states unmount the creative; only a genuine no-fill response shows the fictional between-sponsors copy.
 
 ## App Store Connect privacy answers
 
@@ -66,7 +66,7 @@ Disclosure sources: [Google SDK data disclosure](https://developers.google.com/a
 
 ## Validation evidence
 
-`npm test` exercises the application root and Store React tree, Zustand state, and public RevenueCat purchase/restore APIs, with native/network doubles. It checks initial unknown ownership, one untagged UMP refresh per launch, the paid-user privacy entry, non-personalized banner requests, delayed consent, confirmed purchase and restore removal, remount, fresh-install restore, no-fill, and consent withdrawal. Config tests execute platform-neutral release configuration without iOS IDs and the native identifier guard with missing, sample, and valid IDs; ads tests execute the valid release JavaScript path. These tests are not proof of real ad fill, App Store purchases, or dashboard setup.
+`npm test` exercises the application root and Store React tree, Zustand state, and public RevenueCat purchase/restore APIs, with native/network doubles. It checks initial unknown ownership, one untagged UMP refresh per launch, the paid-user privacy entry, non-personalized banner requests, delayed consent, confirmed purchase and restore removal, remount, fresh-install restore, no-fill, and consent withdrawal. Mounted component fixtures inject measured billboard widths of 339 points for a phone-sized scene, 344 points for a wider iPad Split View-sized scene capped by the phone unit, and 284 points for a 320-point iPad Slide Over-sized scene after current layout insets. They verify responsive requests at those widths but are not native iPad mode or creative-render evidence. Config tests execute platform-neutral release configuration without iOS IDs and the native identifier guard with missing, sample, and valid IDs; ads tests execute the valid release JavaScript path. These tests are not proof of real ad fill, App Store purchases, or dashboard setup.
 
 The local iOS Debug simulator build succeeded with Google Mobile Ads 13.5.0 and UMP 3.1.0. A native SDK rehearsal reached the banner request but returned `googleMobileAds/network-error: The network connection was lost`; actual creative rendering is **unverified**. With no local RevenueCat test key, this ignored, temporary rehearsal entry explicitly supplied non-purchaser state; it did not validate RevenueCat purchases, and was removed afterward.
 

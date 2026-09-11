@@ -1,9 +1,9 @@
 // The ONE AdMob identifier configuration point. Development always uses Google's
 // sample inventory. Supply the two iOS environment values below for an iOS release.
 // Sources verified 2026-09-10: https://developers.google.com/admob/ios/quick-start
-// https://developers.google.com/admob/ios/test-ads (fixed-size banner)
+// https://developers.google.com/admob/ios/test-ads (inline adaptive banner)
 const TEST_IDS = {
-  ios: { appId: 'ca-app-pub-3940256099942544~1458002511', bannerId: 'ca-app-pub-3940256099942544/2934735716' },
+  ios: { appId: 'ca-app-pub-3940256099942544~1458002511', bannerId: 'ca-app-pub-3940256099942544/2435281174' },
 };
 
 function assertProductionIds(ids) {

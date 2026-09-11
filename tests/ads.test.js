@@ -54,7 +54,7 @@ const ads = {
     setRequestConfiguration: async () => { throw new Error('unexpected request configuration'); },
     initialize: async () => { initializationCalls++; },
   }),
-  BannerAdSize: { BANNER: 'BANNER' },
+  BannerAdSize: { INLINE_ADAPTIVE_BANNER: 'INLINE_ADAPTIVE_BANNER' },
   AdsConsentPrivacyOptionsRequirementStatus: { REQUIRED: 'REQUIRED' },
   AdsConsent: {
     requestInfoUpdate: (...args) => {
@@ -181,7 +181,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   const layout = () => tree.root.findAllByType('View').find(node => node.props.onLayout);
   await act(async () => { layout().props.onLayout({ nativeEvent: { layout: { width: 340 } } }); });
   const visibleText = tree.root.findAllByType('Text').map(node => node.props.children);
-  assert.ok(visibleText.includes('The cat is between sponsors.'));
+  assert.equal(visibleText.includes('The cat is between sponsors.'), false);
   assert.equal(visibleText.includes('Go Indie. No ads. Just you and the cat.'), false);
   const initial = purchases.initPurchases();
   await flush();
@@ -220,8 +220,10 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await act(async () => { listener(info(false)); });
   await flush();
   assert.equal(banners().length, 1);
-  await act(async () => { banners()[0].props.onAdFailedToLoad(new Error('no fill')); });
+  const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+  await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
   assert.equal(banners().length, 0, 'no-fill returns to fictional empty inventory');
+  assert.ok(tree.root.findAllByType('Text').some(node => node.props.children === 'The cat is between sponsors.'));
   await act(async () => { tree.unmount(); });
 
   // A fresh install starts unknown, even if a persisted flag says not purchased.
@@ -295,26 +297,44 @@ test('release runtime accepts valid production identifiers', () => {
   }
 });
 
-test('billboard preparation starts only when the full banner fits', async () => {
+test('billboard requests measured-width adaptive ads in phone and iPad multitasking layouts', async () => {
   resetAdLifecycleState();
   const FreshStoreScreen = loadFreshStoreScreen();
   const tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const hasNoFillCopy = () => tree.root.findAllByType('Text')
+    .some(node => node.props.children === 'The cat is between sponsors.');
 
-  await setBillboardWidth(tree, 319);
+  assert.equal(hasNoFillCopy(), false, 'measurement and consent are not no-fill');
+  await setBillboardWidth(tree, 339);
   await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
   await flush();
-  assert.equal(consentFormCalls, 0, 'a compact billboard must not present consent');
-  assert.equal(initializationCalls, 0, 'a compact billboard must not initialize Mobile Ads');
-
-  await setBillboardWidth(tree, 320);
-  assert.equal(consentFormCalls, 1, 'an exact-width billboard may begin preparation');
-  await setBillboardWidth(tree, 319);
   await act(async () => { consentForm.resolve(); await consentForm.promise; });
   await flush();
-  assert.equal(initializationCalls, 0, 'shrinking during consent must stop initialization');
-  await setBillboardWidth(tree, 320);
-  assert.equal(initializationCalls, 1, 'a fitting billboard must recover after consent');
-  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  assert.equal(initializationCalls, 1);
+
+  for (const [layout, width] of [
+    ['phone', 339],
+    ['iPad Split View-sized', 344],
+    ['iPad Slide Over-sized', 284],
+  ]) {
+    await setBillboardWidth(tree, width);
+    assert.equal(banners().length, 1, `${layout} layout must mount Catvertising`);
+    assert.equal(banners()[0].props.size, 'INLINE_ADAPTIVE_BANNER');
+    assert.equal(banners()[0].props.width, width, `${layout} layout must use its measured width`);
+    assert.equal(banners()[0].props.maxHeight, 50);
+    assert.deepEqual(banners()[0].props.requestOptions, { requestNonPersonalizedAdsOnly: true });
+    assert.equal(hasNoFillCopy(), false);
+  }
+  assert.deepEqual(requests.map(request => request.width), [339, 344, 284]);
+
+  const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
+  await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
+  assert.equal(hasNoFillCopy(), false, 'a network error is not no-fill');
+  const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+  await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
+  assert.equal(banners().length, 0);
+  assert.equal(hasNoFillCopy(), true, 'only genuine no-fill may show sponsor copy');
   await act(async () => { tree.unmount(); });
 });
 

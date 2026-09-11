@@ -7,7 +7,6 @@ import { C, S } from '../theme';
 
 const NON_PERSONALIZED_REQUEST = { requestNonPersonalizedAdsOnly: true } as const;
 
-/** A fictional phone is the unit; Google's real 320x50 creative stays intact. */
 export default function PhoneBillboard({ indie }: { indie: boolean }) {
   const eligible = useGame(mayRequestAds);
   const overlay = useGame(s => s.overlay !== null);
@@ -18,7 +17,7 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
   const [width, setWidth] = useState(0);
   const widthRef = useRef(0);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
-  const [failed, setFailed] = useState(false);
+  const [noFill, setNoFill] = useState(false);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => setForeground(state === 'active'));
@@ -28,11 +27,11 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
   useEffect(() => {
     let cancelled = false;
     setReady(false);
-    setFailed(false);
-    if (eligible && foreground && !overlay && !privacyBusy && width >= 320) {
+    setNoFill(false);
+    if (eligible && foreground && !overlay && !privacyBusy && width > 0) {
       const isRenderable = () => (
         !cancelled &&
-        widthRef.current >= 320 &&
+        widthRef.current > 0 &&
         AppState.currentState === 'active' &&
         useGame.getState().overlay === null
       );
@@ -64,7 +63,7 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
   const mod = ready ? adsModule() : null;
   const id = bannerId();
   const Banner = mod?.BannerAd;
-  const show = eligible && foreground && !overlay && !privacyBusy && ready && !failed && width >= 320 && Banner && id;
+  const show = eligible && foreground && !overlay && !privacyBusy && ready && !noFill && width > 0 && Banner && id;
 
   return (
     <Section style={st.section}>
@@ -84,16 +83,22 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
             <Banner
               key={revision}
               unitId={id}
-              size={mod.BannerAdSize.BANNER}
+              size={mod.BannerAdSize.INLINE_ADAPTIVE_BANNER}
+              width={width}
+              maxHeight={50}
               requestOptions={NON_PERSONALIZED_REQUEST}
               onAdFailedToLoad={error => {
                 if (__DEV__) console.warn('[Catvertising] Banner unavailable.', error);
-                setFailed(true);
+                if ((error as Error & { code?: string }).code === 'googleMobileAds/no-fill') {
+                  setNoFill(true);
+                }
               }}
             />
-          ) : (
-            <Text style={st.empty}>{indie ? 'Go Indie. No ads. Just you and the cat.' : 'The cat is between sponsors.'}</Text>
-          )}
+          ) : indie ? (
+            <Text style={st.empty}>Go Indie. No ads. Just you and the cat.</Text>
+          ) : noFill ? (
+            <Text style={st.empty}>The cat is between sponsors.</Text>
+          ) : null}
         </View>
         <Text style={st.caption}>Even your fictional phone has a business model.</Text>
         <View style={st.homeIndicator} />
@@ -104,7 +109,6 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
 }
 
 const st = StyleSheet.create({
-  // A 320pt creative + 16pt bezel fits a 375pt phone without scaling the ad.
   section: { paddingHorizontal: S.gap },
   phone: { padding: 7, marginTop: S.gap, alignSelf: 'center', width: '100%', maxWidth: 360, borderRadius: 24 },
   speaker: { width: 42, height: 4, borderRadius: 2, backgroundColor: C.line, alignSelf: 'center', marginVertical: S.gap },

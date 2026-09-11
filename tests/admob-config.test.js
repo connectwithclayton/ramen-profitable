@@ -3,9 +3,16 @@ const test = require('node:test');
 const { spawnSync } = require('node:child_process');
 const { TEST_IDS, resolveAdMob } = require('../config/admob');
 const production = { appId: 'ca-app-pub-1111111111111111~2222222222', bannerId: 'ca-app-pub-1111111111111111/3333333333' };
+const adaptiveSample = {
+  ios: {
+    appId: 'ca-app-pub-3940256099942544~1458002511',
+    bannerId: 'ca-app-pub-3940256099942544/2435281174',
+  },
+};
 
 test('development always resolves the official sample inventory', () => {
-  assert.deepEqual(resolveAdMob(true, { ADMOB_IOS_APP_ID: production.appId }), TEST_IDS);
+  assert.deepEqual(TEST_IDS, adaptiveSample);
+  assert.deepEqual(resolveAdMob(true, { ADMOB_IOS_APP_ID: production.appId }), adaptiveSample);
 });
 test('release resolution carries iOS inventory without global validation', () => {
   assert.deepEqual(
