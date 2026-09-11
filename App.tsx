@@ -55,6 +55,7 @@ export default function App() {
 function HydratedGame() {
   const [tab, setTab] = useState<Tab>('home');
   const [dockOcclusion, setDockOcclusion] = useState<number>();
+  const [storeMounted, setStoreMounted] = useState(false);
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
@@ -77,6 +78,8 @@ function HydratedGame() {
     };
   }, []);
 
+  const storeActive = tab === 'store';
+
   return (
     <SafeAreaView style={st.root}>
       <StatusBar style="light" />
@@ -89,7 +92,11 @@ function HydratedGame() {
           />
         )}
         {tab === 'code' && <CodeScreen />}
-        {tab === 'store' && <StoreScreen />}
+        {storeMounted && (
+          <View pointerEvents={storeActive ? 'auto' : 'none'} style={[st.screen, !storeActive && st.hiddenScreen]}>
+            <StoreScreen active={storeActive} />
+          </View>
+        )}
         {tab === 'chirp' && <ChirpScreen />}
       </View>
 
@@ -121,7 +128,10 @@ function HydratedGame() {
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
               accessibilityLabel={flagged ? `${t.label}, new posts` : t.label}
-              onPress={() => setTab(t.key)}
+              onPress={() => {
+                if (t.key === 'store') setStoreMounted(true);
+                setTab(t.key);
+              }}
               style={({ pressed }) => [st.dockBtn, pressed && { opacity: 0.6 }]}
             >
               <DrawnIcon name={t.icon} size={20} active={active} color={C.dim} />
@@ -144,6 +154,8 @@ const st = StyleSheet.create({
     backgroundColor: C.midnight,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0,
   },
+  screen: { flex: 1 },
+  hiddenScreen: { display: 'none' },
   // Runs to the very bottom, not just to the dock's top edge: content scrolling
   // past needs to fade out *and* stop showing through the dock's translucent fill.
   dockFade: {

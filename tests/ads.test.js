@@ -118,6 +118,17 @@ const loadFreshStoreScreen = () => {
   }
   return require('../src/screens/StoreScreen.tsx').default;
 };
+const loadFreshApp = () => {
+  for (const path of [
+    '../src/monetization/ads.ts',
+    '../src/components/PhoneBillboard.tsx',
+    '../src/screens/StoreScreen.tsx',
+    '../App.tsx',
+  ]) {
+    delete require.cache[require.resolve(path)];
+  }
+  return require('../App.tsx').default;
+};
 const mountStore = async Store => {
   let tree;
   await act(async () => { tree = create(React.createElement(Store)); });
@@ -335,6 +346,61 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
   assert.equal(banners().length, 0);
   assert.equal(hasNoFillCopy(), true, 'only genuine no-fill may show sponsor copy');
+  await act(async () => { tree.unmount(); });
+});
+
+test('App keeps one loaded banner across navigation and overlay', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const FreshApp = loadFreshApp();
+  let tree;
+  await act(async () => { tree = create(React.createElement(FreshApp)); });
+  const tab = label => tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+  const hasNoFillCopy = () => tree.root.findAllByType('Text')
+    .some(node => node.props.children === 'The cat is between sponsors.');
+
+  await act(async () => { tab('Store').props.onPress(); });
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(banners().length, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false, 'the loaded advert must be visible in Store');
+
+  await act(async () => { tab('Home').props.onPress(); });
+  await flush();
+  assert.equal(banners().length, 1, 'leaving Store must retain the loaded native banner');
+  assert.equal(bannerConcealed(), true, 'the inactive Store must conceal and disable the retained advert');
+  await act(async () => { tab('Store').props.onPress(); });
+  await setBillboardWidth(tree, 320);
+  assert.equal(banners().length, 1);
+  assert.equal(requests.length, 1, 'returning to Store must reuse the loaded advert');
+  assert.equal(bannerConcealed(), false, 'returning to Store must reveal the retained advert');
+  assert.equal(hasNoFillCopy(), false);
+
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  await flush();
+  assert.equal(banners().length, 1, 'the paywall must conceal without destroying the advert');
+  assert.equal(bannerConcealed(), true, 'the paywall must disable the retained advert');
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.equal(banners().length, 1);
+  assert.equal(requests.length, 1, 'closing the paywall must reveal the loaded advert');
+  assert.equal(bannerConcealed(), false);
+  assert.equal(hasNoFillCopy(), false);
   await act(async () => { tree.unmount(); });
 });
 

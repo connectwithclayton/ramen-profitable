@@ -34,7 +34,7 @@ const AISLES: { title: string; ids: string[] }[] = [
 /** Anything a future SHOP entry adds lands here rather than silently disappearing. */
 const AISLED = new Set(AISLES.flatMap(a => a.ids));
 
-export default function StoreScreen() {
+export default function StoreScreen({ active = true }: { active?: boolean }) {
   const s = useGame();
   const [restoring, setRestoring] = useState(false);
   const owned = SHOP.filter(i => s.upgrades[i.id]).length;
@@ -131,7 +131,7 @@ export default function StoreScreen() {
         );
       })}
 
-      {catvertising && <PhoneBillboard indie={indie} />}
+      {catvertising && <PhoneBillboard active={active} indie={indie} />}
 
       <Section>
         <SectionHeader title="Go Indie" meta={indie ? 'ACTIVE' : undefined} metaColor={C.mint} />
