@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import { useGame } from '../state/gameStore';
 import { adsModule, bannerId, mayRequestAds, prepareAds, privacyOptionsRequired, showAdPrivacyOptions } from '../monetization/ads';
@@ -17,13 +17,16 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [width, setWidth] = useState(0);
+  const [bannerWidth, setBannerWidth] = useState(0);
+  const [layoutReady, setLayoutReady] = useState(false);
   const widthRef = useRef(0);
   const lastRequestAtRef = useRef<number | null>(null);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [noFill, setNoFill] = useState(false);
   const [creativeState, setCreativeState] = useState<CreativeState>('idle');
   const [requestKey, setRequestKey] = useState(0);
-  const requestable = active && eligible && foreground && !overlay && !privacyBusy && width > 0;
+  const measurementActive = active && foreground && !overlay && !privacyBusy;
+  const requestable = measurementActive && layoutReady && eligible && width > 0;
   const wasRequestableRef = useRef(requestable);
 
   useEffect(() => {
@@ -31,10 +34,14 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
     return () => sub.remove();
   }, []);
 
+  useLayoutEffect(() => {
+    if (!measurementActive) setLayoutReady(false);
+  }, [measurementActive]);
+
   useEffect(() => {
     let cancelled = false;
     const needsPreparation = creativeState === 'idle' || creativeState === 'retrying';
-    if (!ready && needsPreparation && (!noFill || creativeState === 'retrying') && active && eligible && foreground && !overlay && !privacyBusy && width > 0) {
+    if (!ready && needsPreparation && (!noFill || creativeState === 'retrying') && requestable) {
       const isRenderable = () => (
         !cancelled &&
         active &&
@@ -62,7 +69,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       if (!cancelled) setPrivacyRequired(required);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [active, creativeState, eligible, foreground, noFill, overlay, privacyBusy, ready, revision, width]);
+  }, [active, creativeState, noFill, ready, requestable, revision, width]);
 
   useEffect(() => {
     setReady(false);
@@ -70,7 +77,16 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       if (state === 'failed') return state;
       return state === 'retrying' ? 'failed' : 'idle';
     });
-  }, [eligible, privacyBusy, revision, width]);
+  }, [eligible, privacyBusy, revision]);
+
+  useEffect(() => {
+    if (!requestable || width === bannerWidth) return;
+    if (creativeState === 'loaded') {
+      setCreativeState('pending');
+      setRequestKey(value => value + 1);
+    }
+    setBannerWidth(width);
+  }, [bannerWidth, creativeState, requestable, width]);
 
   // Any unloaded creative retries only on a qualifying return after any existing request cooldown.
   useEffect(() => {
@@ -109,13 +125,14 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const Banner = mod?.BannerAd;
   const bannerActive = creativeState === 'pending' || creativeState === 'loaded' || creativeState === 'retrying';
   const retryingWithFallback = noFill && creativeState === 'retrying';
-  const show = eligible && !privacyBusy && ready && bannerActive && (!noFill || creativeState === 'retrying') && width > 0 && Banner && id;
+  const show = eligible && !privacyBusy && ready && bannerActive && (!noFill || creativeState === 'retrying') && bannerWidth > 0 && Banner && id;
   const bannerMounted = Boolean(show);
-  const concealed = !active || !foreground || overlay || privacyBusy;
+  const geometryCurrent = layoutReady && width === bannerWidth;
+  const concealed = !active || !foreground || overlay || privacyBusy || (creativeState === 'loaded' && !geometryCurrent);
 
   useEffect(() => {
     if (bannerMounted) lastRequestAtRef.current = Date.now();
-  }, [bannerMounted, requestKey, revision]);
+  }, [bannerMounted, bannerWidth, requestKey, revision]);
 
   return (
     <Section style={st.section}>
@@ -125,13 +142,21 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
         <MonoText style={st.label}>BILLBOARD · ADVERTISEMENT</MonoText>
         <View
           style={st.billboard}
-          onLayout={event => {
-            const nextWidth = event.nativeEvent.layout.width;
-            if (nextWidth <= 0) return;
-            widthRef.current = nextWidth;
-            setWidth(nextWidth);
-          }}
         >
+          {measurementActive && (
+            <View
+              collapsable={false}
+              pointerEvents="none"
+              style={st.measurement}
+              onLayout={event => {
+                const nextWidth = event.nativeEvent.layout.width;
+                if (nextWidth <= 0) return;
+                widthRef.current = nextWidth;
+                setWidth(nextWidth);
+                setLayoutReady(true);
+              }}
+            />
+          )}
           <View
             accessibilityElementsHidden={concealed}
             importantForAccessibility={concealed ? 'no-hide-descendants' : 'auto'}
@@ -149,7 +174,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
                   key={`${revision}:${requestKey}`}
                   unitId={id}
                   size={mod.BannerAdSize.INLINE_ADAPTIVE_BANNER}
-                  width={width}
+                  width={bannerWidth}
                   maxHeight={50}
                   requestOptions={NON_PERSONALIZED_REQUEST}
                   onAdLoaded={() => {
@@ -188,6 +213,7 @@ const st = StyleSheet.create({
   speaker: { width: 42, height: 4, borderRadius: 2, backgroundColor: C.line, alignSelf: 'center', marginVertical: S.gap },
   label: { color: C.mut, fontSize: 10, letterSpacing: 1, textAlign: 'center', marginVertical: S.gap },
   billboard: { minHeight: 50, backgroundColor: C.midnight },
+  measurement: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   billboardContent: { minHeight: 50, width: '100%', alignItems: 'center', justifyContent: 'center' },
   concealed: { display: 'none' },
   pendingBanner: { position: 'absolute', left: 0, right: 0, alignItems: 'center', opacity: 0 },

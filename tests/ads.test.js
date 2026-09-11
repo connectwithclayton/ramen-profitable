@@ -33,6 +33,7 @@ let consentInfoUpdateArguments;
 let consentFormCalls = 0;
 let admobConfig = require('../config/admob').TEST_IDS;
 const requests = [];
+let nextBannerInstanceId = 0;
 const appStateListeners = new Set();
 const mockNative = {
   Platform: { OS: 'ios', select: options => options[mockNative.Platform.OS] ?? options.default },
@@ -82,8 +83,12 @@ const ads = {
     showPrivacyOptionsForm: async () => { consentAllowed = false; },
   },
   BannerAd: props => {
-    React.useEffect(() => { requests.push(props); }, []);
-    return React.createElement('NativeBanner', props);
+    const instanceId = React.useRef(null);
+    if (instanceId.current === null) instanceId.current = ++nextBannerInstanceId;
+    React.useLayoutEffect(() => {
+      requests.push({ ...props, nativeInstanceId: instanceId.current });
+    }, [props.width]);
+    return React.createElement('NativeBanner', { ...props, nativeInstanceId: instanceId.current });
   },
 };
 const originalLoad = Module._load;
@@ -143,7 +148,9 @@ const mountStore = async Store => {
   return tree;
 };
 const setBillboardWidth = async (tree, width) => {
-  const layout = tree.root.findAllByType('View').find(node => node.props.onLayout);
+  const layout = tree.root.findAllByType('View')
+    .find(node => node.props.collapsable === false && node.props.onLayout);
+  assert.ok(layout, 'an active Catvertising surface must expose its measurement probe');
   await act(async () => { layout.props.onLayout({ nativeEvent: { layout: { width } } }); });
   await flush();
 };
@@ -198,7 +205,8 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   let tree;
   await act(async () => { tree = create(React.createElement(StoreScreen)); });
   const banners = () => tree.root.findAllByType('NativeBanner');
-  const layout = () => tree.root.findAllByType('View').find(node => node.props.onLayout);
+  const layout = () => tree.root.findAllByType('View')
+    .find(node => node.props.collapsable === false && node.props.onLayout);
   await act(async () => { layout().props.onLayout({ nativeEvent: { layout: { width: 340 } } }); });
   const visibleText = tree.root.findAllByType('Text').map(node => node.props.children);
   assert.equal(visibleText.includes('The cat is between sponsors.'), false);
@@ -332,19 +340,40 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   await act(async () => { consentForm.resolve(); await consentForm.promise; });
   await flush();
   assert.equal(initializationCalls, 1);
+  assert.equal(banners().length, 1, 'phone layout must mount Catvertising');
+  assert.equal(banners()[0].props.size, 'INLINE_ADAPTIVE_BANNER');
+  assert.equal(banners()[0].props.width, 339, 'phone layout must use its measured width');
+  assert.equal(banners()[0].props.maxHeight, 50);
+  assert.deepEqual(banners()[0].props.requestOptions, { requestNonPersonalizedAdsOnly: true });
+  const initialInstanceId = banners()[0].props.nativeInstanceId;
+  assert.equal(requests.length, 1);
+
+  await setBillboardWidth(tree, 339);
+  assert.equal(requests.length, 1, 'an unchanged width must not issue another native request');
+  assert.equal(banners()[0].props.nativeInstanceId, initialInstanceId);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 339, height: 50 }); });
 
   for (const [layout, width] of [
-    ['phone', 339],
     ['iPad Split View-sized', 344],
     ['iPad Slide Over-sized', 284],
   ]) {
+    const previousInstanceId = banners()[0].props.nativeInstanceId;
+    const requestCount = requests.length;
     await setBillboardWidth(tree, width);
     assert.equal(banners().length, 1, `${layout} layout must mount Catvertising`);
     assert.equal(banners()[0].props.size, 'INLINE_ADAPTIVE_BANNER');
     assert.equal(banners()[0].props.width, width, `${layout} layout must use its measured width`);
     assert.equal(banners()[0].props.maxHeight, 50);
     assert.deepEqual(banners()[0].props.requestOptions, { requestNonPersonalizedAdsOnly: true });
+    assert.equal(requests.length, requestCount + 1, `${layout} resize must issue exactly one native request`);
+    assert.notStrictEqual(
+      banners()[0].props.nativeInstanceId,
+      previousInstanceId,
+      `${layout} resize must replace the loaded native banner before changing width`,
+    );
+    assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
     assert.equal(hasNoFillCopy(), false);
+    await act(async () => { banners()[0].props.onAdLoaded({ width, height: 50 }); });
   }
   assert.deepEqual(requests.map(request => request.width), [339, 344, 284]);
 
@@ -355,7 +384,7 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   await act(async () => { tree.unmount(); });
 });
 
-test('App keeps one loaded banner across navigation and overlay', async () => {
+test('App retains loaded banners while concealed and replaces resized creatives once visible', async () => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
   const FreshApp = loadFreshApp();
@@ -364,6 +393,8 @@ test('App keeps one loaded banner across navigation and overlay', async () => {
   const tab = label => tree.root.findAllByType('Pressable')
     .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
   const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
   const bannerConcealed = () => {
     const frame = tree.root.findAllByType('View')
       .find(node => node.props.accessibilityElementsHidden !== undefined);
@@ -387,16 +418,24 @@ test('App keeps one loaded banner across navigation and overlay', async () => {
   assert.equal(bannerConcealed(), false, 'the loaded advert must be visible in Store');
   await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
   const loadedBanner = banners()[0];
+  const loadedBannerInstanceId = loadedBanner.props.nativeInstanceId;
+  const initialProbe = probes()[0];
 
   await act(async () => { setAppState('background'); });
   await flush();
+  assert.equal(probes().length, 0, 'backgrounding must remove the active measurement probe');
   assert.strictEqual(banners()[0], loadedBanner, 'backgrounding must retain the loaded native banner');
   assert.equal(requests.length, 1);
   assert.equal(bannerConcealed(), true, 'backgrounding must conceal and disable the retained advert');
   await act(async () => { setAppState('active'); });
   await flush();
-  assert.strictEqual(banners()[0], loadedBanner, 'foregrounding must reveal the same loaded banner');
+  assert.equal(probes().length, 1);
+  assert.notStrictEqual(probes()[0], initialProbe, 'foregrounding must create a fresh measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner, 'foregrounding must retain the same loaded banner before layout');
   assert.equal(requests.length, 1, 'foregrounding must not issue another request');
+  assert.equal(bannerConcealed(), true, 'foregrounding must keep the advert concealed until layout completes');
+  await setBillboardWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
   assert.equal(bannerConcealed(), false);
 
   await act(async () => { tab('Home').props.onPress(); });
@@ -404,20 +443,46 @@ test('App keeps one loaded banner across navigation and overlay', async () => {
   assert.equal(banners().length, 1, 'leaving Store must retain the loaded native banner');
   assert.equal(bannerConcealed(), true, 'the inactive Store must conceal and disable the retained advert');
   await act(async () => { tab('Store').props.onPress(); });
+  await flush();
+  assert.equal(bannerConcealed(), true, 'returning must keep the retained advert concealed until layout completes');
   await setBillboardWidth(tree, 320);
   assert.equal(banners().length, 1);
   assert.equal(requests.length, 1, 'returning to Store must reuse the loaded advert');
   assert.equal(bannerConcealed(), false, 'returning to Store must reveal the retained advert');
   assert.equal(hasNoFillCopy(), false);
 
+  await act(async () => { tab('Home').props.onPress(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'hiding must retain the loaded native banner');
+  assert.equal(banners()[0].props.width, 320, 'the concealed banner must retain its committed width');
+  assert.equal(requests.length, 1, 'hiding must not issue a native request');
+  await act(async () => { tab('Store').props.onPress(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'returning must await the completed layout before replacement');
+  assert.equal(bannerConcealed(), true, 'a potentially stale creative must remain concealed before returned layout');
+  assert.equal(requests.length, 1);
+  await setBillboardWidth(tree, 284);
+  assert.equal(banners().length, 1);
+  assert.notStrictEqual(banners()[0], loadedBanner, 'returning after a resize must replace the old native banner');
+  assert.notStrictEqual(banners()[0].props.nativeInstanceId, loadedBannerInstanceId);
+  assert.equal(banners()[0].props.width, 284);
+  assert.equal(requests.length, 2, 'returning after a hidden resize must issue exactly one request');
+  assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 284, height: 50 }); });
+  const resizedBanner = banners()[0];
+
   await act(async () => { useGame.getState().openGoIndiePaywall(); });
   await flush();
   assert.equal(banners().length, 1, 'the paywall must conceal without destroying the advert');
+  assert.strictEqual(banners()[0], resizedBanner);
   assert.equal(bannerConcealed(), true, 'the paywall must disable the retained advert');
   await act(async () => { useGame.getState().dismissOverlay(); });
   await flush();
   assert.equal(banners().length, 1);
-  assert.equal(requests.length, 1, 'closing the paywall must reveal the loaded advert');
+  assert.strictEqual(banners()[0], resizedBanner);
+  assert.equal(bannerConcealed(), true, 'closing the paywall must await fresh billboard geometry');
+  await setBillboardWidth(tree, 284);
+  assert.equal(requests.length, 2, 'closing the paywall must reveal the loaded advert');
   assert.equal(bannerConcealed(), false);
   assert.equal(hasNoFillCopy(), false);
   await act(async () => { tree.unmount(); });
@@ -460,6 +525,7 @@ test('no-fill retries only on a Store return after sixty seconds', async () => {
     await act(async () => { setAppState('background'); });
     now += 59_999;
     await act(async () => { setAppState('active'); });
+    await setBillboardWidth(tree, 300);
     await flush();
     assert.equal(requests.length, 1, 'a visible return before sixty seconds must not request another advert');
     assert.equal(banners().length, 0);
@@ -471,36 +537,50 @@ test('no-fill retries only on a Store return after sixty seconds', async () => {
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
     await flush();
+    assert.equal(requests.length, 1, 'a return must await its completed layout before retrying');
+    await setBillboardWidth(tree, 284);
     assert.equal(requests.length, 2, 'the next qualifying return must issue one request');
     assert.equal(banners().length, 1);
+    assert.equal(banners()[0].props.width, 284);
     assert.equal(hasNoFillCopy(), true, 'the confirmed fallback must remain while replacement loads');
+
+    const retryingInstanceId = banners()[0].props.nativeInstanceId;
+    const requestCount = requests.length;
+    await setBillboardWidth(tree, 270);
+    assert.equal(requests.length, requestCount + 1, 'a retrying resize must issue exactly one native request');
+    assert.equal(banners().length, 1, 'a retrying resize must keep its native banner mounted');
+    assert.equal(banners()[0].props.nativeInstanceId, retryingInstanceId, 'a retrying resize must reuse the in-flight native banner');
+    assert.equal(banners()[0].props.width, 270);
+    assert.equal(hasNoFillCopy(), true, 'a retrying resize must retain the confirmed fallback');
 
     await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
     await flush();
     assert.equal(banners().length, 0);
     assert.equal(hasNoFillCopy(), true, 'a failed replacement must retain the confirmed fallback');
-    assert.equal(requests.length, 2, 'a failed replacement must not start a retry loop');
+    assert.equal(requests.length, 3, 'a failed replacement must not start a retry loop');
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 270);
     await flush();
-    assert.equal(requests.length, 2, 'an immediate return after failure must honor the retry interval');
+    assert.equal(requests.length, 3, 'an immediate return after failure must honor the retry interval');
     assert.equal(hasNoFillCopy(), true);
 
     now += 60_000;
     await flush();
-    assert.equal(requests.length, 2, 'elapsed time alone must not issue a replacement request');
+    assert.equal(requests.length, 3, 'elapsed time alone must not issue a replacement request');
     await act(async () => { setAppState('background'); });
     await flush();
-    assert.equal(requests.length, 2, 'no request may run while the app is backgrounded');
+    assert.equal(requests.length, 3, 'no request may run while the app is backgrounded');
     await act(async () => { setAppState('active'); });
+    await setBillboardWidth(tree, 270);
     await flush();
-    assert.equal(requests.length, 3, 'foregrounding into Store must recover on a qualifying return');
+    assert.equal(requests.length, 4, 'foregrounding into Store must recover on a qualifying return');
     assert.equal(hasNoFillCopy(), true, 'the fallback must remain until the replacement reports loaded');
     const replacement = banners()[0];
-    await act(async () => { replacement.props.onAdLoaded({ width: 300, height: 50 }); });
+    await act(async () => { replacement.props.onAdLoaded({ width: 270, height: 50 }); });
     assert.strictEqual(banners()[0], replacement, 'loading must reveal the replacement without remounting it');
     assert.equal(hasNoFillCopy(), false, 'only a loaded replacement may clear the fallback');
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 4);
   } finally {
     Date.now = originalNow;
     mockNative.AppState.currentState = 'active';
@@ -560,6 +640,7 @@ test('unloaded banners recover only on qualifying Store returns', async () => {
     now += 59_999;
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
     await flush();
     assert.equal(requests.length, 1, 'a failed advert must honor the retry interval');
 
@@ -568,6 +649,7 @@ test('unloaded banners recover only on qualifying Store returns', async () => {
     assert.equal(requests.length, 1, 'elapsed time alone must not retry a failed advert');
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
     await flush();
     assert.equal(requests.length, 2, 'a qualifying return must recover a network failure');
     assert.equal(banners().length, 1);
@@ -576,6 +658,7 @@ test('unloaded banners recover only on qualifying Store returns', async () => {
     now += 59_999;
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
     await flush();
     assert.equal(requests.length, 2, 'an unresolved request must honor the retry interval');
 
@@ -584,6 +667,7 @@ test('unloaded banners recover only on qualifying Store returns', async () => {
     assert.equal(requests.length, 2, 'elapsed time alone must not retry an unresolved request');
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
     await flush();
     assert.equal(requests.length, 3, 'the next qualifying return must replace an advert that never loaded');
     const replacement = banners()[0];
@@ -592,6 +676,7 @@ test('unloaded banners recover only on qualifying Store returns', async () => {
     now += 60_000;
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
     await flush();
     assert.equal(requests.length, 3, 'a loaded creative must be reused without another request');
     assert.strictEqual(banners()[0], replacement);
@@ -633,6 +718,7 @@ test('SDK preparation failure retries without a loop', async () => {
 
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
     await flush();
     assert.equal(initializationCalls, 2, 'the next Store return must retry preparation before any banner request exists');
     assert.equal(requests.length, 1);
@@ -642,6 +728,7 @@ test('SDK preparation failure retries without a loop', async () => {
     now += 60_000;
     await act(async () => { tab('Home').props.onPress(); });
     await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
     await flush();
     assert.equal(initializationCalls, 2);
     assert.equal(requests.length, 1, 'loaded creative must survive later returns');
@@ -718,6 +805,7 @@ test('an overlay blocks consent presentation and Mobile Ads initialization', asy
   assert.equal(consentFormCalls, 0, 'an overlay opened during refresh must prevent consent presentation');
 
   await act(async () => { useGame.setState({ overlay: null }); });
+  await setBillboardWidth(tree, 320);
   await flush();
   assert.equal(consentFormCalls, 1);
   consentInfoGate = deferred();
@@ -731,6 +819,7 @@ test('an overlay blocks consent presentation and Mobile Ads initialization', asy
   assert.equal(initializationCalls, 0, 'an overlay opened before initialization must prevent it');
 
   await act(async () => { useGame.setState({ overlay: null }); });
+  await setBillboardWidth(tree, 320);
   await flush();
   assert.equal(initializationCalls, 1);
   assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
@@ -749,6 +838,7 @@ test('backgrounding blocks consent presentation and Mobile Ads initialization', 
   assert.equal(consentFormCalls, 0, 'backgrounding during refresh must prevent consent presentation');
 
   await act(async () => { setAppState('active'); });
+  await setBillboardWidth(tree, 320);
   await flush();
   assert.equal(consentFormCalls, 1);
   await act(async () => { setAppState('background'); });
@@ -757,6 +847,7 @@ test('backgrounding blocks consent presentation and Mobile Ads initialization', 
   assert.equal(initializationCalls, 0, 'backgrounding during consent must prevent initialization');
 
   await act(async () => { setAppState('active'); });
+  await setBillboardWidth(tree, 320);
   await flush();
   assert.equal(initializationCalls, 1);
   assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
