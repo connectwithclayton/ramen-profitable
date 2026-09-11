@@ -8,9 +8,8 @@ import { C, S } from '../theme';
 const NON_PERSONALIZED_REQUEST = { requestNonPersonalizedAdsOnly: true } as const;
 
 /** A fictional phone is the unit; Google's real 320x50 creative stays intact. */
-export default function PhoneBillboard() {
+export default function PhoneBillboard({ indie }: { indie: boolean }) {
   const eligible = useGame(mayRequestAds);
-  const indie = useGame(s => s.goIndieActive);
   const overlay = useGame(s => s.overlay !== null);
   const [ready, setReady] = useState(false);
   const [privacyRequired, setPrivacyRequired] = useState(false);

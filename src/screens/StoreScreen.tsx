@@ -123,7 +123,7 @@ export default function StoreScreen() {
         );
       })}
 
-      <PhoneBillboard />
+      <PhoneBillboard indie={indie} />
 
       <Section>
         <SectionHeader title="Go Indie" meta={indie ? 'ACTIVE' : undefined} metaColor={C.mint} />

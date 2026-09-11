@@ -119,12 +119,15 @@ test('app launch refreshes paid-user privacy state without requesting an ad', as
 // Exercise the mounted Store screen, real Zustand state, and public purchase APIs.
 // Only native/network boundaries are doubles; removing the production gate must fail.
 test('Store billboard waits for ownership and consent, honors purchases, and handles privacy changes', async () => {
-  useGame.setState({ goIndieActive: false, goIndieResolved: false, overlay: null, notifs: [] });
+  useGame.setState({ goIndieActive: true, goIndieResolved: false, overlay: null, notifs: [] });
   let tree;
   await act(async () => { tree = create(React.createElement(StoreScreen)); });
   const banners = () => tree.root.findAllByType('NativeBanner');
   const layout = () => tree.root.findAllByType('View').find(node => node.props.onLayout);
   await act(async () => { layout().props.onLayout({ nativeEvent: { layout: { width: 340 } } }); });
+  const visibleText = tree.root.findAllByType('Text').map(node => node.props.children);
+  assert.ok(visibleText.includes('The cat is between sponsors.'));
+  assert.equal(visibleText.includes('Go Indie. No ads. Just you and the cat.'), false);
   const initial = purchases.initPurchases();
   await flush();
   assert.equal(banners().length, 0, 'unknown ownership must not render ads');
