@@ -10,6 +10,55 @@ const RETRY_INTERVAL_MS = 60_000;
 const CREATIVE_EXPIRY_MS = 60 * 60_000;
 type CreativeState = 'idle' | 'pending' | 'loaded' | 'failed' | 'retrying';
 export type BillboardViewportFrame = { y: number; height: number };
+type BannerComponent = NonNullable<ReturnType<typeof adsModule>>['BannerAd'];
+type RequestBoundBannerProps = React.ComponentProps<BannerComponent> & {
+  Banner: BannerComponent;
+};
+
+function RequestBoundBanner({
+  Banner,
+  onAdClosed,
+  onAdFailedToLoad,
+  onAdLoaded,
+  onAdOpened,
+  onPaid,
+  ...props
+}: RequestBoundBannerProps) {
+  const requestActiveRef = useRef(true);
+
+  useLayoutEffect(() => {
+    requestActiveRef.current = true;
+    return () => { requestActiveRef.current = false; };
+  }, []);
+
+  // Residual: RN-GMA 16.5.0 leaves retired native delegates and paid handlers attached.
+  // Retired JS closures are contained here, but recycled-emitter events can still look current; watch for late events after replacement.
+  return (
+    <Banner
+      {...props}
+      onAdClosed={onAdClosed ? () => {
+        if (!requestActiveRef.current) return;
+        onAdClosed();
+      } : undefined}
+      onAdFailedToLoad={onAdFailedToLoad ? error => {
+        if (!requestActiveRef.current) return;
+        onAdFailedToLoad(error);
+      } : undefined}
+      onAdLoaded={onAdLoaded ? dimensions => {
+        if (!requestActiveRef.current) return;
+        onAdLoaded(dimensions);
+      } : undefined}
+      onAdOpened={onAdOpened ? () => {
+        if (!requestActiveRef.current) return;
+        onAdOpened();
+      } : undefined}
+      onPaid={onPaid ? event => {
+        if (!requestActiveRef.current) return;
+        onPaid(event);
+      } : undefined}
+    />
+  );
+}
 
 export default function PhoneBillboard({
   active = true,
@@ -273,7 +322,8 @@ export default function PhoneBillboard({
                 pointerEvents={bannerConcealed ? 'none' : 'auto'}
                 style={bannerConcealed && st.pendingBanner}
               >
-                <Banner
+                <RequestBoundBanner
+                  Banner={Banner}
                   key={`${revision}:${requestKey}`}
                   unitId={id}
                   size={mod.BannerAdSize.INLINE_ADAPTIVE_BANNER}

@@ -650,6 +650,74 @@ test('App retains loaded banners and reloads only after due foregrounds', async 
   assert.deepEqual(foregroundTimerDelays, [], 'suspension recovery must not schedule a timer');
 });
 
+test('replaced banners drop stale native callbacks before shared state changes', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalWarn = console.warn;
+  let now = originalNow();
+  const warnings = [];
+  let tree;
+  Date.now = () => now;
+  console.warn = (...args) => { warnings.push(args); };
+  t.after(async () => {
+    Date.now = originalNow;
+    console.warn = originalWarn;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const hasNoFillCopy = () => tree.root.findAllByType('Text')
+    .some(node => node.props.children === 'The cat is between sponsors.');
+  const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+
+  await setBillboardWidth(tree, 284);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  const first = banners()[0];
+  const firstInstanceId = first.props.nativeInstanceId;
+  const staleLoad = first.props.onAdLoaded;
+  const staleFailure = first.props.onAdFailedToLoad;
+  const staleOpen = first.props.onAdOpened;
+  await act(async () => { staleLoad({ width: 284, height: 50 }); });
+
+  now += 60_000;
+  await act(async () => { setAppState('background'); });
+  await flush();
+  await act(async () => { setAppState('active'); });
+  await flush();
+  await setBillboardWidth(tree, 284);
+  assert.equal(requests.length, 2, 'a due foreground must mount one same-width successor');
+  const successor = banners()[0];
+  assert.notEqual(successor.props.nativeInstanceId, firstInstanceId);
+
+  await act(async () => { staleOpen(); });
+  await flush();
+  assert.equal(probes().length, 1, 'a retired destination event must not hide the current request');
+  await act(async () => { staleLoad({ width: 284, height: 50 }); });
+  await flush();
+  assert.strictEqual(banners()[0], successor, 'a retired load must not replace or settle its successor');
+  await act(async () => { staleFailure(noFill); });
+  await flush();
+  assert.strictEqual(banners()[0], successor, 'a retired failure must not tear down its successor');
+  assert.equal(requests.length, 2);
+  assert.equal(hasNoFillCopy(), false, 'a retired no-fill event must not change fallback copy');
+  assert.deepEqual(warnings, [], 'retired failures must be dropped silently');
+
+  await act(async () => { successor.props.onAdFailedToLoad(noFill); });
+  await flush();
+  assert.equal(banners().length, 0, 'the current request failure must still be honored');
+  assert.equal(hasNoFillCopy(), true, 'only the current no-fill may reveal fallback copy');
+});
+
 test('scroll intersection returns replace one expired creative without timers', async t => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
