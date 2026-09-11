@@ -380,6 +380,19 @@ test('App keeps one loaded banner across navigation and overlay', async () => {
   assert.equal(banners().length, 1);
   assert.equal(requests.length, 1);
   assert.equal(bannerConcealed(), false, 'the loaded advert must be visible in Store');
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'backgrounding must retain the loaded native banner');
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), true, 'backgrounding must conceal and disable the retained advert');
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'foregrounding must reveal the same loaded banner');
+  assert.equal(requests.length, 1, 'foregrounding must not issue another request');
+  assert.equal(bannerConcealed(), false);
 
   await act(async () => { tab('Home').props.onPress(); });
   await flush();
@@ -421,6 +434,7 @@ test('no-fill retries only on a Store return after sixty seconds', async () => {
     const hasNoFillCopy = () => tree.root.findAllByType('Text')
       .some(node => node.props.children === 'The cat is between sponsors.');
     const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+    const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
 
     await act(async () => { tab('Store').props.onPress(); });
     await setBillboardWidth(tree, 320);
@@ -454,18 +468,34 @@ test('no-fill retries only on a Store return after sixty seconds', async () => {
     await flush();
     assert.equal(requests.length, 2, 'the next qualifying return must issue one request');
     assert.equal(banners().length, 1);
-    assert.equal(hasNoFillCopy(), false);
+    assert.equal(hasNoFillCopy(), true, 'the confirmed fallback must remain while replacement loads');
 
-    await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
+    await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
     await flush();
-    assert.equal(requests.length, 2, 'no-fill must not start a retry loop');
-    await act(async () => { setAppState('background'); });
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), true, 'a failed replacement must retain the confirmed fallback');
+    assert.equal(requests.length, 2, 'a failed replacement must not start a retry loop');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 2, 'an immediate return after failure must honor the retry interval');
+    assert.equal(hasNoFillCopy(), true);
+
     now += 60_000;
+    await flush();
+    assert.equal(requests.length, 2, 'elapsed time alone must not issue a replacement request');
+    await act(async () => { setAppState('background'); });
     await flush();
     assert.equal(requests.length, 2, 'no request may run while the app is backgrounded');
     await act(async () => { setAppState('active'); });
     await flush();
     assert.equal(requests.length, 3, 'foregrounding into Store must recover on a qualifying return');
+    assert.equal(hasNoFillCopy(), true, 'the fallback must remain until the replacement reports loaded');
+    const replacement = banners()[0];
+    await act(async () => { replacement.props.onAdLoaded({ width: 300, height: 50 }); });
+    assert.strictEqual(banners()[0], replacement, 'loading must reveal the replacement without remounting it');
+    assert.equal(hasNoFillCopy(), false, 'only a loaded replacement may clear the fallback');
+    assert.equal(requests.length, 3);
   } finally {
     Date.now = originalNow;
     mockNative.AppState.currentState = 'active';

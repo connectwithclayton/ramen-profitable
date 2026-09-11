@@ -17,9 +17,10 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const [revision, setRevision] = useState(0);
   const [width, setWidth] = useState(0);
   const widthRef = useRef(0);
-  const lastNoFillAtRef = useRef<number | null>(null);
+  const lastRequestAtRef = useRef<number | null>(null);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [noFill, setNoFill] = useState(false);
+  const [retryingNoFill, setRetryingNoFill] = useState(false);
   const requestable = active && eligible && foreground && !overlay && !privacyBusy && width > 0;
   const wasRequestableRef = useRef(requestable);
 
@@ -30,7 +31,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
 
   useEffect(() => {
     let cancelled = false;
-    if (!ready && !noFill && active && eligible && foreground && !overlay && !privacyBusy && width > 0) {
+    if (!ready && (!noFill || retryingNoFill) && active && eligible && foreground && !overlay && !privacyBusy && width > 0) {
       const isRenderable = () => (
         !cancelled &&
         active &&
@@ -39,7 +40,13 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
         useGame.getState().overlay === null
       );
       void prepareAds(isRenderable).then(async allowed => {
-        if (!cancelled) setReady(allowed);
+        if (!cancelled) {
+          setReady(allowed);
+          if (!allowed && retryingNoFill) {
+            lastRequestAtRef.current = Date.now();
+            setRetryingNoFill(false);
+          }
+        }
         const required = await privacyOptionsRequired().catch(() => false);
         if (!cancelled) setPrivacyRequired(required);
       });
@@ -48,26 +55,31 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       if (!cancelled) setPrivacyRequired(required);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [active, eligible, foreground, noFill, overlay, privacyBusy, ready, revision, width]);
+  }, [active, eligible, foreground, noFill, overlay, privacyBusy, ready, retryingNoFill, revision, width]);
 
   useEffect(() => {
     setReady(false);
-  }, [eligible, foreground, privacyBusy, revision, width]);
+    setRetryingNoFill(retrying => {
+      if (retrying) lastRequestAtRef.current = Date.now();
+      return false;
+    });
+  }, [eligible, privacyBusy, revision, width]);
 
   useEffect(() => {
     const returning = requestable && !wasRequestableRef.current;
     wasRequestableRef.current = requestable;
-    const lastNoFillAt = lastNoFillAtRef.current;
+    const lastRequestAt = lastRequestAtRef.current;
     if (
       returning &&
       noFill &&
-      lastNoFillAt !== null &&
-      Date.now() - lastNoFillAt >= NO_FILL_RETRY_INTERVAL_MS
+      !retryingNoFill &&
+      lastRequestAt !== null &&
+      Date.now() - lastRequestAt >= NO_FILL_RETRY_INTERVAL_MS
     ) {
-      lastNoFillAtRef.current = null;
-      setNoFill(false);
+      lastRequestAtRef.current = Date.now();
+      setRetryingNoFill(true);
     }
-  }, [noFill, requestable]);
+  }, [noFill, requestable, retryingNoFill]);
 
   const privacy = async () => {
     setPrivacyBusy(true); // Unmount the native banner before changing consent.
@@ -85,7 +97,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const mod = ready ? adsModule() : null;
   const id = bannerId();
   const Banner = mod?.BannerAd;
-  const show = eligible && !privacyBusy && ready && !noFill && width > 0 && Banner && id;
+  const show = eligible && !privacyBusy && ready && (!noFill || retryingNoFill) && width > 0 && Banner && id;
   const concealed = !active || !foreground || overlay || privacyBusy;
 
   return (
@@ -109,23 +121,38 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
             pointerEvents={concealed ? 'none' : 'auto'}
             style={[st.billboardContent, concealed && st.concealed]}
           >
-            {show ? (
-              <Banner
-                key={revision}
-                unitId={id}
-                size={mod.BannerAdSize.INLINE_ADAPTIVE_BANNER}
-                width={width}
-                maxHeight={50}
-                requestOptions={NON_PERSONALIZED_REQUEST}
-                onAdFailedToLoad={error => {
-                  if (__DEV__) console.warn('[Catvertising] Banner unavailable.', error);
-                  if ((error as Error & { code?: string }).code === 'googleMobileAds/no-fill') {
-                    lastNoFillAtRef.current = Date.now();
-                    setNoFill(true);
-                  }
-                }}
-              />
-            ) : indie ? (
+            {show && (
+              <View
+                accessibilityElementsHidden={retryingNoFill}
+                importantForAccessibility={retryingNoFill ? 'no-hide-descendants' : 'auto'}
+                pointerEvents={retryingNoFill ? 'none' : 'auto'}
+                style={retryingNoFill && st.pendingBanner}
+              >
+                <Banner
+                  key={revision}
+                  unitId={id}
+                  size={mod.BannerAdSize.INLINE_ADAPTIVE_BANNER}
+                  width={width}
+                  maxHeight={50}
+                  requestOptions={NON_PERSONALIZED_REQUEST}
+                  onAdLoaded={() => {
+                    if (retryingNoFill) {
+                      lastRequestAtRef.current = null;
+                      setNoFill(false);
+                      setRetryingNoFill(false);
+                    }
+                  }}
+                  onAdFailedToLoad={error => {
+                    if (__DEV__) console.warn('[Catvertising] Banner unavailable.', error);
+                    const failedNoFill = (error as Error & { code?: string }).code === 'googleMobileAds/no-fill';
+                    if (failedNoFill || retryingNoFill) lastRequestAtRef.current = Date.now();
+                    if (failedNoFill) setNoFill(true);
+                    if (retryingNoFill) setRetryingNoFill(false);
+                  }}
+                />
+              </View>
+            )}
+            {indie ? (
               <Text style={st.empty}>Go Indie. No ads. Just you and the cat.</Text>
             ) : noFill ? (
               <Text style={st.empty}>The cat is between sponsors.</Text>
@@ -148,6 +175,7 @@ const st = StyleSheet.create({
   billboard: { minHeight: 50, backgroundColor: C.midnight },
   billboardContent: { minHeight: 50, width: '100%', alignItems: 'center', justifyContent: 'center' },
   concealed: { display: 'none' },
+  pendingBanner: { position: 'absolute', left: 0, right: 0, alignItems: 'center', opacity: 0 },
   empty: { color: C.mut, fontSize: 12, textAlign: 'center', padding: S.gap },
   caption: { color: C.mut, fontSize: 12, textAlign: 'center', marginHorizontal: S.gap, marginTop: S.row, lineHeight: 18 },
   homeIndicator: { width: 70, height: 3, borderRadius: 2, backgroundColor: C.line, alignSelf: 'center', marginTop: S.row, marginBottom: S.gap },
