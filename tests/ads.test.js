@@ -10,8 +10,9 @@ global.__DEV__ = true;
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const deferred = () => {
   let resolve;
-  const promise = new Promise(r => { resolve = r; });
-  return { promise, resolve };
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
 };
 const info = active => ({ entitlements: { active: active ? { go_indie: {} } : {} } });
 let customer = deferred();
@@ -1107,6 +1108,81 @@ test('unloaded banners recover only on qualifying Store returns', async () => {
     mockNative.AppState.currentState = 'active';
     if (tree) await act(async () => { tree.unmount(); });
   }
+});
+
+test('a rejected UMP refresh retries only on a measured visibility return', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalSetTimeout = global.setTimeout;
+  const originalSetInterval = global.setInterval;
+  const timeoutDelays = [];
+  const intervalDelays = [];
+  let tree;
+  t.after(async () => {
+    global.setTimeout = originalSetTimeout;
+    global.setInterval = originalSetInterval;
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+  global.setTimeout = (_callback, delay) => {
+    timeoutDelays.push(delay);
+    return {};
+  };
+  global.setInterval = (_callback, delay) => {
+    intervalDelays.push(delay);
+    return {};
+  };
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const adsSession = require('../src/monetization/ads.ts');
+  const failedUpdate = consentInfoUpdate;
+  const launchRefresh = adsSession.refreshConsentSession();
+  const sharedRefresh = adsSession.refreshConsentSession();
+  assert.equal(consentInfoUpdateCalls, 1, 'concurrent consumers must share the launch refresh');
+
+  tree = await mountStore(FreshStoreScreen);
+  await setStoreBillboardViewport(tree);
+  assert.equal(consentInfoUpdateCalls, 1, 'viewport intersection must await completed width measurement');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(consentInfoUpdateCalls, 1, 'visible preparation must share the launch refresh');
+
+  const launchRejected = assert.rejects(launchRefresh, /offline at launch/);
+  const sharedRejected = assert.rejects(sharedRefresh, /offline at launch/);
+  await act(async () => {
+    failedUpdate.reject(new Error('offline at launch'));
+    await Promise.all([launchRejected, sharedRejected]);
+  });
+  await flush();
+  await setBillboardProbeWidth(tree, 300);
+  assert.equal(consentInfoUpdateCalls, 1, 'continuous visibility must not immediately retry consent');
+  assert.equal(initializationCalls, 0);
+  assert.equal(requests.length, 0);
+
+  consentInfoUpdate = deferred();
+  await setStoreBillboardViewport(tree, { scrollY: 1_000 });
+  await setStoreBillboardViewport(tree);
+  assert.equal(consentInfoUpdateCalls, 1, 'visibility return must await its new width measurement');
+  await setBillboardProbeWidth(tree, 284);
+  assert.equal(consentInfoUpdateCalls, 2, 'the next measured visibility return must retry once');
+
+  const recoveredUpdate = consentInfoUpdate;
+  const sharedRecovery = adsSession.refreshConsentSession();
+  assert.equal(consentInfoUpdateCalls, 2, 'recovery consumers must share one in-flight refresh');
+  await act(async () => {
+    recoveredUpdate.resolve();
+    await Promise.all([recoveredUpdate.promise, sharedRecovery]);
+  });
+  await flush();
+  assert.equal(consentFormCalls, 1);
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].width, 284);
+
+  await adsSession.refreshConsentSession();
+  assert.equal(consentInfoUpdateCalls, 2, 'a successful refresh must remain deduplicated for the launch');
+  assert.deepEqual(timeoutDelays, [], 'consent recovery must not schedule timers');
+  assert.deepEqual(intervalDelays, [], 'consent recovery must not schedule loops');
 });
 
 test('SDK preparation failure retries without a loop', async () => {

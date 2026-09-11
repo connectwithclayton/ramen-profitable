@@ -63,6 +63,30 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       assert.equal(result.status, 0, result.stdout + result.stderr);
       return JSON.parse(fs.readFileSync(path.join(fixture, 'ios/app.config'), 'utf8'));
     };
+    const constantsConfigThroughXcode = additional => {
+      const podsRoot = path.join(fixture, 'ios/Pods');
+      fs.mkdirSync(podsRoot, { recursive: true });
+      const result = spawnSync(
+        '/bin/bash',
+        [
+          path.join(fixture, 'node_modules/expo-constants/scripts/with-node.sh'),
+          path.join(fixture, 'node_modules/expo-constants/scripts/getAppConfig.js'),
+          fixture,
+          path.join(fixture, 'ios'),
+        ],
+        {
+          cwd: fixture,
+          env: cleanEnvironment({
+            CI: '1',
+            PODS_ROOT: podsRoot,
+            ...additional,
+          }),
+          encoding: 'utf8',
+        },
+      );
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      return JSON.parse(fs.readFileSync(path.join(fixture, 'ios/app.config'), 'utf8'));
+    };
     const development = prebuild();
     assert.equal(development.status, 0, development.stdout + development.stderr);
     const info = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
@@ -128,6 +152,44 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       const mismatched = runPhase('Release', ids);
       assert.equal(mismatched.status, 1, `${name} drift was accepted\n${mismatched.stdout}${mismatched.stderr}`);
       assert.match(mismatched.stderr, /do not match the identifiers captured during prebuild/);
+    }
+    const projectLocalEnvironment = path.join(fixture, '.env.local');
+    const xcodeEnvironment = path.join(fixture, 'ios/.xcode.env');
+    const xcodeLocalEnvironment = path.join(fixture, 'ios/.xcode.env.local');
+    const originalXcodeEnvironment = fs.readFileSync(xcodeEnvironment, 'utf8');
+    const xcodeLocalIds = {
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~6666666666',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/7777777777',
+    };
+    try {
+      fs.writeFileSync(
+        projectLocalEnvironment,
+        `ADMOB_IOS_APP_ID=${productionIds.ADMOB_IOS_APP_ID}\nADMOB_IOS_BANNER_ID=${productionIds.ADMOB_IOS_BANNER_ID}\n`,
+      );
+      fs.appendFileSync(
+        xcodeEnvironment,
+        `\nexport ADMOB_IOS_APP_ID='${productionIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${productionIds.ADMOB_IOS_BANNER_ID}'\n`,
+      );
+      fs.writeFileSync(
+        xcodeLocalEnvironment,
+        `export ADMOB_IOS_APP_ID='${xcodeLocalIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${xcodeLocalIds.ADMOB_IOS_BANNER_ID}'\n`,
+      );
+      const xcodeRuntime = constantsConfigThroughXcode({ CONFIGURATION: 'Release' });
+      assert.deepEqual(xcodeRuntime.extra.admob.ios, {
+        appId: xcodeLocalIds.ADMOB_IOS_APP_ID,
+        bannerId: xcodeLocalIds.ADMOB_IOS_BANNER_ID,
+      });
+      const divergentXcodeEnvironment = runPhase('Release');
+      assert.equal(
+        divergentXcodeEnvironment.status,
+        1,
+        `Xcode local identifier overrides were accepted\n${divergentXcodeEnvironment.stdout}${divergentXcodeEnvironment.stderr}`,
+      );
+      assert.match(divergentXcodeEnvironment.stderr, /do not match the identifiers captured during prebuild/);
+    } finally {
+      fs.writeFileSync(xcodeEnvironment, originalXcodeEnvironment);
+      fs.rmSync(projectLocalEnvironment, { force: true });
+      fs.rmSync(xcodeLocalEnvironment, { force: true });
     }
     const sampleRuntime = runPhase('Release', {
       ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,

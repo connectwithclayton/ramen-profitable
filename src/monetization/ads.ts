@@ -46,7 +46,13 @@ export async function refreshConsentSession(): Promise<void> {
       await mod.AdsConsent.requestInfoUpdate();
     })();
   }
-  await consentInfoUpdate;
+  const update = consentInfoUpdate;
+  try {
+    await update;
+  } catch (error) {
+    if (consentInfoUpdate === update) consentInfoUpdate = null;
+    throw error;
+  }
 }
 
 function preparationEligible(isRenderable: AdsPreparationEligibility): boolean {
@@ -94,7 +100,8 @@ export async function prepareAds(isRenderable: AdsPreparationEligibility): Promi
 export async function privacyOptionsRequired(): Promise<boolean> {
   const mod = adsModule();
   if (!mod) return false;
-  await refreshConsentSession().catch(() => {});
+  const update = consentInfoUpdate;
+  if (update) await update.catch(() => {});
   const info = await mod.AdsConsent.getConsentInfo();
   return info.privacyOptionsRequirementStatus === mod.AdsConsentPrivacyOptionsRequirementStatus.REQUIRED;
 }
