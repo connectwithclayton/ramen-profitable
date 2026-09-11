@@ -43,6 +43,7 @@ const mockNative = {
       return { remove: () => appStateListeners.delete(listener) };
     },
   },
+  StatusBar: { currentHeight: 0 },
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', SafeAreaView: 'SafeAreaView',
 };
 const setAppState = state => {
@@ -404,6 +405,101 @@ test('App keeps one loaded banner across navigation and overlay', async () => {
   await act(async () => { tree.unmount(); });
 });
 
+test('no-fill retries only on a Store return after sixty seconds', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  try {
+    const FreshApp = loadFreshApp();
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const banners = () => tree.root.findAllByType('NativeBanner');
+    const hasNoFillCopy = () => tree.root.findAllByType('Text')
+      .some(node => node.props.children === 'The cat is between sponsors.');
+    const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(requests.length, 1);
+
+    await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), true);
+
+    await setBillboardWidth(tree, 300);
+    assert.equal(requests.length, 1, 'layout changes must not bypass no-fill recovery timing');
+    assert.equal(hasNoFillCopy(), true);
+
+    await act(async () => { setAppState('background'); });
+    now += 59_999;
+    await act(async () => { setAppState('active'); });
+    await flush();
+    assert.equal(requests.length, 1, 'a visible return before sixty seconds must not request another advert');
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), true);
+
+    now += 1;
+    await flush();
+    assert.equal(requests.length, 1, 'elapsed time alone must not retry while Store remains visible');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 2, 'the next qualifying return must issue one request');
+    assert.equal(banners().length, 1);
+    assert.equal(hasNoFillCopy(), false);
+
+    await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
+    await flush();
+    assert.equal(requests.length, 2, 'no-fill must not start a retry loop');
+    await act(async () => { setAppState('background'); });
+    now += 60_000;
+    await flush();
+    assert.equal(requests.length, 2, 'no request may run while the app is backgrounded');
+    await act(async () => { setAppState('active'); });
+    await flush();
+    assert.equal(requests.length, 3, 'foregrounding into Store must recover on a qualifying return');
+  } finally {
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  }
+});
+
+test('hidden Store ignores unrelated game ticks', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const before = useGame.getState();
+  let commits = 0;
+  let tree;
+  try {
+    await act(async () => {
+      tree = create(
+        React.createElement(
+          React.Profiler,
+          { id: 'Store', onRender: () => { commits++; } },
+          React.createElement(FreshStoreScreen, { active: false }),
+        ),
+      );
+    });
+    const initialCommits = commits;
+    await act(async () => { useGame.setState({ energy: before.energy + 1 }); });
+    assert.equal(commits, initialCommits, 'an unrelated energy tick must not rerender hidden Store');
+    await act(async () => { useGame.setState({ cash: before.cash + 1 }); });
+    assert.ok(commits > initialCommits, 'a Store-visible balance change must still rerender Store');
+  } finally {
+    if (tree) await act(async () => { tree.unmount(); });
+    useGame.setState({ energy: before.energy, cash: before.cash });
+  }
+});
+
 test('a live remount continues one in-flight consent form', async () => {
   resetAdLifecycleState();
   const FreshStoreScreen = loadFreshStoreScreen();
@@ -484,6 +580,36 @@ test('backgrounding blocks consent presentation and Mobile Ads initialization', 
   assert.equal(initializationCalls, 1);
   assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
   await act(async () => { tree.unmount(); });
+});
+
+test('Android App unmounts Store between visits', async () => {
+  const previousOS = mockNative.Platform.OS;
+  let tree;
+  try {
+    mockNative.Platform.OS = 'android';
+    resetAdLifecycleState();
+    useGame.setState({ notifs: [] });
+    const FreshApp = loadFreshApp();
+    const FreshStoreScreen = require('../src/screens/StoreScreen.tsx').default;
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const stores = () => tree.root.findAllByType(FreshStoreScreen);
+
+    await act(async () => { tab('Store').props.onPress(); });
+    assert.equal(stores().length, 1);
+    const firstStore = stores()[0];
+    await act(async () => { tab('Home').props.onPress(); });
+    assert.equal(stores().length, 0, 'Android must remove Store when another tab is active');
+    await act(async () => { tab('Store').props.onPress(); });
+    assert.equal(stores().length, 1);
+    assert.notStrictEqual(stores()[0], firstStore, 'Android must create a fresh Store on return');
+    assert.equal(requests.length, 0);
+  } finally {
+    if (tree) await act(async () => { tree.unmount(); });
+    mockNative.Platform.OS = previousOS;
+    useGame.setState({ overlay: null });
+  }
 });
 
 test('Android omits Catvertising and describes only the offline Go Indie benefit', async () => {

@@ -55,7 +55,7 @@ export default function App() {
 function HydratedGame() {
   const [tab, setTab] = useState<Tab>('home');
   const [dockOcclusion, setDockOcclusion] = useState<number>();
-  const [storeMounted, setStoreMounted] = useState(false);
+  const [iosStoreMounted, setIosStoreMounted] = useState(false);
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
@@ -79,6 +79,7 @@ function HydratedGame() {
   }, []);
 
   const storeActive = tab === 'store';
+  const retainStore = Platform.OS === 'ios';
 
   return (
     <SafeAreaView style={st.root}>
@@ -92,11 +93,13 @@ function HydratedGame() {
           />
         )}
         {tab === 'code' && <CodeScreen />}
-        {storeMounted && (
-          <View pointerEvents={storeActive ? 'auto' : 'none'} style={[st.screen, !storeActive && st.hiddenScreen]}>
-            <StoreScreen active={storeActive} />
-          </View>
-        )}
+        {retainStore
+          ? iosStoreMounted && (
+              <View pointerEvents={storeActive ? 'auto' : 'none'} style={[st.screen, !storeActive && st.hiddenScreen]}>
+                <StoreScreen active={storeActive} />
+              </View>
+            )
+          : storeActive && <StoreScreen />}
         {tab === 'chirp' && <ChirpScreen />}
       </View>
 
@@ -129,7 +132,7 @@ function HydratedGame() {
               accessibilityState={{ selected: active }}
               accessibilityLabel={flagged ? `${t.label}, new posts` : t.label}
               onPress={() => {
-                if (t.key === 'store') setStoreMounted(true);
+                if (retainStore && t.key === 'store') setIosStoreMounted(true);
                 setTab(t.key);
               }}
               style={({ pressed }) => [st.dockBtn, pressed && { opacity: 0.6 }]}

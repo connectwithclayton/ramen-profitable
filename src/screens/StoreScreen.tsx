@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Platform, View, Text, StyleSheet } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 import { useGame } from '../state/gameStore';
 import { SHOP } from '../content/content';
 import {
@@ -35,10 +36,19 @@ const AISLES: { title: string; ids: string[] }[] = [
 const AISLED = new Set(AISLES.flatMap(a => a.ids));
 
 export default function StoreScreen({ active = true }: { active?: boolean }) {
-  const s = useGame();
+  const s = useGame(useShallow(state => ({
+    day: state.day,
+    cash: state.cash,
+    mrr: state.mrr,
+    upgrades: state.upgrades,
+    indie: state.goIndieResolved && state.goIndieActive,
+    buy: state.buy,
+    pushNotif: state.pushNotif,
+    openGoIndiePaywall: state.openGoIndiePaywall,
+  })));
   const [restoring, setRestoring] = useState(false);
   const owned = SHOP.filter(i => s.upgrades[i.id]).length;
-  const indie = s.goIndieResolved && s.goIndieActive;
+  const indie = s.indie;
   const catvertising = Platform.OS === 'ios';
   const indieCopy = indie
     ? catvertising

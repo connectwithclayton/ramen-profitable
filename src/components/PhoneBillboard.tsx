@@ -6,6 +6,7 @@ import { Btn, MonoText, Section, SectionHeader, Unit } from './ui';
 import { C, S } from '../theme';
 
 const NON_PERSONALIZED_REQUEST = { requestNonPersonalizedAdsOnly: true } as const;
+const NO_FILL_RETRY_INTERVAL_MS = 60_000;
 
 export default function PhoneBillboard({ active = true, indie }: { active?: boolean; indie: boolean }) {
   const eligible = useGame(mayRequestAds);
@@ -16,8 +17,11 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const [revision, setRevision] = useState(0);
   const [width, setWidth] = useState(0);
   const widthRef = useRef(0);
+  const lastNoFillAtRef = useRef<number | null>(null);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [noFill, setNoFill] = useState(false);
+  const requestable = active && eligible && foreground && !overlay && !privacyBusy && width > 0;
+  const wasRequestableRef = useRef(requestable);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => setForeground(state === 'active'));
@@ -26,7 +30,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
 
   useEffect(() => {
     let cancelled = false;
-    if (!ready && active && eligible && foreground && !overlay && !privacyBusy && width > 0) {
+    if (!ready && !noFill && active && eligible && foreground && !overlay && !privacyBusy && width > 0) {
       const isRenderable = () => (
         !cancelled &&
         active &&
@@ -44,12 +48,26 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
       if (!cancelled) setPrivacyRequired(required);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [active, eligible, foreground, overlay, privacyBusy, ready, revision, width]);
+  }, [active, eligible, foreground, noFill, overlay, privacyBusy, ready, revision, width]);
 
   useEffect(() => {
     setReady(false);
-    setNoFill(false);
   }, [eligible, foreground, privacyBusy, revision, width]);
+
+  useEffect(() => {
+    const returning = requestable && !wasRequestableRef.current;
+    wasRequestableRef.current = requestable;
+    const lastNoFillAt = lastNoFillAtRef.current;
+    if (
+      returning &&
+      noFill &&
+      lastNoFillAt !== null &&
+      Date.now() - lastNoFillAt >= NO_FILL_RETRY_INTERVAL_MS
+    ) {
+      lastNoFillAtRef.current = null;
+      setNoFill(false);
+    }
+  }, [noFill, requestable]);
 
   const privacy = async () => {
     setPrivacyBusy(true); // Unmount the native banner before changing consent.
@@ -102,6 +120,7 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
                 onAdFailedToLoad={error => {
                   if (__DEV__) console.warn('[Catvertising] Banner unavailable.', error);
                   if ((error as Error & { code?: string }).code === 'googleMobileAds/no-fill') {
+                    lastNoFillAtRef.current = Date.now();
                     setNoFill(true);
                   }
                 }}
