@@ -22,8 +22,11 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const widthRef = useRef(0);
   const lastRequestAtRef = useRef<number | null>(null);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const wasBackgroundedRef = useRef(AppState.currentState === 'background');
+  const [loadedForegroundReturnAt, setLoadedForegroundReturnAt] = useState<number | null>(null);
   const [noFill, setNoFill] = useState(false);
   const [creativeState, setCreativeState] = useState<CreativeState>('idle');
+  const creativeStateRef = useRef(creativeState);
   const [requestKey, setRequestKey] = useState(0);
   const measurementActive = active && foreground && !overlay && !privacyBusy;
   const requestable = measurementActive && layoutReady && eligible && width > 0;
@@ -31,9 +34,20 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   const wasRequestableRef = useRef(requestable);
 
   useEffect(() => {
-    const sub = AppState.addEventListener('change', state => setForeground(state === 'active'));
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'background') wasBackgroundedRef.current = true;
+      if (state === 'active' && wasBackgroundedRef.current) {
+        wasBackgroundedRef.current = false;
+        setLoadedForegroundReturnAt(creativeStateRef.current === 'loaded' ? Date.now() : null);
+      }
+      setForeground(state === 'active');
+    });
     return () => sub.remove();
   }, []);
+
+  useLayoutEffect(() => {
+    creativeStateRef.current = creativeState;
+  }, [creativeState]);
 
   useLayoutEffect(() => {
     if (!measurementActive) setLayoutReady(false);
@@ -82,13 +96,22 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
   }, [eligible, privacyBusy, revision]);
 
   useEffect(() => {
-    if (!requestable || width === bannerWidth || nativeRequestInFlight) return;
+    if (!requestable || nativeRequestInFlight) return;
+    const requestAt = lastRequestAtRef.current;
+    const reloadLoadedAfterForeground = (
+      creativeState === 'loaded' &&
+      loadedForegroundReturnAt !== null &&
+      requestAt !== null &&
+      loadedForegroundReturnAt - requestAt >= RETRY_INTERVAL_MS
+    );
+    if (loadedForegroundReturnAt !== null) setLoadedForegroundReturnAt(null);
+    if (width === bannerWidth && !reloadLoadedAfterForeground) return;
     if (creativeState === 'loaded') {
       setCreativeState('pending');
       setRequestKey(value => value + 1);
     }
     setBannerWidth(width);
-  }, [bannerWidth, creativeState, nativeRequestInFlight, requestable, width]);
+  }, [bannerWidth, creativeState, loadedForegroundReturnAt, nativeRequestInFlight, requestable, width]);
 
   // Any unloaded creative retries only on a qualifying return after any existing request cooldown.
   useEffect(() => {
@@ -189,7 +212,6 @@ export default function PhoneBillboard({ active = true, indie }: { active?: bool
                       setBannerWidth(latestWidth);
                       return;
                     }
-                    lastRequestAtRef.current = null;
                     setNoFill(false);
                     setCreativeState('loaded');
                   }}

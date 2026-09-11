@@ -403,11 +403,23 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   await act(async () => { tree.unmount(); });
 });
 
-test('App retains loaded banners while concealed and replaces resized creatives once visible', async () => {
+test('App retains loaded banners and reloads only after due foregrounds', async t => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
-  const FreshApp = loadFreshApp();
+  const originalNow = Date.now;
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  let now = originalNow();
+  Date.now = () => now;
   let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+  const FreshApp = loadFreshApp();
   await act(async () => { tree = create(React.createElement(FreshApp)); });
   const tab = label => tree.root.findAllByType('Pressable')
     .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
@@ -439,6 +451,15 @@ test('App retains loaded banners while concealed and replaces resized creatives 
   const loadedBanner = banners()[0];
   const loadedBannerInstanceId = loadedBanner.props.nativeInstanceId;
   const initialProbe = probes()[0];
+  const foregroundTimerDelays = [];
+  const foregroundTimerHandles = new Set();
+  global.setTimeout = (_callback, delay) => {
+    foregroundTimerDelays.push(delay);
+    const handle = {};
+    foregroundTimerHandles.add(handle);
+    return handle;
+  };
+  global.clearTimeout = handle => { foregroundTimerHandles.delete(handle); };
 
   await act(async () => { setAppState('background'); });
   await flush();
@@ -446,6 +467,7 @@ test('App retains loaded banners while concealed and replaces resized creatives 
   assert.strictEqual(banners()[0], loadedBanner, 'backgrounding must retain the loaded native banner');
   assert.equal(requests.length, 1);
   assert.equal(bannerConcealed(), true, 'backgrounding must conceal and disable the retained advert');
+  now += 59_999;
   await act(async () => { setAppState('active'); });
   await flush();
   assert.equal(probes().length, 1);
@@ -456,6 +478,10 @@ test('App retains loaded banners while concealed and replaces resized creatives 
   await setBillboardWidth(tree, 320);
   assert.strictEqual(banners()[0], loadedBanner);
   assert.equal(bannerConcealed(), false);
+  now += 1;
+  await flush();
+  assert.equal(requests.length, 1, 'elapsed cooldown time must not defer a foreground reload');
+  assert.deepEqual(foregroundTimerDelays, [], 'a sub-cooldown foreground must not schedule recovery');
 
   await act(async () => { tab('Home').props.onPress(); });
   await flush();
@@ -490,6 +516,7 @@ test('App retains loaded banners while concealed and replaces resized creatives 
   await act(async () => { banners()[0].props.onAdLoaded({ width: 284, height: 50 }); });
   const resizedBanner = banners()[0];
 
+  now += 60_000;
   await act(async () => { useGame.getState().openGoIndiePaywall(); });
   await flush();
   assert.equal(banners().length, 1, 'the paywall must conceal without destroying the advert');
@@ -504,7 +531,27 @@ test('App retains loaded banners while concealed and replaces resized creatives 
   assert.equal(requests.length, 2, 'closing the paywall must reveal the loaded advert');
   assert.equal(bannerConcealed(), false);
   assert.equal(hasNoFillCopy(), false);
-  await act(async () => { tree.unmount(); });
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.strictEqual(banners()[0], resizedBanner, 'suspension must retain the loaded native banner');
+  assert.equal(requests.length, 2);
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.strictEqual(banners()[0], resizedBanner, 'foreground recovery must await fresh geometry');
+  assert.equal(requests.length, 2, 'foregrounding must not request before layout completes');
+  await setBillboardWidth(tree, 284);
+  assert.equal(requests.length, 3, 'the first post-cooldown foreground must issue one reload');
+  assert.notStrictEqual(banners()[0], resizedBanner, 'foreground recovery must replace the suspended native banner');
+  assert.equal(banners()[0].props.width, 284);
+  assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
+  assert.deepEqual(nativeWidthTeardowns, [], 'foreground recovery must not mutate a native banner width');
+  const foregroundReplacement = banners()[0];
+  await act(async () => { foregroundReplacement.props.onAdLoaded({ width: 284, height: 50 }); });
+  await setBillboardWidth(tree, 284);
+  assert.strictEqual(banners()[0], foregroundReplacement);
+  assert.equal(requests.length, 3, 'loading the foreground replacement must not request again');
+  assert.deepEqual(foregroundTimerDelays, [], 'suspension recovery must not schedule a timer');
 });
 
 test('no-fill retries only on a Store return after sixty seconds', async () => {
