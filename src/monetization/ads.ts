@@ -4,9 +4,11 @@ import { useGame } from '../state/gameStore';
 import type { GameState } from '../state/gameStore';
 
 type AdsModule = typeof import('react-native-google-mobile-ads');
+type AdsPreparationEligibility = () => boolean;
 let sdk: AdsModule | null = null;
-let initialization: Promise<boolean> | null = null;
+let sdkInitialization: Promise<boolean> | null = null;
 let consentInfoUpdate: Promise<void> | null = null;
+let consentForm: Promise<void> | null = null;
 let consentFormHandled = false;
 
 export function mayRequestAds(state: Pick<GameState, 'goIndieActive' | 'goIndieResolved'>): boolean {
@@ -47,31 +49,45 @@ export async function refreshConsentSession(): Promise<void> {
   await consentInfoUpdate;
 }
 
-export async function prepareAds(): Promise<boolean> {
-  if (!mayRequestAds(useGame.getState())) return false;
+function preparationEligible(isRenderable: AdsPreparationEligibility): boolean {
+  return isRenderable() && mayRequestAds(useGame.getState());
+}
+
+async function showConsentFormIfRequired(mod: AdsModule): Promise<void> {
+  if (consentFormHandled) return;
+  if (!consentForm) {
+    consentForm = mod.AdsConsent.loadAndShowConsentFormIfRequired()
+      .then(() => { consentFormHandled = true; })
+      .finally(() => { consentForm = null; });
+  }
+  await consentForm;
+}
+
+export async function prepareAds(isRenderable: AdsPreparationEligibility): Promise<boolean> {
+  if (!preparationEligible(isRenderable)) return false;
   const mod = adsModule();
   if (!mod) return false;
-  if (!initialization) {
-    initialization = (async () => {
-      // Fail closed on consent errors; do not treat an error as permission.
-      await refreshConsentSession();
-      if (!mayRequestAds(useGame.getState())) return false;
-      if (!consentFormHandled) {
-        await mod.AdsConsent.loadAndShowConsentFormIfRequired();
-        consentFormHandled = true;
-      }
-      const consent = await mod.AdsConsent.getConsentInfo();
-      if (!consent.canRequestAds || !mayRequestAds(useGame.getState())) return false;
-      await mod.default().initialize();
-      return true;
-    })().catch(error => {
-      if (__DEV__) console.warn('[Catvertising] Consent or SDK initialization unavailable.', error);
-      return false;
-    });
+  try {
+    await refreshConsentSession();
+    if (!preparationEligible(isRenderable)) return false;
+    await showConsentFormIfRequired(mod);
+    if (!preparationEligible(isRenderable)) return false;
+    const consent = await mod.AdsConsent.getConsentInfo();
+    if (!consent.canRequestAds || !preparationEligible(isRenderable)) return false;
+    if (!sdkInitialization) {
+      sdkInitialization = mod.default().initialize().then(() => true).catch(error => {
+        if (__DEV__) console.warn('[Catvertising] Consent or SDK initialization unavailable.', error);
+        return false;
+      });
+    }
+    const initialization = sdkInitialization;
+    const ready = await initialization;
+    if (!ready && sdkInitialization === initialization) sdkInitialization = null;
+    return ready && preparationEligible(isRenderable);
+  } catch (error) {
+    if (__DEV__) console.warn('[Catvertising] Consent or SDK initialization unavailable.', error);
+    return false;
   }
-  const ready = await initialization;
-  if (!ready) initialization = null;
-  return ready && mayRequestAds(useGame.getState());
 }
 
 export async function privacyOptionsRequired(): Promise<boolean> {
@@ -85,6 +101,6 @@ export async function privacyOptionsRequired(): Promise<boolean> {
 export async function showAdPrivacyOptions(): Promise<void> {
   const mod = adsModule();
   if (!mod) return;
-  initialization = null;
+  sdkInitialization = null;
   await mod.AdsConsent.showPrivacyOptionsForm();
 }

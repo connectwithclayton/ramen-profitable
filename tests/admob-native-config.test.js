@@ -43,11 +43,29 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     const refused = runPhase('Release');
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /AdMob RELEASE BLOCKED/);
-    const production = prebuild({ NODE_ENV: 'production', EAS_BUILD_PROFILE: 'production', ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~2222222222', ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/3333333333' });
+    const productionIds = {
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~2222222222',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/3333333333',
+    };
+    const production = prebuild({ NODE_ENV: 'production', EAS_BUILD_PROFILE: 'production', ...productionIds });
     assert.equal(production.status, 0, production.stdout + production.stderr);
     const productionInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
-    assert.equal(productionInfo.GADApplicationIdentifier, 'ca-app-pub-1111111111111111~2222222222');
+    assert.equal(productionInfo.GADApplicationIdentifier, productionIds.ADMOB_IOS_APP_ID);
     assert.equal(runPhase('Release').status, 0);
+    for (const variable of ['ADMOB_IOS_APP_ID', 'ADMOB_IOS_BANNER_ID']) {
+      const marker = path.join(fixture, `injected-${variable}`);
+      const payload = `'; touch ${marker}; $(touch ${marker}); exit 0; #`;
+      const generated = prebuild({
+        NODE_ENV: 'production',
+        EAS_BUILD_PROFILE: 'production',
+        ...productionIds,
+        [variable]: payload,
+      });
+      assert.equal(generated.status, 0, generated.stdout + generated.stderr);
+      const rejected = runPhase('Release');
+      assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+      assert.equal(fs.existsSync(marker), false, `${variable} escaped its generated shell argument`);
+    }
   } finally {
     fs.rmSync(fixture, { recursive: true, force: true });
   }

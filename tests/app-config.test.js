@@ -42,6 +42,7 @@ test('release configuration accepts valid production AdMob identifiers', () => {
       REVENUECAT_BUILD_MODE: 'release',
       REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
       REVENUECAT_IOS_API_KEY: 'appl_release_value',
+      REVENUECAT_ANDROID_API_KEY: undefined,
       ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~1111111111',
       ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/1111111111',
     },
@@ -51,5 +52,9 @@ test('release configuration accepts valid production AdMob identifiers', () => {
     appId: 'ca-app-pub-1111111111111111~1111111111',
     bannerId: 'ca-app-pub-1111111111111111/1111111111',
   });
-  assert.equal(configured.extra.revenueCat.testStoreApiKey, undefined);
+  assert.deepEqual(configured.extra.revenueCat, {
+    iosApiKey: 'appl_release_value',
+    androidApiKey: undefined,
+  });
+  assert.equal('testStoreApiKey' in configured.extra.revenueCat, false);
 });

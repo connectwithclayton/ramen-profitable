@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import { useGame } from '../state/gameStore';
 import { adsModule, bannerId, mayRequestAds, prepareAds, privacyOptionsRequired, showAdPrivacyOptions } from '../monetization/ads';
@@ -16,6 +16,7 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [width, setWidth] = useState(0);
+  const widthRef = useRef(0);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [failed, setFailed] = useState(false);
 
@@ -28,8 +29,14 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
     let cancelled = false;
     setReady(false);
     setFailed(false);
-    if (eligible && foreground && !overlay && !privacyBusy) {
-      void prepareAds().then(async allowed => {
+    if (eligible && foreground && !overlay && !privacyBusy && width >= 320) {
+      const isRenderable = () => (
+        !cancelled &&
+        widthRef.current >= 320 &&
+        AppState.currentState === 'active' &&
+        useGame.getState().overlay === null
+      );
+      void prepareAds(isRenderable).then(async allowed => {
         if (!cancelled) setReady(allowed);
         const required = await privacyOptionsRequired().catch(() => false);
         if (!cancelled) setPrivacyRequired(required);
@@ -39,7 +46,7 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
       if (!cancelled) setPrivacyRequired(required);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [eligible, foreground, overlay, privacyBusy, revision]);
+  }, [eligible, foreground, overlay, privacyBusy, revision, width]);
 
   const privacy = async () => {
     setPrivacyBusy(true); // Unmount the native banner before changing consent.
@@ -65,7 +72,14 @@ export default function PhoneBillboard({ indie }: { indie: boolean }) {
       <Unit style={st.phone}>
         <View style={st.speaker} />
         <MonoText style={st.label}>BILLBOARD · ADVERTISEMENT</MonoText>
-        <View style={st.billboard} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+        <View
+          style={st.billboard}
+          onLayout={event => {
+            const nextWidth = event.nativeEvent.layout.width;
+            widthRef.current = nextWidth;
+            setWidth(nextWidth);
+          }}
+        >
           {show ? (
             <Banner
               key={revision}

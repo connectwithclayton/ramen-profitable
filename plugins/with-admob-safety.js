@@ -1,5 +1,9 @@
 const { withInfoPlist, withXcodeProject } = require('@expo/config-plugins');
 
+function shellQuote(value) {
+  return `'${String(value ?? '').replace(/'/g, "'\"'\"'")}'`;
+}
+
 module.exports = (config, ids) => {
   config = withInfoPlist(config, mod => {
     mod.modResults.GADApplicationIdentifier = ids.ios.appId;
@@ -9,7 +13,9 @@ module.exports = (config, ids) => {
   config = withXcodeProject(config, mod => {
     const project = mod.modResults;
     const name = 'Reject AdMob test identifiers in Release';
-    const script = `if [ "$CONFIGURATION" != "Debug" ]; then\n  . "$SRCROOT/.xcode.env"\n  "$NODE_BINARY" "$SRCROOT/../scripts/check-admob-release.js" '${ids.ios.appId || ''}' '${ids.ios.bannerId || ''}'\nfi`;
+    const appId = shellQuote(ids.ios.appId);
+    const bannerId = shellQuote(ids.ios.bannerId);
+    const script = `if [ "$CONFIGURATION" != "Debug" ]; then\n  . "$SRCROOT/.xcode.env"\n  "$NODE_BINARY" "$SRCROOT/../scripts/check-admob-release.js" ${appId} ${bannerId}\nfi`;
     const phases = project.hash.project.objects.PBXShellScriptBuildPhase || {};
     const existing = Object.values(phases).find(p => p.name === `"${name}"`);
     if (existing) {

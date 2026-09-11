@@ -24,17 +24,30 @@ let storageRead = async () => null;
 let consentAllowed = true;
 let consentStatus = 'UNKNOWN';
 let privacyRequired = false;
+let consentInfoGate = null;
+let consentInfoCalls = 0;
 let initializationCalls = 0;
 let consentInfoUpdateCalls = 0;
 let consentInfoUpdateArguments;
 let consentFormCalls = 0;
 let admobConfig = require('../config/admob').TEST_IDS;
 const requests = [];
+const appStateListeners = new Set();
 const mockNative = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1 },
-  AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  AppState: {
+    currentState: 'active',
+    addEventListener: (_event, listener) => {
+      appStateListeners.add(listener);
+      return { remove: () => appStateListeners.delete(listener) };
+    },
+  },
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', SafeAreaView: 'SafeAreaView',
+};
+const setAppState = state => {
+  mockNative.AppState.currentState = state;
+  for (const listener of appStateListeners) listener(state);
 };
 const ads = {
   default: () => ({
@@ -53,7 +66,11 @@ const ads = {
       consentFormCalls++;
       return consentForm.promise;
     },
-    getConsentInfo: async () => ({ status: consentStatus, canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' }),
+    getConsentInfo: async () => {
+      consentInfoCalls++;
+      if (consentInfoGate) await consentInfoGate.promise;
+      return { status: consentStatus, canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' };
+    },
     showPrivacyOptionsForm: async () => { consentAllowed = false; },
   },
   BannerAd: props => {
@@ -91,6 +108,44 @@ const purchases = require('../src/monetization/purchases.ts');
 const App = require('../App.tsx').default;
 const StoreScreen = require('../src/screens/StoreScreen.tsx').default;
 const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
+const loadFreshStoreScreen = () => {
+  for (const path of [
+    '../src/monetization/ads.ts',
+    '../src/components/PhoneBillboard.tsx',
+    '../src/screens/StoreScreen.tsx',
+  ]) {
+    delete require.cache[require.resolve(path)];
+  }
+  return require('../src/screens/StoreScreen.tsx').default;
+};
+const mountStore = async Store => {
+  let tree;
+  await act(async () => { tree = create(React.createElement(Store)); });
+  return tree;
+};
+const setBillboardWidth = async (tree, width) => {
+  const layout = tree.root.findAllByType('View').find(node => node.props.onLayout);
+  await act(async () => { layout.props.onLayout({ nativeEvent: { layout: { width } } }); });
+  await flush();
+};
+const resetAdLifecycleState = () => {
+  consentAllowed = true;
+  consentStatus = 'NOT_REQUIRED';
+  privacyRequired = false;
+  consentInfoGate = null;
+  consentInfoCalls = 0;
+  consentInfoUpdate = deferred();
+  consentForm = deferred();
+  initializationCalls = 0;
+  consentInfoUpdateCalls = 0;
+  consentInfoUpdateArguments = undefined;
+  consentFormCalls = 0;
+  admobConfig = require('../config/admob').TEST_IDS;
+  requests.length = 0;
+  appStateListeners.clear();
+  mockNative.AppState.currentState = 'active';
+  useGame.setState({ goIndieActive: false, goIndieResolved: true, overlay: null });
+};
 
 test('app launch refreshes paid-user privacy state without requesting an ad', async () => {
   useGame.setState({ goIndieActive: true, goIndieResolved: true, overlay: null, notifs: [] });
@@ -238,4 +293,109 @@ test('release runtime accepts valid production identifiers', () => {
     global.__DEV__ = true;
     delete require.cache[modulePath];
   }
+});
+
+test('billboard preparation starts only when the full banner fits', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+
+  await setBillboardWidth(tree, 319);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  assert.equal(consentFormCalls, 0, 'a compact billboard must not present consent');
+  assert.equal(initializationCalls, 0, 'a compact billboard must not initialize Mobile Ads');
+
+  await setBillboardWidth(tree, 320);
+  assert.equal(consentFormCalls, 1, 'an exact-width billboard may begin preparation');
+  await setBillboardWidth(tree, 319);
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 0, 'shrinking during consent must stop initialization');
+  await setBillboardWidth(tree, 320);
+  assert.equal(initializationCalls, 1, 'a fitting billboard must recover after consent');
+  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  await act(async () => { tree.unmount(); });
+});
+
+test('a live remount continues one in-flight consent form', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  let tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+  await act(async () => { tree.unmount(); });
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  assert.equal(consentFormCalls, 0, 'an unmounted billboard must not present consent');
+  assert.equal(initializationCalls, 0);
+
+  tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+  assert.equal(consentFormCalls, 1);
+  await act(async () => { tree.unmount(); });
+  tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+  assert.equal(consentFormCalls, 1, 'remounting must not duplicate an in-flight form');
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 1, 'the live remount must initialize after consent');
+  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  await act(async () => { tree.unmount(); });
+});
+
+test('an overlay blocks consent presentation and Mobile Ads initialization', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+
+  await act(async () => { useGame.setState({ overlay: { type: 'paywall' } }); });
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  assert.equal(consentFormCalls, 0, 'an overlay opened during refresh must prevent consent presentation');
+
+  await act(async () => { useGame.setState({ overlay: null }); });
+  await flush();
+  assert.equal(consentFormCalls, 1);
+  consentInfoGate = deferred();
+  const consentReadsBeforeForm = consentInfoCalls;
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.ok(consentInfoCalls > consentReadsBeforeForm, 'preparation must reach the consent-info boundary');
+  await act(async () => { useGame.setState({ overlay: { type: 'paywall' } }); });
+  await act(async () => { consentInfoGate.resolve(); await consentInfoGate.promise; });
+  await flush();
+  assert.equal(initializationCalls, 0, 'an overlay opened before initialization must prevent it');
+
+  await act(async () => { useGame.setState({ overlay: null }); });
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  await act(async () => { tree.unmount(); });
+});
+
+test('backgrounding blocks consent presentation and Mobile Ads initialization', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+
+  await act(async () => { setAppState('background'); });
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  assert.equal(consentFormCalls, 0, 'backgrounding during refresh must prevent consent presentation');
+
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.equal(consentFormCalls, 1);
+  await act(async () => { setAppState('background'); });
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 0, 'backgrounding during consent must prevent initialization');
+
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  await act(async () => { tree.unmount(); });
 });

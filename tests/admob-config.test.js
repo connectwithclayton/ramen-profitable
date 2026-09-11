@@ -16,14 +16,22 @@ test('release resolution carries iOS inventory without global validation', () =>
     ios: { appId: undefined, bannerId: undefined },
   });
 });
-test('native build executable rejects missing and test inventory regardless of environment', () => {
-  const missing = spawnSync(process.execPath, ['scripts/check-admob-release.js', '', ''], { encoding: 'utf8' });
-  assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /AdMob RELEASE BLOCKED/);
-  const result = spawnSync(process.execPath, ['scripts/check-admob-release.js', TEST_IDS.ios.appId, TEST_IDS.ios.bannerId], { encoding: 'utf8', env: { ...process.env, NODE_ENV: 'development', EAS_BUILD_PROFILE: 'development' } });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /AdMob RELEASE BLOCKED/);
-  assert.equal(spawnSync(process.execPath, ['scripts/check-admob-release.js', production.appId, production.bannerId]).status, 0);
+test('native build executable independently validates both identifiers', () => {
+  const environment = { ...process.env, NODE_ENV: 'development', EAS_BUILD_PROFILE: 'development' };
+  const invalid = [
+    ['appId', '', production.bannerId],
+    ['appId', TEST_IDS.ios.appId, production.bannerId],
+    ['appId', 'ca-app-pub-1111111111111111/2222222222', production.bannerId],
+    ['bannerId', production.appId, ''],
+    ['bannerId', production.appId, TEST_IDS.ios.bannerId],
+    ['bannerId', production.appId, 'ca-app-pub-1111111111111111~3333333333'],
+  ];
+  for (const [key, appId, bannerId] of invalid) {
+    const result = spawnSync(process.execPath, ['scripts/check-admob-release.js', appId, bannerId], { encoding: 'utf8', env: environment });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, key === 'appId' ? /iOS appId/ : /iOS bannerId/);
+  }
+  assert.equal(spawnSync(process.execPath, ['scripts/check-admob-release.js', production.appId, production.bannerId], { env: environment }).status, 0);
 });
 test('Expo config consumer permits release evaluation without iOS IDs', () => {
   for (const mode of [{ EAS_BUILD_PROFILE: 'preview' }, { EAS_BUILD_PROFILE: 'production' }, { NODE_ENV: 'production' }]) {
