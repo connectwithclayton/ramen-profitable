@@ -56,6 +56,7 @@ function HydratedGame() {
   const [tab, setTab] = useState<Tab>('home');
   const [dockOcclusion, setDockOcclusion] = useState<number>();
   const [iosStoreMounted, setIosStoreMounted] = useState(false);
+  const [storeViewportBottom, setStoreViewportBottom] = useState<number | undefined>();
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
@@ -96,7 +97,7 @@ function HydratedGame() {
         {retainStore
           ? iosStoreMounted && (
               <View pointerEvents={storeActive ? 'auto' : 'none'} style={[st.screen, !storeActive && st.hiddenScreen]}>
-                <StoreScreen active={storeActive} />
+                <StoreScreen active={storeActive} viewportBottom={storeViewportBottom} />
               </View>
             )
           : storeActive && <StoreScreen />}
@@ -120,7 +121,11 @@ function HydratedGame() {
       <View
         style={st.dock}
         accessibilityRole="tablist"
-        onLayout={event => setDockOcclusion(event.nativeEvent.layout.height + DOCK_BOTTOM)}
+        onLayout={event => {
+          setDockOcclusion(event.nativeEvent.layout.height + DOCK_BOTTOM);
+          const next = event.nativeEvent.layout.y;
+          setStoreViewportBottom(current => current === next ? current : next);
+        }}
       >
         {TABS.map(t => {
           const active = tab === t.key;

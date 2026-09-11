@@ -13,6 +13,11 @@ function assertProductionIds(ids) {
       throw new Error(`AdMob RELEASE BLOCKED: iOS ${key} is missing, invalid, or a Google TEST identifier. Set production IDs in config/admob.js's environment configuration and rebuild.`);
     }
   }
+  const appPublisher = ids.appId.match(/^ca-app-pub-([0-9]{16})~/)[1];
+  const bannerPublisher = ids.bannerId.match(/^ca-app-pub-([0-9]{16})\//)[1];
+  if (appPublisher !== bannerPublisher) {
+    throw new Error('AdMob RELEASE BLOCKED: iOS appId and bannerId must belong to the same publisher account.');
+  }
 }
 
 function resolveAdMob(development, env = process.env) {

@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Platform,
   View,
@@ -43,7 +43,13 @@ const AISLES: { title: string; ids: string[] }[] = [
 /** Anything a future SHOP entry adds lands here rather than silently disappearing. */
 const AISLED = new Set(AISLES.flatMap(a => a.ids));
 
-export default function StoreScreen({ active = true }: { active?: boolean }) {
+export default function StoreScreen({
+  active = true,
+  viewportBottom,
+}: {
+  active?: boolean;
+  viewportBottom?: number;
+}) {
   const s = useGame(useShallow(state => ({
     day: state.day,
     cash: state.cash,
@@ -74,7 +80,10 @@ export default function StoreScreen({ active = true }: { active?: boolean }) {
     const frame = billboardFrameRef.current;
     const viewport = viewportRef.current;
     const top = viewport.offsetY + viewport.insetTop;
-    const bottom = viewport.offsetY + viewport.height - viewport.insetBottom;
+    const bottom = viewport.offsetY + Math.min(
+      viewport.height - viewport.insetBottom,
+      viewportBottom ?? Number.POSITIVE_INFINITY,
+    );
     const visible = Boolean(
       frame &&
       frame.height > 0 &&
@@ -85,7 +94,11 @@ export default function StoreScreen({ active = true }: { active?: boolean }) {
     if (billboardInViewportRef.current === visible) return;
     billboardInViewportRef.current = visible;
     setBillboardInViewport(visible);
-  }, []);
+  }, [viewportBottom]);
+
+  useEffect(() => {
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
 
   const onScreenLayout = useCallback((event: LayoutChangeEvent) => {
     viewportRef.current.height = event.nativeEvent.layout.height;

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { useGame } from '../state/gameStore';
-import { adsModule, bannerId, mayRequestAds, prepareAds, privacyOptionsRequired, showAdPrivacyOptions } from '../monetization/ads';
+import { adsModule, bannerId, consentRetryAvailable, mayRequestAds, prepareAds, privacyOptionsRequired, showAdPrivacyOptions } from '../monetization/ads';
 import { Btn, MonoText, Section, SectionHeader, Unit } from './ui';
 import { C, S } from '../theme';
 
@@ -35,6 +35,7 @@ export default function PhoneBillboard({
   const lastRequestAtRef = useRef<number | null>(null);
   const lastLoadedAtRef = useRef<number | null>(null);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const [destinationOpen, setDestinationOpen] = useState(false);
   const wasBackgroundedRef = useRef(AppState.currentState === 'background');
   const [loadedForegroundReturnAt, setLoadedForegroundReturnAt] = useState<number | null>(null);
   const [loadedVisibilityReturnAt, setLoadedVisibilityReturnAt] = useState<number | null>(null);
@@ -45,12 +46,13 @@ export default function PhoneBillboard({
   const sectionYRef = useRef<number | null>(null);
   const phoneYRef = useRef<number | null>(null);
   const billboardLayoutRef = useRef<{ y: number; height: number } | null>(null);
-  const surfaceActive = active && foreground && !overlay;
+  const surfaceActive = active && foreground && !overlay && !destinationOpen;
   const retainedVisibilityActive = surfaceActive && viewportVisible;
   const measurementActive = retainedVisibilityActive && !privacyBusy;
   const requestable = measurementActive && layoutReady && eligible && width > 0;
   const nativeRequestInFlight = ready && (creativeState === 'pending' || creativeState === 'retrying');
   const wasRetainedVisibilityActiveRef = useRef(retainedVisibilityActive);
+  const consentRetryAuthorizedRef = useRef(false);
   const expiredVisibilityReturnDue = (
     creativeState === 'loaded' &&
     loadedVisibilityReturnAt !== null &&
@@ -109,10 +111,13 @@ export default function PhoneBillboard({
   useLayoutEffect(() => {
     if (retainedVisibilityActive === wasRetainedVisibilityActiveRef.current) return;
     wasRetainedVisibilityActiveRef.current = retainedVisibilityActive;
+    if (retainedVisibilityActive && eligible && consentRetryAvailable()) {
+      consentRetryAuthorizedRef.current = true;
+    }
     setLoadedVisibilityReturnAt(
       retainedVisibilityActive && creativeStateRef.current === 'loaded' ? Date.now() : null,
     );
-  }, [retainedVisibilityActive]);
+  }, [eligible, retainedVisibilityActive]);
 
   useLayoutEffect(() => {
     if (!measurementActive) setLayoutReady(false);
@@ -122,6 +127,8 @@ export default function PhoneBillboard({
     let cancelled = false;
     const needsPreparation = creativeState === 'idle' || creativeState === 'retrying';
     if (!ready && needsPreparation && (!noFill || creativeState === 'retrying') && requestable) {
+      const retryRejectedConsent = consentRetryAuthorizedRef.current;
+      consentRetryAuthorizedRef.current = false;
       const isRenderable = () => (
         !cancelled &&
         active &&
@@ -130,7 +137,7 @@ export default function PhoneBillboard({
         AppState.currentState === 'active' &&
         useGame.getState().overlay === null
       );
-      void prepareAds(isRenderable).then(async allowed => {
+      void prepareAds(isRenderable, retryRejectedConsent).then(async allowed => {
         if (!cancelled) {
           setReady(allowed);
           if (allowed) {
@@ -273,6 +280,8 @@ export default function PhoneBillboard({
                   width={bannerWidth}
                   maxHeight={50}
                   requestOptions={NON_PERSONALIZED_REQUEST}
+                  onAdOpened={() => setDestinationOpen(true)}
+                  onAdClosed={() => setDestinationOpen(false)}
                   onAdLoaded={() => {
                     lastLoadedAtRef.current = Date.now();
                     const latestWidth = widthRef.current;

@@ -8,6 +8,7 @@ type AdsPreparationEligibility = () => boolean;
 let sdk: AdsModule | null = null;
 let sdkInitialization: Promise<boolean> | null = null;
 let consentInfoUpdate: Promise<void> | null = null;
+let consentInfoUpdateError: unknown | null = null;
 let consentForm: Promise<void> | null = null;
 let consentFormHandled = false;
 
@@ -38,10 +39,16 @@ export function adsModule(): AdsModule | null {
   }
 }
 
-export async function refreshConsentSession(): Promise<void> {
+export function consentRetryAvailable(): boolean {
+  return consentInfoUpdate === null && consentInfoUpdateError !== null;
+}
+
+export async function refreshConsentSession(retryRejected = false): Promise<void> {
   const mod = adsModule();
   if (!mod) return;
   if (!consentInfoUpdate) {
+    if (consentInfoUpdateError !== null && !retryRejected) throw consentInfoUpdateError;
+    consentInfoUpdateError = null;
     consentInfoUpdate = (async () => {
       await mod.AdsConsent.requestInfoUpdate();
     })();
@@ -50,7 +57,10 @@ export async function refreshConsentSession(): Promise<void> {
   try {
     await update;
   } catch (error) {
-    if (consentInfoUpdate === update) consentInfoUpdate = null;
+    if (consentInfoUpdate === update) {
+      consentInfoUpdate = null;
+      consentInfoUpdateError = error;
+    }
     throw error;
   }
 }
@@ -69,12 +79,15 @@ async function showConsentFormIfRequired(mod: AdsModule): Promise<void> {
   await consentForm;
 }
 
-export async function prepareAds(isRenderable: AdsPreparationEligibility): Promise<boolean> {
+export async function prepareAds(
+  isRenderable: AdsPreparationEligibility,
+  retryRejectedConsent = false,
+): Promise<boolean> {
   if (!preparationEligible(isRenderable)) return false;
   const mod = adsModule();
   if (!mod) return false;
   try {
-    await refreshConsentSession();
+    await refreshConsentSession(retryRejectedConsent);
     if (!preparationEligible(isRenderable)) return false;
     // UMP combines loading and presentation; accept its in-flight window and recheck after dismissal.
     await showConsentFormIfRequired(mod);

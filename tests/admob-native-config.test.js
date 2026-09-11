@@ -50,7 +50,13 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     };
     const runPhase = (configuration, additional = {}) => spawnSync('/bin/sh', ['-c', phase()], {
       cwd: fixture,
-      env: cleanEnvironment({ CI: '1', SRCROOT: path.join(fixture, 'ios'), CONFIGURATION: configuration, ...additional }),
+      env: cleanEnvironment({
+        CI: '1',
+        SRCROOT: path.join(fixture, 'ios'),
+        PODS_ROOT: path.join(fixture, 'ios/Pods'),
+        CONFIGURATION: configuration,
+        ...additional,
+      }),
       encoding: 'utf8',
     });
     const constantsConfig = additional => {
@@ -123,7 +129,8 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       fs.writeFileSync(validatorPath, validator);
     }
     assert.equal(captured.status, 0, captured.stdout + captured.stderr);
-    assert.deepEqual(JSON.parse(captured.stdout), [
+    const capturedArguments = captured.stdout.trim().split('\n').at(-1);
+    assert.deepEqual(JSON.parse(capturedArguments), [
       releaseRuntime.extra.admob.ios.appId,
       releaseRuntime.extra.admob.ios.bannerId,
     ]);
@@ -191,6 +198,23 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       fs.rmSync(projectLocalEnvironment, { force: true });
       fs.rmSync(xcodeLocalEnvironment, { force: true });
     }
+    const loginHome = path.join(fixture, 'login-home');
+    const loginIds = {
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~8888888888',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/9999999999',
+    };
+    fs.mkdirSync(loginHome);
+    fs.writeFileSync(
+      path.join(loginHome, '.bash_profile'),
+      `export ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
+    );
+    const divergentLoginEnvironment = runPhase('Release', { HOME: loginHome });
+    assert.equal(
+      divergentLoginEnvironment.status,
+      1,
+      `login-shell identifier overrides were accepted\n${divergentLoginEnvironment.stdout}${divergentLoginEnvironment.stderr}`,
+    );
+    assert.match(divergentLoginEnvironment.stderr, /do not match the identifiers captured during prebuild/);
     const sampleRuntime = runPhase('Release', {
       ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
       ADMOB_IOS_BANNER_ID: TEST_IDS.ios.bannerId,
@@ -203,7 +227,18 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     });
     assert.equal(malformedRuntime.status, 1, malformedRuntime.stdout + malformedRuntime.stderr);
     assert.match(malformedRuntime.stderr, /iOS bannerId/);
+    const crossPublisherRuntime = runPhase('Release', {
+      ADMOB_IOS_APP_ID: 'ca-app-pub-2222222222222222~2222222222',
+      ADMOB_IOS_BANNER_ID: productionIds.ADMOB_IOS_BANNER_ID,
+    });
+    assert.equal(crossPublisherRuntime.status, 1, crossPublisherRuntime.stdout + crossPublisherRuntime.stderr);
+    assert.match(crossPublisherRuntime.stderr, /same publisher account/);
     assert.deepEqual(constantsConfig({ CONFIGURATION: 'Debug' }).extra.admob, TEST_IDS);
+    assert.deepEqual(
+      constantsConfig({ CONFIGURATION: 'Debug', NODE_ENV: 'production', ...productionIds }).extra.admob,
+      TEST_IDS,
+      'an exact Debug configuration must keep sample inventory despite a production NODE_ENV',
+    );
     for (const variable of ['ADMOB_IOS_APP_ID', 'ADMOB_IOS_BANNER_ID']) {
       const marker = path.join(fixture, `injected-${variable}`);
       const payload = `'; touch ${marker}; $(touch ${marker}); exit 0; #`;

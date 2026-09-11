@@ -10,7 +10,12 @@ function buildMode() {
       : profile && RELEASE_PROFILES.has(profile)
         ? 'release'
         : undefined;
-  const xcodeMode = process.env.CONFIGURATION === 'Release' ? 'release' : undefined;
+  const xcodeMode =
+    process.env.CONFIGURATION === 'Debug'
+      ? 'development'
+      : process.env.CONFIGURATION === 'Release'
+        ? 'release'
+        : undefined;
   const defaultMode = process.env.NODE_ENV === 'production' ? 'release' : 'development';
   const inferredMode = profileMode ?? xcodeMode ?? defaultMode;
   const explicitMode = process.env.REVENUECAT_BUILD_MODE;
@@ -24,7 +29,7 @@ function buildMode() {
       const source = profileMode
         ? `EAS_BUILD_PROFILE="${profile}"`
         : xcodeMode
-          ? 'CONFIGURATION="Release"'
+          ? `CONFIGURATION="${process.env.CONFIGURATION}"`
           : process.env.NODE_ENV === 'production'
             ? 'NODE_ENV="production"'
             : 'development defaults';

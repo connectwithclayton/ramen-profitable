@@ -203,6 +203,14 @@ const setBillboardWidth = async (tree, width) => {
   await setStoreBillboardViewport(tree);
   await setBillboardProbeWidth(tree, width);
 };
+const setDockTop = async (tree, y) => {
+  const dock = tree.root.findAllByProps({ accessibilityRole: 'tablist' })[0];
+  assert.ok(dock?.props.onLayout, 'App must expose the measured dock boundary');
+  await act(async () => {
+    dock.props.onLayout({ nativeEvent: { layout: { x: 12, y, width: 366, height: 54 } } });
+  });
+  await flush();
+};
 const resetAdLifecycleState = () => {
   consentAllowed = true;
   consentStatus = 'NOT_REQUIRED';
@@ -355,7 +363,7 @@ test('a paywall success without a confirmed go_indie entitlement fails closed', 
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
 });
 
-test('release runtime accepts valid production identifiers', () => {
+test('release runtime accepts a valid pair and rejects cross-publisher identifiers', () => {
   const modulePath = require.resolve('../src/monetization/ads.ts');
   admobConfig = {
     ios: {
@@ -367,9 +375,56 @@ test('release runtime accepts valid production identifiers', () => {
   delete require.cache[modulePath];
   try {
     assert.equal(require(modulePath).bannerId(), admobConfig.ios.bannerId);
+    admobConfig = {
+      ios: {
+        appId: 'ca-app-pub-2222222222222222~1111111111',
+        bannerId: 'ca-app-pub-1111111111111111/1111111111',
+      },
+    };
+    delete require.cache[modulePath];
+    assert.throws(() => require(modulePath), /same publisher account/);
   } finally {
     global.__DEV__ = true;
     delete require.cache[modulePath];
+  }
+});
+
+test('the measured dock boundary prevents requests for a fully covered billboard', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const FreshApp = loadFreshApp();
+  let tree;
+  try {
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    await setDockTop(tree, 530);
+    const storeTab = tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
+    await act(async () => { storeTab.props.onPress(); });
+
+    const frame = {
+      viewportHeight: 600,
+      sectionY: 460,
+      phoneY: 30,
+      billboardY: 50,
+      billboardHeight: 50,
+    };
+    await setStoreBillboardViewport(tree, { ...frame, scrollY: 0 });
+    assert.equal(
+      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
+      0,
+      'a billboard entirely behind the measured dock must not activate ad measurement',
+    );
+    assert.equal(requests.length, 0);
+
+    await setStoreBillboardViewport(tree, { ...frame, scrollY: 20 });
+    await setBillboardProbeWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(requests.length, 1, 'scrolling a positive slice above the dock must permit one request');
+  } finally {
+    if (tree) await act(async () => { tree.unmount(); });
   }
 });
 
@@ -890,6 +945,52 @@ test('visibility returns replace creatives one hour after the latest native load
   assert.equal(requests.length, 2, 'settling the replacement must not issue another request');
 });
 
+test('returning from an ad destination rechecks creative expiry', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+
+  await act(async () => { loadedBanner.props.onAdOpened(); });
+  await flush();
+  assert.equal(probes().length, 0, 'an SDK-presented destination must suspend measurement');
+  now += 60 * 60_000 - 1;
+  await act(async () => { loadedBanner.props.onAdClosed(); });
+  await flush();
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner, 'a pre-expiry destination return must reuse the creative');
+  assert.equal(requests.length, 1);
+
+  await act(async () => { loadedBanner.props.onAdOpened(); });
+  now += 1;
+  await act(async () => { loadedBanner.props.onAdClosed(); });
+  await flush();
+  assert.equal(probes().length, 1, 'destination return must create a fresh measurement boundary');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'an expired destination return must issue one replacement');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+});
+
 test('no-fill retries only on a Store return after sixty seconds', async () => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
@@ -1112,7 +1213,7 @@ test('unloaded banners recover only on qualifying Store returns', async () => {
 
 test('a rejected UMP refresh retries only on a measured visibility return', async t => {
   resetAdLifecycleState();
-  useGame.setState({ notifs: [] });
+  useGame.setState({ notifs: [], goIndieActive: false, goIndieResolved: false });
   const originalSetTimeout = global.setTimeout;
   const originalSetInterval = global.setInterval;
   const timeoutDelays = [];
@@ -1156,6 +1257,14 @@ test('a rejected UMP refresh retries only on a measured visibility return', asyn
   assert.equal(consentInfoUpdateCalls, 1, 'continuous visibility must not immediately retry consent');
   assert.equal(initializationCalls, 0);
   assert.equal(requests.length, 0);
+
+  await act(async () => { useGame.setState({ goIndieResolved: true }); });
+  await flush();
+  assert.equal(
+    consentInfoUpdateCalls,
+    1,
+    'ownership resolving free while continuously visible must not retry the rejected launch refresh',
+  );
 
   consentInfoUpdate = deferred();
   await setStoreBillboardViewport(tree, { scrollY: 1_000 });
