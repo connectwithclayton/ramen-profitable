@@ -41,7 +41,7 @@ test('native build executable independently validates both identifiers', () => {
   }
   assert.equal(spawnSync(process.execPath, ['scripts/check-admob-release.js', production.appId, production.bannerId], { env: environment }).status, 0);
 });
-test('Expo config selects production only for exact Release signals', () => {
+test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
   const root = path.resolve(__dirname, '..');
   const environment = {
     ...process.env,
@@ -69,11 +69,11 @@ test('Expo config selects production only for exact Release signals', () => {
     admob: TEST_IDS,
     revenueCat: { testStoreApiKey: 'test_local_value' },
   };
-  const ignoredReleaseSignals = {
-    EAS_BUILD_PROFILE: 'production',
+  const developmentMode = {
+    EAS_BUILD_PROFILE: 'development',
     CONFIGURATION: 'Profile',
-    NODE_ENV: 'production',
-    REVENUECAT_BUILD_MODE: 'release',
+    NODE_ENV: 'development',
+    REVENUECAT_BUILD_MODE: 'development',
   };
   for (const args of [
     [],
@@ -91,7 +91,7 @@ test('Expo config selects production only for exact Release signals', () => {
     ['run:ios', '--configuration=release'],
     ['run:android', '--variant', 'release'],
   ]) {
-    assert.deepEqual(evaluate(args, ignoredReleaseSignals), development);
+    assert.deepEqual(evaluate(args, developmentMode), development);
   }
   for (const args of [
     ['start', '--no-dev'],
@@ -110,7 +110,7 @@ test('Expo config selects production only for exact Release signals', () => {
       {
         cwd: root,
         encoding: 'utf8',
-        env: { ...environment, ...ignoredReleaseSignals },
+        env: { ...environment, ...developmentMode },
       },
     );
     assert.equal(
@@ -135,12 +135,13 @@ test('Expo config selects production only for exact Release signals', () => {
       /npx expo run:ios --configuration Release/,
     );
   }
-  const release = {
+  const productionRevenueCat = {
+    iosApiKey: 'appl_local_value',
+    androidApiKey: 'goog_local_value',
+  };
+  const releaseAdMob = {
     admob: { ios: production },
-    revenueCat: {
-      iosApiKey: 'appl_local_value',
-      androidApiKey: 'goog_local_value',
-    },
+    revenueCat: { testStoreApiKey: 'test_local_value' },
   };
   assert.deepEqual(
     evaluate([], {
@@ -149,7 +150,7 @@ test('Expo config selects production only for exact Release signals', () => {
       NODE_ENV: 'development',
       REVENUECAT_BUILD_MODE: 'development',
     }),
-    release,
+    releaseAdMob,
   );
   assert.deepEqual(
     evaluate(['run:ios', '--configuration', 'Release'], {
@@ -158,7 +159,7 @@ test('Expo config selects production only for exact Release signals', () => {
       NODE_ENV: 'development',
       REVENUECAT_BUILD_MODE: 'development',
     }),
-    release,
+    releaseAdMob,
   );
   assert.deepEqual(
     evaluate(['run:ios', '--configuration=Release'], {
@@ -167,7 +168,16 @@ test('Expo config selects production only for exact Release signals', () => {
       NODE_ENV: 'development',
       REVENUECAT_BUILD_MODE: 'development',
     }),
-    release,
+    releaseAdMob,
+  );
+  assert.deepEqual(
+    evaluate(['run:android', '--variant', 'release'], {
+      EAS_BUILD_PROFILE: '',
+      CONFIGURATION: '',
+      NODE_ENV: 'production',
+      REVENUECAT_BUILD_MODE: '',
+    }),
+    { admob: TEST_IDS, revenueCat: productionRevenueCat },
   );
   assert.deepEqual(
     evaluate(['run:ios', '--configuration', 'Release'], {

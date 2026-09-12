@@ -1,4 +1,42 @@
 const { resolveAdMob } = require('./config/admob');
+const REVENUECAT_DEVELOPMENT_PROFILES = new Set([
+  'development',
+  'ios-simulator',
+]);
+const REVENUECAT_RELEASE_PROFILES = new Set(['preview', 'production']);
+
+function revenueCatBuildMode() {
+  const profile = process.env.EAS_BUILD_PROFILE;
+  const profileMode =
+    profile && REVENUECAT_DEVELOPMENT_PROFILES.has(profile)
+      ? 'development'
+      : profile && REVENUECAT_RELEASE_PROFILES.has(profile)
+        ? 'release'
+        : undefined;
+  const defaultMode =
+    process.env.NODE_ENV === 'production' ? 'release' : 'development';
+  const explicitMode = process.env.REVENUECAT_BUILD_MODE;
+  if (explicitMode) {
+    if (explicitMode !== 'development' && explicitMode !== 'release') {
+      throw new Error(
+        'REVENUECAT_BUILD_MODE must be either "development" or "release".',
+      );
+    }
+    const inferredMode = profileMode ?? defaultMode;
+    if (explicitMode !== inferredMode) {
+      const source = profileMode
+        ? `EAS_BUILD_PROFILE="${profile}"`
+        : 'NODE_ENV="production"';
+      throw new Error(
+        `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
+          `this configuration requires "${inferredMode}" mode.`,
+      );
+    }
+    return inferredMode;
+  }
+
+  return profileMode ?? defaultMode;
+}
 
 function cleanKey(value) {
   const key = value?.trim();
@@ -30,15 +68,16 @@ module.exports = ({ config }) => {
         'or build with npx expo run:ios --configuration Release.',
     );
   }
-  const release =
+  const adMobRelease =
     process.env.CONFIGURATION === 'Release' ||
     args.some(
       (argument, index) =>
         argument === '--configuration=Release' ||
         (argument === '--configuration' && args[index + 1] === 'Release'),
     );
+  const revenueCatMode = revenueCatBuildMode();
   const revenueCat =
-    release
+    revenueCatMode === 'release'
       ? {
           iosApiKey: releaseKey('REVENUECAT_IOS_API_KEY', 'appl_'),
           androidApiKey: releaseKey('REVENUECAT_ANDROID_API_KEY', 'goog_'),
@@ -49,7 +88,7 @@ module.exports = ({ config }) => {
           ),
         };
 
-  const admob = resolveAdMob(!release);
+  const admob = resolveAdMob(!adMobRelease);
   return {
     ...config,
     plugins: [
