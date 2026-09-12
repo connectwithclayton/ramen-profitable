@@ -18,10 +18,12 @@ function releaseKey(name, expectedPrefix) {
 
 module.exports = ({ config }) => {
   const args = process.argv.slice(2);
-  const release = args.some(
-    (argument, index) =>
-      argument === '--configuration' && args[index + 1] === 'Release',
-  );
+  const release =
+    process.env.CONFIGURATION === 'Release' ||
+    args.some(
+      (argument, index) =>
+        argument === '--configuration' && args[index + 1] === 'Release',
+    );
   const revenueCat =
     release
       ? {

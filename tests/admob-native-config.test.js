@@ -41,23 +41,9 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       return Object.assign(result, additional);
     };
     const env = cleanEnvironment({ CI: '1', NODE_ENV: 'development', EAS_BUILD_PROFILE: 'development', REVENUECAT_BUILD_MODE: '' });
-    const releaseArguments = ['--configuration', 'Release'];
     const prebuild = (additional = {}) => spawnSync(
       process.execPath,
       [path.join(root, 'node_modules/expo/bin/cli'), 'prebuild', '.', '--platform', 'ios', '--no-install'],
-      { cwd: fixture, env: { ...env, ...additional }, encoding: 'utf8' },
-    );
-    const expoPrebuild = path.join(root, 'node_modules/expo/node_modules/@expo/cli/build/src/prebuild/index.js');
-    const releasePrebuildScript = `
-      process.argv = [process.execPath, require.resolve('expo/bin/cli'), 'run:ios', '--configuration', 'Release'];
-      require(${JSON.stringify(expoPrebuild)}).expoPrebuild(['.', '--platform', 'ios', '--no-install']).catch(error => {
-        console.error(error);
-        process.exitCode = 1;
-      });
-    `;
-    const releasePrebuild = (additional = {}) => spawnSync(
-      process.execPath,
-      ['-e', releasePrebuildScript],
       { cwd: fixture, env: { ...env, ...additional }, encoding: 'utf8' },
     );
     const validatorPath = path.join(fixture, 'scripts/check-admob-release.js');
@@ -78,38 +64,17 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       }),
       encoding: 'utf8',
     });
-    const runReleaseValidation = (capturedIds, additional = {}) => spawnSync(
-      '/bin/bash',
-      [
-        '-l',
-        path.join(fixture, 'node_modules/expo-constants/scripts/with-node.sh'),
-        validatorPath,
-        capturedIds.ADMOB_IOS_APP_ID,
-        capturedIds.ADMOB_IOS_BANNER_ID,
-        ...releaseArguments,
-      ],
-      {
-        cwd: fixture,
-        env: cleanEnvironment({
-          CI: '1',
-          PODS_ROOT: path.join(fixture, 'ios/Pods'),
-          CONFIGURATION: 'Release',
-          ...additional,
-        }),
-        encoding: 'utf8',
-      },
-    );
-    const constantsConfig = (additional, configArguments = []) => {
+    const constantsConfig = additional => {
       const constantsEnvironment = cleanEnvironment(additional);
       const result = spawnSync(
         process.execPath,
-        [path.join(root, 'node_modules/expo-constants/scripts/build/getAppConfig.js'), fixture, path.join(fixture, 'ios'), ...configArguments],
+        [path.join(root, 'node_modules/expo-constants/scripts/build/getAppConfig.js'), fixture, path.join(fixture, 'ios')],
         { cwd: fixture, env: constantsEnvironment, encoding: 'utf8' },
       );
       assert.equal(result.status, 0, result.stdout + result.stderr);
       return JSON.parse(fs.readFileSync(path.join(fixture, 'ios/app.config'), 'utf8'));
     };
-    const constantsConfigThroughXcode = (additional, configArguments = []) => {
+    const constantsConfigThroughXcode = additional => {
       const podsRoot = path.join(fixture, 'ios/Pods');
       fs.mkdirSync(podsRoot, { recursive: true });
       const result = spawnSync(
@@ -119,7 +84,6 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
           path.join(fixture, 'node_modules/expo-constants/scripts/getAppConfig.js'),
           fixture,
           path.join(fixture, 'ios'),
-          ...configArguments,
         ],
         {
           cwd: fixture,
@@ -134,7 +98,11 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       assert.equal(result.status, 0, result.stdout + result.stderr);
       return JSON.parse(fs.readFileSync(path.join(fixture, 'ios/app.config'), 'utf8'));
     };
-    const development = prebuild();
+    const development = prebuild({
+      CONFIGURATION: 'Debug',
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~2222222222',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/3333333333',
+    });
     assert.equal(development.status, 0, development.stdout + development.stderr);
     const info = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
     assert.equal(info.GADApplicationIdentifier, TEST_IDS.ios.appId);
@@ -159,7 +127,8 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     const environmentOnlyInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
     assert.equal(environmentOnlyInfo.GADApplicationIdentifier, TEST_IDS.ios.appId);
     assert.equal(runPhase('Release', productionIds).status, 1);
-    const production = releasePrebuild({
+    const production = prebuild({
+      CONFIGURATION: 'Release',
       NODE_ENV: 'production',
       EAS_BUILD_PROFILE: 'production',
       ...productionIds,
@@ -167,22 +136,13 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.equal(production.status, 0, production.stdout + production.stderr);
     const productionInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
     assert.equal(productionInfo.GADApplicationIdentifier, productionIds.ADMOB_IOS_APP_ID);
-    const releaseWithoutCliSignal = runPhase('Release', productionIds);
-    assert.equal(releaseWithoutCliSignal.status, 1, releaseWithoutCliSignal.stdout + releaseWithoutCliSignal.stderr);
-    assert.match(releaseWithoutCliSignal.stderr, /Google TEST identifier/);
-    assert.equal(runReleaseValidation(productionIds, productionIds).status, 0);
+    const releasePhase = runPhase('Release', productionIds);
+    assert.equal(releasePhase.status, 0, releasePhase.stdout + releasePhase.stderr);
     assert.deepEqual(
-      constantsConfig({ CONFIGURATION: 'Release', ...productionIds }).extra.admob,
-      TEST_IDS,
-    );
-    assert.deepEqual(
-      constantsConfig({ CONFIGURATION: 'Release' }, releaseArguments).extra.admob.ios,
+      constantsConfig({ CONFIGURATION: 'Release' }).extra.admob.ios,
       {},
     );
-    const releaseRuntime = constantsConfig(
-      { CONFIGURATION: 'Release', ...productionIds },
-      releaseArguments,
-    );
+    const releaseRuntime = constantsConfig({ CONFIGURATION: 'Release', ...productionIds });
     assert.deepEqual(releaseRuntime.extra.admob.ios, {
       appId: productionIds.ADMOB_IOS_APP_ID,
       bannerId: productionIds.ADMOB_IOS_BANNER_ID,
@@ -218,15 +178,12 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       },
     ];
     for (const { name, ids } of changedProductionIds) {
-      const changedRuntime = constantsConfig(
-        { CONFIGURATION: 'Release', ...ids },
-        releaseArguments,
-      );
+      const changedRuntime = constantsConfig({ CONFIGURATION: 'Release', ...ids });
       assert.deepEqual(changedRuntime.extra.admob.ios, {
         appId: ids.ADMOB_IOS_APP_ID,
         bannerId: ids.ADMOB_IOS_BANNER_ID,
       });
-      const mismatched = runReleaseValidation(productionIds, ids);
+      const mismatched = runPhase('Release', ids);
       assert.equal(mismatched.status, 1, `${name} drift was accepted\n${mismatched.stdout}${mismatched.stderr}`);
       assert.match(mismatched.stderr, /do not match the identifiers captured during prebuild/);
     }
@@ -251,15 +208,12 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
         xcodeLocalEnvironment,
         `export ADMOB_IOS_APP_ID='${xcodeLocalIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${xcodeLocalIds.ADMOB_IOS_BANNER_ID}'\n`,
       );
-      const xcodeRuntime = constantsConfigThroughXcode(
-        { CONFIGURATION: 'Release' },
-        releaseArguments,
-      );
+      const xcodeRuntime = constantsConfigThroughXcode({ CONFIGURATION: 'Release' });
       assert.deepEqual(xcodeRuntime.extra.admob.ios, {
         appId: xcodeLocalIds.ADMOB_IOS_APP_ID,
         bannerId: xcodeLocalIds.ADMOB_IOS_BANNER_ID,
       });
-      const divergentXcodeEnvironment = runReleaseValidation(productionIds);
+      const divergentXcodeEnvironment = runPhase('Release');
       assert.equal(
         divergentXcodeEnvironment.status,
         1,
@@ -281,26 +235,26 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       path.join(loginHome, '.bash_profile'),
       `export ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
     );
-    const divergentLoginEnvironment = runReleaseValidation(productionIds, { HOME: loginHome });
+    const divergentLoginEnvironment = runPhase('Release', { HOME: loginHome });
     assert.equal(
       divergentLoginEnvironment.status,
       1,
       `login-shell identifier overrides were accepted\n${divergentLoginEnvironment.stdout}${divergentLoginEnvironment.stderr}`,
     );
     assert.match(divergentLoginEnvironment.stderr, /do not match the identifiers captured during prebuild/);
-    const sampleRuntime = runReleaseValidation(productionIds, {
+    const sampleRuntime = runPhase('Release', {
       ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
       ADMOB_IOS_BANNER_ID: TEST_IDS.ios.bannerId,
     });
     assert.equal(sampleRuntime.status, 1, sampleRuntime.stdout + sampleRuntime.stderr);
     assert.match(sampleRuntime.stderr, /Google TEST identifier/);
-    const malformedRuntime = runReleaseValidation(productionIds, {
+    const malformedRuntime = runPhase('Release', {
       ...productionIds,
       ADMOB_IOS_BANNER_ID: 'not-an-admob-banner-id',
     });
     assert.equal(malformedRuntime.status, 1, malformedRuntime.stdout + malformedRuntime.stderr);
     assert.match(malformedRuntime.stderr, /iOS bannerId/);
-    const crossPublisherRuntime = runReleaseValidation(productionIds, {
+    const crossPublisherRuntime = runPhase('Release', {
       ADMOB_IOS_APP_ID: 'ca-app-pub-2222222222222222~2222222222',
       ADMOB_IOS_BANNER_ID: productionIds.ADMOB_IOS_BANNER_ID,
     });
@@ -315,7 +269,8 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     for (const variable of ['ADMOB_IOS_APP_ID', 'ADMOB_IOS_BANNER_ID']) {
       const marker = path.join(fixture, `injected-${variable}`);
       const payload = `'; touch ${marker}; $(touch ${marker}); exit 0; #`;
-      const generated = releasePrebuild({
+      const generated = prebuild({
+        CONFIGURATION: 'Release',
         NODE_ENV: 'production',
         EAS_BUILD_PROFILE: 'production',
         ...productionIds,

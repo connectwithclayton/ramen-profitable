@@ -31,11 +31,11 @@ function withArguments(values, callback) {
   }
 }
 
-test('release-like environment variables still select sample inventory', () => {
+test('nonexact release-like environment variables select sample inventory', () => {
   const configured = withEnvironment(
     {
       EAS_BUILD_PROFILE: 'production',
-      CONFIGURATION: 'Release',
+      CONFIGURATION: 'Profile',
       NODE_ENV: 'production',
       REVENUECAT_BUILD_MODE: 'release',
       REVENUECAT_TEST_STORE_API_KEY: 'test_safe_value',
@@ -50,6 +50,32 @@ test('release-like environment variables still select sample inventory', () => {
   assert.deepEqual(configured.extra.revenueCat, {
     testStoreApiKey: 'test_safe_value',
   });
+});
+
+test('exact Xcode Release configuration selects production identifiers', () => {
+  const configured = withEnvironment(
+    {
+      EAS_BUILD_PROFILE: 'development',
+      CONFIGURATION: 'Release',
+      NODE_ENV: 'development',
+      REVENUECAT_BUILD_MODE: 'development',
+      REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
+      REVENUECAT_IOS_API_KEY: 'appl_release_value',
+      REVENUECAT_ANDROID_API_KEY: undefined,
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~1111111111',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/1111111111',
+    },
+    () => withArguments([], () => appConfig({ config: {} })),
+  );
+  assert.deepEqual(configured.extra.admob.ios, {
+    appId: 'ca-app-pub-1111111111111111~1111111111',
+    bannerId: 'ca-app-pub-1111111111111111/1111111111',
+  });
+  assert.deepEqual(configured.extra.revenueCat, {
+    iosApiKey: 'appl_release_value',
+    androidApiKey: undefined,
+  });
+  assert.equal('testStoreApiKey' in configured.extra.revenueCat, false);
 });
 
 test('exact Release option selects valid production identifiers', () => {
