@@ -342,7 +342,7 @@ export const useGame = create<GameState & Actions>()(
             goIndieActive: active,
             goIndieResolved: true,
             pendingOwnerBonus: settlement.pendingOwnerBonus,
-            ...(active && (!state.goIndieResolved || !state.goIndieActive)
+            ...(active && !state.goIndieActive
               ? { lastSeen: Date.now() }
               : {}),
           };
@@ -546,18 +546,21 @@ export const useGame = create<GameState & Actions>()(
         return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
-      merge: (persisted, current) => ({
-        ...current,
-        ...selectPersistedState(persisted, BETA_TESTER),
-        // A late disk read must not overwrite fresh RevenueCat ownership or
-        // restore the pre-entitlement offline-earnings clock.
-        ...(current.goIndieResolved
-          ? {
-              goIndieActive: current.goIndieActive,
-              ...(current.goIndieActive ? { lastSeen: current.lastSeen } : {}),
-            }
-          : {}),
-      }),
+      merge: (persisted, current) => {
+        const persistedState = selectPersistedState(persisted, BETA_TESTER);
+        return {
+          ...current,
+          ...persistedState,
+          ...(current.goIndieResolved
+            ? {
+                goIndieActive: current.goIndieActive,
+                ...(current.goIndieActive && persistedState.goIndieActive !== true
+                  ? { lastSeen: current.lastSeen }
+                  : {}),
+              }
+            : {}),
+        };
+      },
       partialize: s => selectPersistedState(s, BETA_TESTER),
     }
   )

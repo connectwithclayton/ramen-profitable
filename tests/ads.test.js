@@ -457,6 +457,76 @@ test('late hydration preserves the post-entitlement earnings clock', async t => 
   assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 });
 
+test('a confirmed returning owner keeps full earnings across hydration order', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  const now = 1_000_000;
+  const persistedLastSeen = now - 61_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  const persistedOwner = JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: persistedLastSeen, goIndieActive: true },
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+  });
+  const lateDisk = deferred();
+  storageRead = () => lateDisk.promise;
+  const lateHydration = useGame.persist.rehydrate();
+  listener(info(true));
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(useGame.getState().lastSeen, now);
+
+  lateDisk.resolve(persistedOwner);
+  await lateHydration;
+  assert.equal(useGame.getState().lastSeen, persistedLastSeen);
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+  assert.equal(useGame.getState().cash, 24.4);
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+  });
+  const earlyDisk = deferred();
+  storageRead = () => earlyDisk.promise;
+  const earlyHydration = useGame.persist.rehydrate();
+  earlyDisk.resolve(persistedOwner);
+  await earlyHydration;
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(useGame.getState().lastSeen, persistedLastSeen);
+
+  listener(info(true));
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(useGame.getState().lastSeen, persistedLastSeen);
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+  assert.equal(useGame.getState().cash, 24.4);
+});
+
 test('an active restore preserves the paid offline earnings interval', async t => {
   const originalNow = Date.now;
   const previousState = useGame.getState();
