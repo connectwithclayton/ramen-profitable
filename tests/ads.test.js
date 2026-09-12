@@ -667,6 +667,97 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   await act(async () => { tree.unmount(); });
 });
 
+test('surface loss retires pending requests but retains loaded creatives', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const renderStore = active => React.createElement(FreshStoreScreen, { active, viewportBottom: 800 });
+  const setActive = async active => {
+    await act(async () => { tree.update(renderStore(active)); });
+    await flush();
+  };
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+
+  await act(async () => { tree = create(renderStore(true)); });
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  assert.equal(banners().length, 1);
+  const pendingBanner = banners()[0];
+  const pendingInstanceId = pendingBanner.props.nativeInstanceId;
+  const retiredLoad = pendingBanner.props.onAdLoaded;
+
+  await setActive(false);
+  assert.equal(probes().length, 0);
+  assert.equal(banners().length, 0, 'surface loss must unmount a pending native request');
+  await act(async () => { retiredLoad({ width: 320, height: 50 }); });
+  await flush();
+  assert.equal(banners().length, 0, 'a retired pending load must not settle shared state');
+
+  await setActive(true);
+  assert.equal(probes().length, 1);
+  assert.equal(banners().length, 0, 'a return must await fresh measured geometry');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 1, 'a sub-cooldown return must not remount the retired request');
+  assert.equal(banners().length, 0);
+
+  now += 60_000;
+  await flush();
+  assert.equal(requests.length, 1, 'elapsed time alone must not retry a retired request');
+  await setActive(false);
+  await setActive(true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'the next due measured return must mount one retry');
+  assert.equal(banners().length, 1);
+  const retryingBanner = banners()[0];
+  assert.notEqual(retryingBanner.props.nativeInstanceId, pendingInstanceId);
+
+  await setActive(false);
+  assert.equal(banners().length, 0, 'surface loss must also unmount a retrying native request');
+  await setActive(true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'a retired retry must keep the same cooldown boundary');
+  assert.equal(banners().length, 0);
+
+  now += 60_000;
+  await flush();
+  assert.equal(requests.length, 2);
+  await setActive(false);
+  await setActive(true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 3);
+  const loadedBanner = banners()[0];
+  await act(async () => { loadedBanner.props.onAdLoaded({ width: 320, height: 50 }); });
+
+  await setActive(false);
+  assert.strictEqual(banners()[0], loadedBanner, 'surface loss may retain an already loaded creative');
+  assert.equal(bannerConcealed(), true, 'the retained loaded creative must remain concealed and disabled');
+  assert.equal(requests.length, 3);
+});
+
 test('App retains loaded banners and reloads only after due foregrounds', async t => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });

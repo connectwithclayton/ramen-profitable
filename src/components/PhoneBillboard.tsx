@@ -214,6 +214,11 @@ export default function PhoneBillboard({
   }, [eligible, privacyBusy, revision]);
 
   useEffect(() => {
+    if (retainedVisibilityActive || !eligible || privacyBusy || !nativeRequestInFlight) return;
+    setCreativeState('failed');
+  }, [eligible, nativeRequestInFlight, privacyBusy, retainedVisibilityActive]);
+
+  useEffect(() => {
     if (!requestable || nativeRequestInFlight) return;
     const requestAt = lastRequestAtRef.current;
     const reloadLoadedAfterForeground = (
@@ -268,7 +273,9 @@ export default function PhoneBillboard({
   const mod = ready ? adsModule() : null;
   const id = bannerId();
   const Banner = mod?.BannerAd;
-  const bannerActive = creativeState === 'pending' || creativeState === 'loaded' || creativeState === 'retrying';
+  const bannerActive = creativeState === 'loaded' || (
+    requestable && (creativeState === 'pending' || creativeState === 'retrying')
+  );
   const retryingWithFallback = noFill && creativeState === 'retrying';
   const show = eligible && !privacyBusy && ready && bannerActive && (!noFill || creativeState === 'retrying') && bannerWidth > 0 && Banner && id;
   const bannerMounted = Boolean(show);
