@@ -1,4 +1,4 @@
-import type { PaywallAxis, PaywallChoice } from '../content/content';
+import type { PaywallAxis, PaywallChoice, ShopItem } from '../content/content';
 import type { GameState } from './gameStore';
 
 export type MrrDelta = {
@@ -22,7 +22,7 @@ export function milestonesForProject(
   projectId: string,
 ): Record<string, boolean> {
   return Object.fromEntries(
-    Object.entries(milestones).filter(([key]) => !key.startsWith('project:') || key.startsWith(`project:${projectId}:`)),
+    Object.entries(milestones).filter(([key]) => key.startsWith(`project:${projectId}:`)),
   );
 }
 
@@ -91,6 +91,34 @@ export function homeProjectActionLabel(project: { loc: number; need: number } | 
   return project.loc >= project.need ? 'Open Code to submit' : 'Continue coding';
 }
 
+type AutomationUpgrade = Pick<ShopItem, 'id' | 'name' | 'desc' | 'cost'>;
+
+export function automationAffordabilityNudge(
+  cash: number,
+  upgrades: Readonly<Record<string, boolean>>,
+  shop: readonly AutomationUpgrade[],
+) {
+  const upgrade = shop.find(item => item.id === 'claude');
+  if (!upgrade || upgrades[upgrade.id] || cash < upgrade.cost) return undefined;
+  const inlineDescription = upgrade.desc[0].toLowerCase() + upgrade.desc.slice(1);
+  return {
+    name: upgrade.name,
+    cost: upgrade.cost,
+    detail: `${upgrade.desc} while the app is open.`,
+    chirpText: `${upgrade.name} just entered the budget — ${inlineDescription} while the app is open.`,
+  };
+}
+
+export function newAutomationAffordabilityNudge(
+  beforeCash: number,
+  afterCash: number,
+  upgrades: Readonly<Record<string, boolean>>,
+  shop: readonly AutomationUpgrade[],
+) {
+  const nudge = automationAffordabilityNudge(afterCash, upgrades, shop);
+  return nudge && beforeCash < nudge.cost ? nudge : undefined;
+}
+
 export function sampleHomeExposure(
   startedAt: number | undefined,
   now: number,
@@ -130,14 +158,20 @@ export type PriorityHomeReactionKind = 'milestone' | DurableHomeReceiptKind;
 type HomeReaction = { id: string; who: string; handle: string; kind?: string };
 type StoryAuthor = readonly [string, string];
 
-export function isEligibleHomeReaction(chirp: HomeReaction, betaTester: StoryAuthor) {
-  const intentionalKind =
-    chirp.kind === 'ambient' ||
-    chirp.kind === 'milestone' ||
-    chirp.kind === 'purchase' ||
-    chirp.kind === 'verdict' ||
-    chirp.kind === 'paywall';
-  return chirp.who === betaTester[0] && chirp.handle === betaTester[1] && intentionalKind;
+export function isPriorityHomeReaction<T extends HomeReaction>(
+  chirp: T | undefined,
+  betaTester: StoryAuthor,
+): chirp is T & { kind: PriorityHomeReactionKind } {
+  // No ambient source is priority-eligible; making one eligible requires restoring unseen-priority protection.
+  return Boolean(
+    chirp &&
+    chirp.who === betaTester[0] &&
+    chirp.handle === betaTester[1] &&
+    (chirp.kind === 'milestone' ||
+      chirp.kind === 'purchase' ||
+      chirp.kind === 'verdict' ||
+      chirp.kind === 'paywall'),
+  );
 }
 
 export function isDurableHomeReceipt<T extends HomeReaction>(
@@ -146,22 +180,8 @@ export function isDurableHomeReceipt<T extends HomeReaction>(
 ): chirp is T & { kind: DurableHomeReceiptKind } {
   return Boolean(
     chirp &&
-    isEligibleHomeReaction(chirp, betaTester) &&
+    isPriorityHomeReaction(chirp, betaTester) &&
     (chirp.kind === 'purchase' || chirp.kind === 'verdict' || chirp.kind === 'paywall'),
-  );
-}
-
-export function isPriorityHomeReaction<T extends HomeReaction>(
-  chirp: T | undefined,
-  betaTester: StoryAuthor,
-): chirp is T & { kind: PriorityHomeReactionKind } {
-  return Boolean(
-    chirp &&
-    isEligibleHomeReaction(chirp, betaTester) &&
-    (chirp.kind === 'milestone' ||
-      chirp.kind === 'purchase' ||
-      chirp.kind === 'verdict' ||
-      chirp.kind === 'paywall'),
   );
 }
 
@@ -196,7 +216,7 @@ export function selectHomeReaction<T extends HomeReaction>({
 }) {
   if (prioritySecondsLeft > 0 && isPriorityHomeReaction(priority, betaTester)) return priority;
   if (receiptSecondsLeft > 0 && isDurableHomeReceipt(receipt, betaTester)) return receipt;
-  return chirps.find(chirp => isEligibleHomeReaction(chirp, betaTester));
+  return chirps.find(chirp => isPriorityHomeReaction(chirp, betaTester));
 }
 
 export function homeReceiptStateForPersistence<T extends HomeReaction>(

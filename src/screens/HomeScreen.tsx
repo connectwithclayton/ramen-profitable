@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useGame, MRR_GOAL } from '../state/gameStore';
-import { ACHIEVEMENTS, BETA_TESTER } from '../content/content';
+import { ACHIEVEMENTS, BETA_TESTER, SHOP } from '../content/content';
 import {
   Btn,
   Divider,
@@ -31,6 +31,7 @@ import {
 import { C, R } from '../theme';
 import { AbTestIcon, DrawnIcon, EnergyIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
 import {
+  automationAffordabilityNudge,
   formatMrrDelta,
   homeAutomationStatus,
   homeEmptyProjectCopy,
@@ -232,9 +233,11 @@ function AppRow({
 export default function HomeScreen({
   bottomOcclusion,
   onOpenCode,
+  onOpenStore,
 }: {
   bottomOcclusion: number | undefined;
   onOpenCode: () => void;
+  onOpenStore: () => void;
 }) {
   const s = useGame();
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
@@ -258,7 +261,6 @@ export default function HomeScreen({
   const recordReactionExposure = React.useCallback((elapsedSeconds: number) => {
     if (timedReactionId) s.recordHomeReactionExposure(timedReactionId, elapsedSeconds);
   }, [timedReactionId, s.recordHomeReactionExposure]);
-  useForegroundExposure(s.overlay === null, s.recordHomeExposure);
   useForegroundExposure(
     Boolean(
       s.overlay === null &&
@@ -270,6 +272,7 @@ export default function HomeScreen({
   );
   const projectDone = Boolean(s.project && s.project.loc >= s.project.need);
   const automationStatus = homeAutomationStatus(s.autoCode, s.project);
+  const automationNudge = automationAffordabilityNudge(s.cash, s.upgrades, SHOP);
   const emptyProjectCopy = homeEmptyProjectCopy(s.apps);
 
   return (
@@ -371,6 +374,28 @@ export default function HomeScreen({
           <Text style={st.statCaption}>{s.hasJob ? 'per day, soul-crushing' : 'Bliss, statistically'}</Text>
         </Unit>
       </Section>
+
+      {automationNudge && (
+        <Section>
+          <Unit style={st.affordability}>
+            <Eyebrow color={C.gold}>Upgrade within budget</Eyebrow>
+            <View style={st.affordabilityTop}>
+              <DrawnIcon name="store" size={18} color={C.gold} />
+              <Text style={st.affordabilityName}>{automationNudge.name}</Text>
+              <MonoText style={st.affordabilityPrice}>{fmt(automationNudge.cost)}</MonoText>
+            </View>
+            <Text style={st.affordabilityDetail}>{automationNudge.detail}</Text>
+            <Btn
+              small
+              ghost
+              label="Open Store"
+              accessibilityLabel={`Open Store for ${automationNudge.name}`}
+              onPress={onOpenStore}
+              style={st.affordabilityButton}
+            />
+          </Unit>
+        </Section>
+      )}
 
       {s.goIndieResolved && s.goIndieActive && (
         <Section style={{ marginTop: S_GAP }}>
@@ -493,6 +518,13 @@ const st = StyleSheet.create({
   statValue: { color: C.ink, fontSize: 22, fontWeight: '700', marginTop: 6 },
   statValueMuted: { color: C.dim, fontSize: 14, fontWeight: '400' },
   statCaption: { color: C.mut, fontSize: 11, marginTop: 4 },
+
+  affordability: { paddingVertical: 13 },
+  affordabilityTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 7 },
+  affordabilityName: { color: C.ink, flex: 1, fontSize: 14, fontWeight: '700' },
+  affordabilityPrice: { color: C.gold, fontSize: 12, fontWeight: '600' },
+  affordabilityDetail: { color: C.mut, fontSize: 12, lineHeight: 17, marginTop: 6 },
+  affordabilityButton: { alignSelf: 'flex-start', marginTop: 11 },
 
   indie: { paddingVertical: 9, alignItems: 'center' },
   indieText: { color: C.mint, fontSize: 10, letterSpacing: 1.2, fontWeight: '600' },

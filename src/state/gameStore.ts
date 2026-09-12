@@ -20,6 +20,7 @@ import {
   advanceHomeReactionExposure,
   calculatePaywallTransaction,
   milestonesForProject,
+  newAutomationAffordabilityNudge,
   paywallReaction,
   priorityHomeReactionState,
   projectMilestoneId,
@@ -45,7 +46,7 @@ export type ShippedApp = {
   dark: number; // dark-pattern heat
   hasPaywall: boolean;
 };
-export type StoryKind = 'ambient' | 'milestone' | 'purchase' | 'verdict' | 'paywall';
+export type StoryKind = PriorityHomeReactionKind;
 export type Chirp = {
   id: string;
   who: string;
@@ -117,7 +118,6 @@ type Actions = {
   quitJob: () => void;
   fastTick: () => void;
   slowTick: () => void;
-  recordHomeExposure: (elapsedSeconds: number, homeStillVisible: boolean) => void;
   recordHomeReactionExposure: (reactionId: string, elapsedSeconds: number) => void;
   maybeEvent: () => void;
   pushNotif: (text: string, icon?: IconName, emoji?: string) => void;
@@ -167,6 +167,19 @@ const initial: GameState = {
   homeReceipt: undefined,
   homeReceiptSecondsLeft: 0,
 };
+
+function pushNewAutomationAffordability(
+  beforeCash: number,
+  current: GameState & Actions,
+) {
+  const nudge = newAutomationAffordabilityNudge(
+    beforeCash,
+    current.cash,
+    current.upgrades,
+    SHOP,
+  );
+  if (nudge) current.pushChirp(nudge.chirpText, { author: BETA_TESTER });
+}
 
 export const useGame = create<GameState & Actions>()(
   persist(
@@ -377,26 +390,9 @@ export const useGame = create<GameState & Actions>()(
           }
         }
         set(next);
+        pushNewAutomationAffordability(s.cash, get());
         if (s.mrr >= 100) s.unlock('mrr_100');
         if (s.mrr >= 1000) s.unlock('mrr_1000');
-      },
-
-      recordHomeExposure: (elapsedSeconds, homeStillVisible) => {
-        if (elapsedSeconds <= 0) return;
-        const current = get();
-        if (!homeStillVisible || current.overlay !== null) return;
-        const claude = SHOP.find(item => item.id === 'claude');
-        const affordableKey = 'upgrade:claude-affordable';
-        // The 20-second ambient gap and three-line pre-ship cap hold by construction while this is the only
-        // ambient callback and its persisted milestone makes it one-shot. Reinstate enforcement before adding another.
-        if (claude && current.cash >= claude.cost && !current.upgrades.claude && !current.storyMilestones[affordableKey]) {
-          set({ storyMilestones: { ...current.storyMilestones, [affordableKey]: true } });
-          get().pushChirp(`${claude.name} is within budget — ${claude.desc.toLowerCase()}.`, {
-            author: BETA_TESTER,
-            kind: 'ambient',
-            event: 'UPGRADE WITHIN BUDGET',
-          });
-        }
       },
 
       recordHomeReactionExposure: (reactionId, elapsedSeconds) => {
@@ -428,6 +424,7 @@ export const useGame = create<GameState & Actions>()(
         const outcome = resolveGameEvent(ev, s);
         if (!outcome) return;
         set(outcome.patch);
+        pushNewAutomationAffordability(s.cash, get());
         s.pushNotif(outcome.text, ev.icon);
         if (Math.random() < 0.4) {
           s.pushChirp(outcome.chirpText);
@@ -501,6 +498,7 @@ export const useGame = create<GameState & Actions>()(
         const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
         const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieResolved && s.goIndieActive ? 2 : 1);
         set({ cash: s.cash + earned, lastSeen: Date.now() });
+        pushNewAutomationAffordability(s.cash, get());
         return earned;
       },
       touchLastSeen: () => set({ lastSeen: Date.now() }),

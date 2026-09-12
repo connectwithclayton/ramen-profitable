@@ -59,12 +59,11 @@ test('project milestones are scoped by stable project id', async () => {
   const kept = milestonesForProject({
     [projectMilestoneId('old-id', 'ten-taps')]: true,
     [projectMilestoneId('new-id', 'started')]: true,
-    'upgrade:claude-affordable': true,
+    'legacy:global': true,
   }, 'new-id');
 
   assert.deepEqual(kept, {
     [projectMilestoneId('new-id', 'started')]: true,
-    'upgrade:claude-affordable': true,
   });
 });
 
@@ -131,7 +130,7 @@ test('Home selects intentional beta-tester reactions and ignores player verdicts
     receipt,
     receiptSecondsLeft: 0,
     betaTester: BETA_TESTER,
-  })?.id, 'ambient');
+  })?.id, 'purchase');
 });
 
 test('Home priority ignores ambience and drops replaced earned responses', async () => {
@@ -242,7 +241,7 @@ test('Home keeps a durable receipt independent of bounded Chirp history', async 
     receipt: restored.homeReceipt,
     receiptSecondsLeft: 0,
     betaTester: BETA_TESTER,
-  })?.id, 'newer-0');
+  }), undefined);
 
   const oldPin = selectPersistedState(
     { homeReactionId: 'old', homeReactionSecondsLeft: 20 },
@@ -251,6 +250,51 @@ test('Home keeps a durable receipt independent of bounded Chirp history', async 
   assert.equal(oldPin.homeReceipt, undefined);
   assert.equal(oldPin.homeReceiptSecondsLeft, 0);
   assert.equal('homeReactionId' in oldPin, false);
+});
+
+test('relaunch keeps ambient feed posts out of the prominent Home reaction', async () => {
+  const { selectHomeReaction, selectPersistedState } = await loadExperience();
+  const { BETA_TESTER } = await loadContent();
+  const ambient = {
+    id: 'affordability-nudge',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    text: 'Claude just entered the budget.',
+    likes: 12,
+    kind: 'ambient',
+  };
+  const earned = {
+    id: 'ten-taps',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'milestone',
+    text: 'Ten taps recorded.',
+    likes: 12,
+  };
+  const restored = JSON.parse(JSON.stringify(selectPersistedState({
+    chirps: [ambient, earned],
+    homePriority: earned,
+    homePrioritySecondsLeft: 20,
+  }, BETA_TESTER)));
+
+  assert.deepEqual(restored.chirps, [ambient, earned]);
+  assert.equal('homePriority' in restored, false);
+  assert.equal(selectHomeReaction({
+    chirps: restored.chirps,
+    priority: restored.homePriority,
+    prioritySecondsLeft: restored.homePrioritySecondsLeft ?? 0,
+    receipt: restored.homeReceipt,
+    receiptSecondsLeft: restored.homeReceiptSecondsLeft ?? 0,
+    betaTester: BETA_TESTER,
+  })?.id, earned.id);
+  assert.equal(selectHomeReaction({
+    chirps: [ambient],
+    priority: undefined,
+    prioritySecondsLeft: 0,
+    receipt: undefined,
+    receiptSecondsLeft: 0,
+    betaTester: BETA_TESTER,
+  }), undefined);
 });
 
 test('only durable receipts persist and matching priority layers expire together', async () => {
@@ -397,6 +441,27 @@ test('Home project copy and automation telemetry follow the latest real state', 
   assert.equal(homeProjectActionLabel(null), 'Open Code to start');
   assert.equal(homeProjectActionLabel({ loc: 10, need: 100 }), 'Continue coding');
   assert.equal(homeProjectActionLabel({ loc: 100, need: 100 }), 'Open Code to submit');
+});
+
+test('automation affordability follows current state and real threshold crossings', async () => {
+  const {
+    automationAffordabilityNudge,
+    newAutomationAffordabilityNudge,
+  } = await loadExperience();
+  const { SHOP } = await loadContent();
+
+  assert.equal(automationAffordabilityNudge(259, {}, SHOP), undefined);
+  const nudge = automationAffordabilityNudge(260, {}, SHOP);
+  assert.deepEqual(nudge, {
+    name: 'Claude Max subscription',
+    cost: 260,
+    detail: 'Auto-writes 6 LOC/sec while the app is open.',
+    chirpText: 'Claude Max subscription just entered the budget — auto-writes 6 LOC/sec while the app is open.',
+  });
+  assert.deepEqual(newAutomationAffordabilityNudge(259, 260, {}, SHOP), nudge);
+  assert.equal(newAutomationAffordabilityNudge(260, 260, {}, SHOP), undefined);
+  assert.equal(newAutomationAffordabilityNudge(259, 260, { claude: true }, SHOP), undefined);
+  assert.equal(automationAffordabilityNudge(500, { claude: true }, SHOP), undefined);
 });
 
 test('Home reaction expiry uses measured visible foreground time', async () => {
