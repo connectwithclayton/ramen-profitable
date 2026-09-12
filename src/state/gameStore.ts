@@ -107,7 +107,7 @@ export type GameState = {
   goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
-  lastSeen: number; // epoch ms, for offline earnings
+  lastSeen: number; // epoch ms; identity for base offline credit and pending owner bonus
   pendingOwnerBonus: PendingOwnerBonus;
   homePriority?: HomePriority;
   homePrioritySecondsLeft: number;

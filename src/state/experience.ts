@@ -12,6 +12,7 @@ export type PaywallTransaction = {
   delta: MrrDelta;
 };
 
+/** Owner-bonus remainder coupled to `lastSeen`; settled once entitlement is known. */
 export type PendingOwnerBonus = {
   amount: number;
 };
@@ -182,6 +183,7 @@ export function homeExposureMeasurement(
   };
 }
 
+/** Accumulates visible seconds in memory; callers persist only on flush. */
 export function createHomeExposureBuffer(
   secondsLeft: number,
   startedAt: number,
