@@ -36,6 +36,7 @@ import {
   homeAutomationStatus,
   homeEmptyProjectCopy,
   homeProjectActionLabel,
+  mrrDirection,
   sampleHomeExposure,
   selectHomeReaction,
   verticalFrameExposureRate,
@@ -338,7 +339,7 @@ export default function HomeScreen({
             <Text style={st.reactionText}>{reaction.text}</Text>
             {reaction.delta && (
               <MonoText
-                style={[st.receipt, { color: reaction.delta.after >= reaction.delta.before ? C.mint : C.pink }]}
+                style={[st.receipt, { color: mrrDirection(reaction.delta) === 'down' ? C.pink : C.mint }]}
               >
                 {formatMrrDelta(reaction.delta)}
               </MonoText>

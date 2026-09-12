@@ -19,7 +19,6 @@ import { pickAppIdea } from './projectIdeas';
 import {
   advanceHomeReactionExposure,
   calculatePaywallTransaction,
-  milestonesForProject,
   newAutomationAffordabilityNudge,
   paywallReaction,
   priorityHomeReactionState,
@@ -228,7 +227,7 @@ export const useGame = create<GameState & Actions>()(
         const project: Project = { id: uid(), name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250), manualTaps: 0 };
         set({
           project,
-          storyMilestones: milestonesForProject(s.storyMilestones, project.id),
+          storyMilestones: {},
         });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
           author: PLAYER,
@@ -360,7 +359,9 @@ export const useGame = create<GameState & Actions>()(
         const s = get();
         if (s.mrr < MRR_GOAL) return;
         set({ hasJob: false, won: true, overlay: { type: 'win' } });
-        s.pushChirp(`i just quit my job. MRR $${Math.floor(s.mrr)}. hands are shaking. #indiehacker #shipaton`);
+        s.pushChirp(`i just quit my job. MRR $${Math.floor(s.mrr)}. hands are shaking. #indiehacker #shipaton`, {
+          author: PLAYER,
+        });
         s.unlock('ramen');
       },
 

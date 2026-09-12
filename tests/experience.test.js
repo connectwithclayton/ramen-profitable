@@ -54,19 +54,6 @@ test('paywall reaction only mentions close behavior the player committed', async
   );
 });
 
-test('project milestones are scoped by stable project id', async () => {
-  const { milestonesForProject, projectMilestoneId } = await loadExperience();
-  const kept = milestonesForProject({
-    [projectMilestoneId('old-id', 'ten-taps')]: true,
-    [projectMilestoneId('new-id', 'started')]: true,
-    'legacy:global': true,
-  }, 'new-id');
-
-  assert.deepEqual(kept, {
-    [projectMilestoneId('new-id', 'started')]: true,
-  });
-});
-
 test('energy countdown follows the live regeneration rate', async () => {
   const { codeProgressStatus, secondsUntilNextLine } = await loadExperience();
   assert.equal(secondsUntilNextLine(0.4, 0.06), 5);
@@ -603,4 +590,23 @@ test('paywall result presentation follows the committed MRR direction', async ()
 
   assert.equal(paywallResultPresentation({ mult: 1.2, dark: 0, delta: { before: 100, after: 120 } }).direction, 'up');
   assert.equal(paywallResultPresentation({ mult: 1, dark: 0, delta: { before: 100, after: 100 } }).direction, 'unchanged');
+
+  const unchanged = calculatePaywallTransaction({
+    totalMrr: 167.42,
+    mrrMult: 1,
+    baseMrr: 40,
+    previousMult: 0.98,
+    picks: { price: 'same' },
+    axes: [{ id: 'price', choices: [{ id: 'same', mult: 0.98, dark: 0 }] }],
+  });
+  assert.deepEqual(unchanged.delta, { before: 167.42, after: 167.42 });
+
+  const roundedUnchanged = paywallResultPresentation({
+    mult: 0.98,
+    dark: 0,
+    delta: { before: 167.42, after: 167.41999999999996 },
+  });
+  assert.equal(roundedUnchanged.direction, 'unchanged');
+  assert.match(roundedUnchanged.body, /held steady/i);
+  assert.equal(roundedUnchanged.receipt, 'MRR $167.42 → $167.42 (no change)');
 });

@@ -16,16 +16,6 @@ export function projectMilestoneId(projectId: string, milestone: string) {
   return `project:${projectId}:${milestone}`;
 }
 
-/** Project callbacks belong to one run of one project, even when an app name is reused. */
-export function milestonesForProject(
-  milestones: Record<string, boolean>,
-  projectId: string,
-): Record<string, boolean> {
-  return Object.fromEntries(
-    Object.entries(milestones).filter(([key]) => key.startsWith(`project:${projectId}:`)),
-  );
-}
-
 export function tapReactionKind(hitTenTaps: boolean, depletedEnergy: boolean) {
   if (hitTenTaps) return 'ten-taps' as const;
   if (depletedEnergy) return 'energy-depleted' as const;
@@ -338,7 +328,7 @@ export function calculatePaywallTransaction({
 
   const previousContribution = baseMrr * previousMult * mrrMult;
   const nextContribution = baseMrr * mult * mrrMult;
-  const afterMrr = Math.max(0, totalMrr - previousContribution + nextContribution);
+  const afterMrr = Math.max(0, totalMrr + (nextContribution - previousContribution));
 
   return {
     mult,
@@ -387,24 +377,35 @@ export function resolveGameEvent<State extends object>(
   };
 }
 
+const displayedMoney = (value: number) =>
+  Number(value.toLocaleString('en-US', {
+    useGrouping: false,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }));
+
 const receiptMoney = (value: number) =>
-  `$${value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  `$${displayedMoney(value).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 export function mrrDirection(delta: MrrDelta) {
-  if (delta.after > delta.before) return 'up' as const;
-  if (delta.after < delta.before) return 'down' as const;
+  const before = displayedMoney(delta.before);
+  const after = displayedMoney(delta.after);
+  if (after > before) return 'up' as const;
+  if (after < before) return 'down' as const;
   return 'unchanged' as const;
 }
 
 export function formatMrrDelta(delta: MrrDelta) {
-  const change = delta.after - delta.before;
+  const before = displayedMoney(delta.before);
+  const after = displayedMoney(delta.after);
+  const change = after - before;
   const signedChange = change > 0
     ? `+${receiptMoney(change)}`
     : change < 0
       ? `−${receiptMoney(Math.abs(change))}`
       : 'no change';
   const period = change !== 0 ? '/mo' : '';
-  return `MRR ${receiptMoney(delta.before)} → ${receiptMoney(delta.after)} (${signedChange}${period})`;
+  return `MRR ${receiptMoney(before)} → ${receiptMoney(after)} (${signedChange}${period})`;
 }
 
 export function paywallResultPresentation(transaction: PaywallTransaction) {
