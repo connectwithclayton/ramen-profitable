@@ -350,6 +350,28 @@ test('late CustomerInfo and disk hydration cannot resurrect ads for a known purc
   assert.equal(useGame.getState().goIndieActive, true);
 });
 
+test('a stale restore cannot revoke a newer confirmed purchase', async () => {
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  listener(info(false));
+  restored = deferred();
+  const restore = purchases.restoreGoIndiePurchases();
+  await new Promise(resolve => setImmediate(resolve));
+
+  customer = { promise: Promise.resolve(info(true)) };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, true);
+  assert.equal(useGame.getState().goIndieActive, true);
+
+  restored.resolve(info(false));
+  assert.equal(await restore, true);
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+});
+
 test('a paywall success without a confirmed go_indie entitlement fails closed', async () => {
   listener(info(false));
   paywall = deferred();

@@ -114,15 +114,23 @@ function isGoIndieActive(customerInfo: any): boolean {
   return customerInfo?.entitlements?.active?.[GO_INDIE_ENTITLEMENT] !== undefined;
 }
 
+function beginCustomerInfoRequest(): number {
+  return ++customerInfoRevision;
+}
+
+function applyCustomerInfo(customerInfo: any, revision: number): boolean {
+  if (revision !== customerInfoRevision) return useGame.getState().goIndieActive;
+  const active = isGoIndieActive(customerInfo);
+  useGame.getState().setGoIndieActive(active);
+  return active;
+}
+
 async function refreshGoIndieEntitlement(): Promise<boolean | null> {
   if (mockMode || !Purchases) return null;
   try {
-    const revision = customerInfoRevision;
+    const revision = beginCustomerInfoRequest();
     const info = await Purchases.getCustomerInfo();
-    if (revision !== customerInfoRevision) return useGame.getState().goIndieActive;
-    const active = isGoIndieActive(info);
-    useGame.getState().setGoIndieActive(active);
-    return active;
+    return applyCustomerInfo(info, revision);
   } catch (e) {
     console.warn('[purchases] Could not refresh CustomerInfo.', e);
     return null;
@@ -150,8 +158,7 @@ async function configurePurchases(): Promise<boolean | null> {
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
     Purchases.addCustomerInfoUpdateListener((info: any) => {
-      customerInfoRevision++;
-      useGame.getState().setGoIndieActive(isGoIndieActive(info));
+      applyCustomerInfo(info, beginCustomerInfoRequest());
     });
     mockMode = false;
     console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
@@ -211,11 +218,9 @@ export async function restoreGoIndiePurchases(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
   try {
+    const revision = beginCustomerInfoRequest();
     const customerInfo = await Purchases.restorePurchases();
-    customerInfoRevision++;
-    const active = isGoIndieActive(customerInfo);
-    useGame.getState().setGoIndieActive(active);
-    return active;
+    return applyCustomerInfo(customerInfo, revision);
   } catch (e) {
     console.warn('[purchases] restore failed', e);
     return null;
