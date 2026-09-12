@@ -12,9 +12,6 @@ function cliOption(args, name) {
 function localIosRunMode(args = process.argv.slice(2)) {
   if (args[0] !== 'run:ios') return undefined;
   const configuration = cliOption(args, '--configuration');
-  const externalBinary = args.includes('--binary') ||
-    args.some(argument => argument.startsWith('--binary='));
-  if (configuration === undefined && externalBinary) return 'release';
   return configuration === undefined || configuration === 'Debug'
     ? 'development'
     : 'release';
