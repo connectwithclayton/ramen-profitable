@@ -205,7 +205,7 @@ export default function PhoneBillboard({
       });
     }
     return () => { cancelled = true; };
-  }, [active, creativeState, noFill, ready, requestable, revision, viewportVisible, width]);
+  }, [active, creativeState, noFill, ready, requestable, revision, viewportVisible]);
 
   useEffect(() => {
     let cancelled = false;
@@ -267,19 +267,6 @@ export default function PhoneBillboard({
     }
   }, [creativeState, requestable, width]);
 
-  const privacy = async () => {
-    setPrivacyBusy(true); // Unmount the native banner before changing consent.
-    setReady(false);
-    try {
-      await showAdPrivacyOptions();
-    } catch {
-      useGame.getState().pushNotif('Ad privacy choices are unavailable. Try again later.', 'store');
-    } finally {
-      setPrivacyBusy(false);
-      setRevision(value => value + 1);
-    }
-  };
-
   const mod = ready ? adsModule() : null;
   const id = bannerId();
   const Banner = mod?.BannerAd;
@@ -292,6 +279,28 @@ export default function PhoneBillboard({
   const geometryCurrent = layoutReady && width === bannerWidth;
   const bannerConcealed = retryingWithFallback || !geometryCurrent;
   const concealed = !retainedVisibilityActive || privacyBusy || expiredVisibilityReturnDue || (creativeState === 'loaded' && !geometryCurrent);
+
+  const privacy = () => {
+    setPrivacyBusy(true);
+    setReady(false);
+  };
+
+  useEffect(() => {
+    if (!privacyBusy || bannerMounted) return;
+    let stale = false;
+    void showAdPrivacyOptions()
+      .catch(() => {
+        if (!stale) {
+          useGame.getState().pushNotif('Ad privacy choices are unavailable. Try again later.', 'store');
+        }
+      })
+      .finally(() => {
+        if (stale) return;
+        setPrivacyBusy(false);
+        setRevision(value => value + 1);
+      });
+    return () => { stale = true; };
+  }, [bannerMounted, privacyBusy]);
 
   useEffect(() => {
     if (bannerMounted) lastRequestAtRef.current = Date.now();

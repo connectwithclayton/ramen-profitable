@@ -35,7 +35,9 @@ let consentFormCalls = 0;
 let admobConfig = require('../config/admob').TEST_IDS;
 const requests = [];
 const nativeWidthTeardowns = [];
+const privacyFormBannerCounts = [];
 let nextBannerInstanceId = 0;
+let mountedNativeBanners = 0;
 const appStateListeners = new Set();
 const mockNative = {
   Platform: { OS: 'ios', select: options => options[mockNative.Platform.OS] ?? options.default },
@@ -83,6 +85,7 @@ const ads = {
       return { status: consentStatus, canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' };
     },
     showPrivacyOptionsForm: async () => {
+      privacyFormBannerCounts.push(mountedNativeBanners);
       consentAllowed = false;
       privacyRequired = false;
     },
@@ -91,6 +94,10 @@ const ads = {
     const instanceId = React.useRef(null);
     const previousWidth = React.useRef(null);
     if (instanceId.current === null) instanceId.current = ++nextBannerInstanceId;
+    React.useLayoutEffect(() => {
+      mountedNativeBanners++;
+      return () => { mountedNativeBanners--; };
+    }, []);
     React.useLayoutEffect(() => {
       if (previousWidth.current !== null && previousWidth.current !== props.width) {
         nativeWidthTeardowns.push({
@@ -249,6 +256,7 @@ const resetAdLifecycleState = () => {
   admobConfig = require('../config/admob').TEST_IDS;
   requests.length = 0;
   nativeWidthTeardowns.length = 0;
+  privacyFormBannerCounts.length = 0;
   appStateListeners.clear();
   mockNative.AppState.currentState = 'active';
   useGame.setState({ goIndieActive: false, goIndieResolved: true, overlay: null });
@@ -364,8 +372,14 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   assert.equal(banners().length, 1);
   const privacy = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityLabel === 'Ad privacy choices');
   assert.ok(privacy, 'required privacy options must be accessible');
+  const privacyFormsBeforePress = privacyFormBannerCounts.length;
   await act(async () => { await privacy.props.onPress(); });
   await flush();
+  assert.deepEqual(
+    privacyFormBannerCounts.slice(privacyFormsBeforePress),
+    [0],
+    'the native privacy form must start only after the banner unmount commits',
+  );
   assert.equal(banners().length, 0, 'withdrawal cannot leave the old creative mounted');
   assert.equal(
     tree.root.findAllByType('Pressable').some(node => node.props.accessibilityLabel === 'Ad privacy choices'),
@@ -391,6 +405,46 @@ test('late CustomerInfo and disk hydration cannot resurrect ads for a known purc
   disk.resolve(JSON.stringify({ version: 2, state: { goIndieActive: false } }));
   await hydration;
   assert.equal(useGame.getState().goIndieActive, true);
+});
+
+test('an active restore preserves the paid offline earnings interval', async t => {
+  const originalNow = Date.now;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: true,
+    goIndieResolved: true,
+  });
+  customer = { promise: Promise.resolve(info(true)) };
+  await purchases.initPurchases();
+  restored = deferred();
+  const restore = purchases.restoreGoIndiePurchases();
+  await new Promise(resolve => setImmediate(resolve));
+  useGame.getState().touchLastSeen();
+  const departedAt = useGame.getState().lastSeen;
+
+  now += 30_000;
+  restored.resolve(info(true));
+  assert.equal(await restore, true);
+  assert.equal(useGame.getState().lastSeen, departedAt);
+
+  now += 31_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 });
 
 test('a stale restore cannot revoke a newer confirmed purchase', async () => {
@@ -681,6 +735,40 @@ test('billboard requests measured-width adaptive ads in phone and iPad multitask
   assert.equal(hasNoFillCopy(), false, 'a refresh failure must not replace a loaded advert with no-fill copy');
   assert.deepEqual(nativeWidthTeardowns, []);
   await act(async () => { tree.unmount(); });
+});
+
+test('preparation coalesces width changes without repeating consent reads', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  t.after(async () => {
+    consentInfoGate = null;
+    await act(async () => { tree.unmount(); });
+  });
+
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  consentInfoGate = deferred();
+  const consentReadsBeforeForm = consentInfoCalls;
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(consentInfoCalls, consentReadsBeforeForm + 1);
+
+  await setBillboardProbeWidth(tree, 300);
+  await setBillboardProbeWidth(tree, 284);
+  assert.equal(
+    consentInfoCalls,
+    consentReadsBeforeForm + 1,
+    'positive width changes must not restart consent preparation',
+  );
+
+  await act(async () => { consentInfoGate.resolve(); await consentInfoGate.promise; });
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].width, 284);
 });
 
 test('surface loss retires pending requests but retains loaded creatives', async t => {

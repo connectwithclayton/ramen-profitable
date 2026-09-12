@@ -5,7 +5,7 @@ const REVENUECAT_DEVELOPMENT_PROFILES = new Set([
 ]);
 const REVENUECAT_RELEASE_PROFILES = new Set(['preview', 'production']);
 
-function revenueCatBuildMode() {
+function revenueCatBuildMode(args) {
   const profile = process.env.EAS_BUILD_PROFILE;
   const profileMode =
     profile && REVENUECAT_DEVELOPMENT_PROFILES.has(profile)
@@ -13,8 +13,18 @@ function revenueCatBuildMode() {
       : profile && REVENUECAT_RELEASE_PROFILES.has(profile)
         ? 'release'
         : undefined;
+  const androidReleaseMode =
+    args[0] === 'run:android' &&
+    args.some(
+      (argument, index) =>
+        argument === '--variant=release' ||
+        (argument === '--variant' && args[index + 1] === 'release'),
+    )
+      ? 'release'
+      : undefined;
   const defaultMode =
     process.env.NODE_ENV === 'production' ? 'release' : 'development';
+  const inferredMode = profileMode ?? androidReleaseMode ?? defaultMode;
   const explicitMode = process.env.REVENUECAT_BUILD_MODE;
   if (explicitMode) {
     if (explicitMode !== 'development' && explicitMode !== 'release') {
@@ -22,11 +32,12 @@ function revenueCatBuildMode() {
         'REVENUECAT_BUILD_MODE must be either "development" or "release".',
       );
     }
-    const inferredMode = profileMode ?? defaultMode;
     if (explicitMode !== inferredMode) {
       const source = profileMode
         ? `EAS_BUILD_PROFILE="${profile}"`
-        : 'NODE_ENV="production"';
+        : androidReleaseMode
+          ? 'the explicit Android --variant release command'
+          : `NODE_ENV="${process.env.NODE_ENV ?? ''}"`;
       throw new Error(
         `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
           `this configuration requires "${inferredMode}" mode.`,
@@ -35,7 +46,7 @@ function revenueCatBuildMode() {
     return inferredMode;
   }
 
-  return profileMode ?? defaultMode;
+  return inferredMode;
 }
 
 function cleanKey(value) {
@@ -75,7 +86,7 @@ module.exports = ({ config }) => {
         argument === '--configuration=Release' ||
         (argument === '--configuration' && args[index + 1] === 'Release'),
     );
-  const revenueCatMode = revenueCatBuildMode();
+  const revenueCatMode = revenueCatBuildMode(args);
   const revenueCat =
     revenueCatMode === 'release'
       ? {

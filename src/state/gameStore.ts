@@ -342,6 +342,9 @@ export const useGame = create<GameState & Actions>()(
             goIndieActive: active,
             goIndieResolved: true,
             pendingOwnerBonus: settlement.pendingOwnerBonus,
+            ...(active && (!state.goIndieResolved || !state.goIndieActive)
+              ? { lastSeen: Date.now() }
+              : {}),
           };
         });
       },

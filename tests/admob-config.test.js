@@ -90,6 +90,7 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
     ['run:ios', '--configuration=Profile'],
     ['run:ios', '--configuration=release'],
     ['run:android', '--variant', 'release'],
+    ['run:android', '--variant=release'],
   ]) {
     assert.deepEqual(evaluate(args, developmentMode), development);
   }
@@ -170,15 +171,20 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
     }),
     releaseAdMob,
   );
-  assert.deepEqual(
-    evaluate(['run:android', '--variant', 'release'], {
-      EAS_BUILD_PROFILE: '',
-      CONFIGURATION: '',
-      NODE_ENV: 'production',
-      REVENUECAT_BUILD_MODE: '',
-    }),
-    { admob: TEST_IDS, revenueCat: productionRevenueCat },
-  );
+  for (const args of [
+    ['run:android', '--variant', 'release'],
+    ['run:android', '--variant=release'],
+  ]) {
+    assert.deepEqual(
+      evaluate(args, {
+        EAS_BUILD_PROFILE: '',
+        CONFIGURATION: '',
+        NODE_ENV: 'development',
+        REVENUECAT_BUILD_MODE: '',
+      }),
+      { admob: TEST_IDS, revenueCat: productionRevenueCat },
+    );
+  }
   assert.deepEqual(
     evaluate(['run:ios', '--configuration', 'Release'], {
       REVENUECAT_TEST_STORE_API_KEY: '',
