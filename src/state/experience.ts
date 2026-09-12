@@ -107,19 +107,25 @@ export function homeReactionSecondsAfterExposure(secondsLeft: number, elapsedSec
 
 export type VerticalFrame = { y: number; height: number };
 
-export function isVerticalFrameFullyVisible(
+export function verticalFrameExposureRate(
   frame: VerticalFrame | undefined,
   viewport: VerticalFrame,
   bottomOcclusion = 0,
 ) {
-  const visibleHeight = Math.max(0, viewport.height - bottomOcclusion);
-  if (!frame || frame.height <= 0 || visibleHeight <= 0) return false;
-  const epsilon = 1;
-  return frame.y >= viewport.y - epsilon &&
-    frame.y + frame.height <= viewport.y + visibleHeight + epsilon;
+  const viewportHeight = Math.max(0, viewport.height - Math.max(0, bottomOcclusion));
+  if (!frame || frame.height <= 0 || viewportHeight <= 0) return 0;
+  const viewportBottom = viewport.y + viewportHeight;
+  const frameBottom = frame.y + frame.height;
+  const visibleHeight = Math.max(
+    0,
+    Math.min(frameBottom, viewportBottom) - Math.max(frame.y, viewport.y),
+  );
+  const maximumVisibleHeight = Math.min(frame.height, viewportHeight);
+  return Math.min(1, visibleHeight / maximumVisibleHeight);
 }
 
 export type DurableHomeReceiptKind = 'purchase' | 'verdict' | 'paywall';
+export type PriorityHomeReactionKind = 'milestone' | DurableHomeReceiptKind;
 type HomeReaction = { id: string; who: string; handle: string; kind?: string };
 type StoryAuthor = readonly [string, string];
 
@@ -144,14 +150,38 @@ export function isDurableHomeReceipt<T extends HomeReaction>(
   );
 }
 
-export function selectHomeReaction<T extends HomeReaction>(
-  chirps: readonly T[],
-  pinnedReceipt: T | undefined,
-  secondsLeft: number,
+export function isPriorityHomeReaction<T extends HomeReaction>(
+  chirp: T | undefined,
   betaTester: StoryAuthor,
-) {
-  const eligible = chirps.filter(chirp => isEligibleHomeReaction(chirp, betaTester));
-  return (secondsLeft > 0 && isDurableHomeReceipt(pinnedReceipt, betaTester) && pinnedReceipt) || eligible[0];
+): chirp is T & { kind: PriorityHomeReactionKind } {
+  return Boolean(
+    chirp &&
+    isEligibleHomeReaction(chirp, betaTester) &&
+    (chirp.kind === 'milestone' ||
+      chirp.kind === 'purchase' ||
+      chirp.kind === 'verdict' ||
+      chirp.kind === 'paywall'),
+  );
+}
+
+export function selectHomeReaction<T extends HomeReaction>({
+  chirps,
+  priority,
+  prioritySecondsLeft,
+  receipt,
+  receiptSecondsLeft,
+  betaTester,
+}: {
+  chirps: readonly T[];
+  priority: T | undefined;
+  prioritySecondsLeft: number;
+  receipt: T | undefined;
+  receiptSecondsLeft: number;
+  betaTester: StoryAuthor;
+}) {
+  if (prioritySecondsLeft > 0 && isPriorityHomeReaction(priority, betaTester)) return priority;
+  if (receiptSecondsLeft > 0 && isDurableHomeReceipt(receipt, betaTester)) return receipt;
+  return chirps.find(chirp => isEligibleHomeReaction(chirp, betaTester));
 }
 
 export function homeReceiptStateForPersistence<T extends HomeReaction>(
@@ -192,19 +222,57 @@ export function selectPersistedState(
   return selected;
 }
 
-export function advanceHomeReceiptExposure<T extends HomeReaction>(
-  receipt: T | undefined,
+function advanceTimedHomeReaction<T extends HomeReaction>(
+  reaction: T | undefined,
   secondsLeft: number,
-  displayedReceiptId: string,
+  displayedReactionId: string,
   elapsedSeconds: number,
 ) {
-  if (!receipt || receipt.id !== displayedReceiptId || secondsLeft <= 0 || elapsedSeconds <= 0) {
-    return { homeReceipt: receipt, homeReceiptSecondsLeft: secondsLeft };
+  if (!reaction || reaction.id !== displayedReactionId || secondsLeft <= 0 || elapsedSeconds <= 0) {
+    return { reaction, secondsLeft };
   }
   const nextSecondsLeft = homeReactionSecondsAfterExposure(secondsLeft, elapsedSeconds);
   return nextSecondsLeft > 0
-    ? { homeReceipt: receipt, homeReceiptSecondsLeft: nextSecondsLeft }
-    : { homeReceipt: undefined, homeReceiptSecondsLeft: 0 };
+    ? { reaction, secondsLeft: nextSecondsLeft }
+    : { reaction: undefined, secondsLeft: 0 };
+}
+
+export function advanceHomeReactionExposure<
+  Priority extends HomeReaction,
+  Receipt extends HomeReaction,
+>({
+  priority,
+  prioritySecondsLeft,
+  receipt,
+  receiptSecondsLeft,
+  displayedReactionId,
+  elapsedSeconds,
+}: {
+  priority: Priority | undefined;
+  prioritySecondsLeft: number;
+  receipt: Receipt | undefined;
+  receiptSecondsLeft: number;
+  displayedReactionId: string;
+  elapsedSeconds: number;
+}) {
+  const nextPriority = advanceTimedHomeReaction(
+    priority,
+    prioritySecondsLeft,
+    displayedReactionId,
+    elapsedSeconds,
+  );
+  const nextReceipt = advanceTimedHomeReaction(
+    receipt,
+    receiptSecondsLeft,
+    displayedReactionId,
+    elapsedSeconds,
+  );
+  return {
+    homePriority: nextPriority.reaction,
+    homePrioritySecondsLeft: nextPriority.secondsLeft,
+    homeReceipt: nextReceipt.reaction,
+    homeReceiptSecondsLeft: nextReceipt.secondsLeft,
+  };
 }
 
 export function calculatePaywallTransaction({
@@ -302,20 +370,6 @@ export function formatMrrDelta(delta: MrrDelta) {
       : 'no change';
   const period = change !== 0 ? '/mo' : '';
   return `MRR ${receiptMoney(delta.before)} → ${receiptMoney(delta.after)} (${signedChange}${period})`;
-}
-
-export function homeReactionAccessibilityLabel(reaction: {
-  who: string;
-  text: string;
-  event?: string;
-  delta?: MrrDelta;
-}) {
-  return [
-    'Open Chirp.',
-    reaction.event ? `${reaction.event}.` : undefined,
-    `${reaction.who} says: ${reaction.text}`,
-    reaction.delta ? formatMrrDelta(reaction.delta) : undefined,
-  ].filter(Boolean).join(' ');
 }
 
 export function paywallResultPresentation(transaction: PaywallTransaction) {

@@ -35,15 +35,15 @@ import {
   homeAutomationStatus,
   homeEmptyProjectCopy,
   homeProjectActionLabel,
-  homeReactionAccessibilityLabel,
-  isVerticalFrameFullyVisible,
   sampleHomeExposure,
   selectHomeReaction,
+  verticalFrameExposureRate,
 } from '../state/experience';
 
 function useForegroundExposure(
   enabled: boolean,
   record: (elapsedSeconds: number, remainsVisible: boolean) => void,
+  exposureRate = 1,
 ) {
   React.useEffect(() => {
     if (!enabled) return;
@@ -56,7 +56,7 @@ function useForegroundExposure(
       const sample = sampleHomeExposure(visibleSince, performance.now(), homeStillVisible);
       visibleSince = sample.nextStartedAt;
       if (sample.elapsedSeconds > 0) {
-        record(sample.elapsedSeconds, homeStillVisible);
+        record(sample.elapsedSeconds * exposureRate, homeStillVisible);
       }
     };
 
@@ -89,7 +89,7 @@ function useForegroundExposure(
       blurSubscription?.remove();
       focusSubscription?.remove();
     };
-  }, [enabled, record]);
+  }, [enabled, exposureRate, record]);
 }
 
 function useHomeReactionViewport(
@@ -100,49 +100,49 @@ function useHomeReactionViewport(
   const sectionY = React.useRef<number | undefined>(undefined);
   const card = React.useRef<{ y: number; height: number } | undefined>(undefined);
   const currentReactionId = React.useRef(reactionId);
-  const [visible, setVisible] = React.useState(false);
+  const [exposureRate, setExposureRate] = React.useState(0);
 
-  const updateVisibility = React.useCallback(() => {
+  const updateExposure = React.useCallback(() => {
     const cardFrame = sectionY.current === undefined || !card.current
       ? undefined
       : { y: sectionY.current + card.current.y, height: card.current.height };
-    const nextVisible = isVerticalFrameFullyVisible(
+    const nextRate = verticalFrameExposureRate(
       cardFrame,
       viewport.current,
       bottomOcclusion ?? viewport.current.height,
     );
-    setVisible(current => current === nextVisible ? current : nextVisible);
+    setExposureRate(current => current === nextRate ? current : nextRate);
   }, [bottomOcclusion]);
 
   React.useLayoutEffect(() => {
     currentReactionId.current = reactionId;
     sectionY.current = undefined;
     card.current = undefined;
-    setVisible(false);
+    setExposureRate(0);
   }, [reactionId]);
 
   React.useLayoutEffect(() => {
-    updateVisibility();
-  }, [updateVisibility]);
+    updateExposure();
+  }, [updateExposure]);
 
   const onViewportLayout = React.useCallback((event: LayoutChangeEvent) => {
     viewport.current = { ...viewport.current, height: event.nativeEvent.layout.height };
-    updateVisibility();
-  }, [updateVisibility]);
+    updateExposure();
+  }, [updateExposure]);
 
   const onViewportScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     viewport.current = {
       y: event.nativeEvent.contentOffset.y,
       height: event.nativeEvent.layoutMeasurement.height,
     };
-    updateVisibility();
-  }, [updateVisibility]);
+    updateExposure();
+  }, [updateExposure]);
 
   const onSectionLayout = React.useCallback((event: LayoutChangeEvent) => {
     if (currentReactionId.current !== reactionId) return;
     sectionY.current = event.nativeEvent.layout.y;
-    updateVisibility();
-  }, [reactionId, updateVisibility]);
+    updateExposure();
+  }, [reactionId, updateExposure]);
 
   const onCardLayout = React.useCallback((event: LayoutChangeEvent) => {
     if (currentReactionId.current !== reactionId) return;
@@ -150,10 +150,10 @@ function useHomeReactionViewport(
       y: event.nativeEvent.layout.y,
       height: event.nativeEvent.layout.height,
     };
-    updateVisibility();
-  }, [reactionId, updateVisibility]);
+    updateExposure();
+  }, [reactionId, updateExposure]);
 
-  return { visible, onViewportLayout, onViewportScroll, onSectionLayout, onCardLayout };
+  return { exposureRate, onViewportLayout, onViewportScroll, onSectionLayout, onCardLayout };
 }
 
 /** One shipped app: monogram, what it is, what it earns, what you can do to it. */
@@ -232,11 +232,9 @@ function AppRow({
 export default function HomeScreen({
   bottomOcclusion,
   onOpenCode,
-  onOpenChirp,
 }: {
   bottomOcclusion: number | undefined;
   onOpenCode: () => void;
-  onOpenChirp: () => void;
 }) {
   const s = useGame();
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
@@ -244,21 +242,31 @@ export default function HomeScreen({
   const unlocked = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
   const free = !s.hasJob;
   const canQuit = s.hasJob && s.mrr >= MRR_GOAL;
-  const reaction = selectHomeReaction(s.chirps, s.homeReceipt, s.homeReceiptSecondsLeft, BETA_TESTER);
-  const receiptId = s.homeReceiptSecondsLeft > 0 ? s.homeReceipt?.id : undefined;
+  const reaction = selectHomeReaction({
+    chirps: s.chirps,
+    priority: s.homePriority,
+    prioritySecondsLeft: s.homePrioritySecondsLeft,
+    receipt: s.homeReceipt,
+    receiptSecondsLeft: s.homeReceiptSecondsLeft,
+    betaTester: BETA_TESTER,
+  });
+  const timedReactionId = reaction && (
+    (s.homePrioritySecondsLeft > 0 && reaction.id === s.homePriority?.id) ||
+    (s.homeReceiptSecondsLeft > 0 && reaction.id === s.homeReceipt?.id)
+  ) ? reaction.id : undefined;
   const reactionViewport = useHomeReactionViewport(reaction?.id, bottomOcclusion);
-  const recordReceiptExposure = React.useCallback((elapsedSeconds: number) => {
-    if (receiptId) s.recordHomeReceiptExposure(receiptId, elapsedSeconds);
-  }, [receiptId, s.recordHomeReceiptExposure]);
+  const recordReactionExposure = React.useCallback((elapsedSeconds: number) => {
+    if (timedReactionId) s.recordHomeReactionExposure(timedReactionId, elapsedSeconds);
+  }, [timedReactionId, s.recordHomeReactionExposure]);
   useForegroundExposure(s.overlay === null, s.recordHomeExposure);
   useForegroundExposure(
     Boolean(
       s.overlay === null &&
-      receiptId &&
-      reaction?.id === receiptId &&
-      reactionViewport.visible
+      timedReactionId &&
+      reactionViewport.exposureRate > 0
     ),
-    recordReceiptExposure,
+    recordReactionExposure,
+    reactionViewport.exposureRate,
   );
   const projectDone = Boolean(s.project && s.project.loc >= s.project.need);
   const automationStatus = homeAutomationStatus(s.autoCode, s.project);
@@ -315,29 +323,24 @@ export default function HomeScreen({
       {reaction && (
         <Section key={reaction.id} onLayout={reactionViewport.onSectionLayout}>
           <SectionHeader title="From Chirp" meta={reaction.event} />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={homeReactionAccessibilityLabel(reaction)}
+          <Unit
+            style={st.reaction}
+            tone={reaction.kind === 'paywall' ? C.pink : C.gold}
             onLayout={reactionViewport.onCardLayout}
-            onPress={onOpenChirp}
-            style={({ pressed }) => [pressed && { opacity: 0.65 }]}
           >
-            <Unit style={st.reaction} tone={reaction.kind === 'paywall' ? C.pink : C.gold}>
-              <View style={st.reactionByline}>
-                <Text style={st.reactionWho}>{reaction.who}</Text>
-                <MonoText style={st.reactionHandle}>{reaction.handle}</MonoText>
-              </View>
-              <Text style={st.reactionText}>{reaction.text}</Text>
-              {reaction.delta && (
-                <MonoText
-                  style={[st.receipt, { color: reaction.delta.after >= reaction.delta.before ? C.mint : C.pink }]}
-                >
-                  {formatMrrDelta(reaction.delta)}
-                </MonoText>
-              )}
-              <MonoText style={st.openChirp}>OPEN CHIRP →</MonoText>
-            </Unit>
-          </Pressable>
+            <View style={st.reactionByline}>
+              <Text style={st.reactionWho}>{reaction.who}</Text>
+              <MonoText style={st.reactionHandle}>{reaction.handle}</MonoText>
+            </View>
+            <Text style={st.reactionText}>{reaction.text}</Text>
+            {reaction.delta && (
+              <MonoText
+                style={[st.receipt, { color: reaction.delta.after >= reaction.delta.before ? C.mint : C.pink }]}
+              >
+                {formatMrrDelta(reaction.delta)}
+              </MonoText>
+            )}
+          </Unit>
         </Section>
       )}
 
@@ -483,7 +486,6 @@ const st = StyleSheet.create({
   reactionHandle: { color: C.dim, fontSize: 10 },
   reactionText: { color: C.ink, fontSize: 14, lineHeight: 20, marginTop: 7 },
   receipt: { fontSize: 10.5, marginTop: 8, letterSpacing: 0.25 },
-  openChirp: { color: C.gold, fontSize: 9.5, letterSpacing: 1, marginTop: 10 },
 
   statusRow: { flexDirection: 'row', gap: S_GAP },
   statUnit: { flex: 1, justifyContent: 'flex-start' },

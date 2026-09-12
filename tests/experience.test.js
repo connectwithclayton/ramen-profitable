@@ -92,7 +92,7 @@ test('ten-tap reaction takes precedence over simultaneous depletion', async () =
 });
 
 test('Home selects intentional beta-tester reactions and ignores player verdicts', async () => {
-  const { selectHomeReaction } = await loadExperience();
+  const { isPriorityHomeReaction, selectHomeReaction } = await loadExperience();
   const { BETA_TESTER, PLAYER } = await loadContent();
   const chirps = [
     { id: 'ambient', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'ambient' },
@@ -104,10 +104,34 @@ test('Home selects intentional beta-tester reactions and ignores player verdicts
     { id: 'paywall-receipt', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'paywall' },
   ];
   const receipt = chirps.find(chirp => chirp.id === 'paywall-receipt');
+  const milestone = chirps.find(chirp => chirp.id === 'ten-taps');
 
-  assert.equal(selectHomeReaction(chirps, receipt, 10, BETA_TESTER)?.id, 'paywall-receipt');
-  assert.equal(selectHomeReaction(chirps, chirps[1], 10, BETA_TESTER)?.id, 'ambient');
-  assert.equal(selectHomeReaction(chirps, receipt, 0, BETA_TESTER)?.id, 'ambient');
+  assert.equal(isPriorityHomeReaction(milestone, BETA_TESTER), true);
+  assert.equal(isPriorityHomeReaction(chirps[0], BETA_TESTER), false);
+  assert.equal(selectHomeReaction({
+    chirps,
+    priority: milestone,
+    prioritySecondsLeft: 10,
+    receipt,
+    receiptSecondsLeft: 10,
+    betaTester: BETA_TESTER,
+  })?.id, 'ten-taps');
+  assert.equal(selectHomeReaction({
+    chirps,
+    priority: chirps[1],
+    prioritySecondsLeft: 10,
+    receipt,
+    receiptSecondsLeft: 10,
+    betaTester: BETA_TESTER,
+  })?.id, 'paywall-receipt');
+  assert.equal(selectHomeReaction({
+    chirps,
+    priority: milestone,
+    prioritySecondsLeft: 0,
+    receipt,
+    receiptSecondsLeft: 0,
+    betaTester: BETA_TESTER,
+  })?.id, 'ambient');
 });
 
 test('Home keeps a durable receipt independent of bounded Chirp history', async () => {
@@ -129,9 +153,19 @@ test('Home keeps a durable receipt independent of bounded Chirp history', async 
     handle: BETA_TESTER[1],
     kind: 'ambient',
   }));
+  const milestone = {
+    id: 'ten-taps',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'milestone',
+    text: 'Ten taps recorded.',
+    likes: 12,
+  };
   const restored = JSON.parse(JSON.stringify(selectPersistedState({
     cash: 500,
     chirps: boundedFeed,
+    homePriority: milestone,
+    homePrioritySecondsLeft: 20,
     homeReceipt: receipt,
     homeReceiptSecondsLeft: 20,
     notifs: [{ id: 'transient' }],
@@ -141,13 +175,29 @@ test('Home keeps a durable receipt independent of bounded Chirp history', async 
   assert.equal(restored.cash, 500);
   assert.equal('notifs' in restored, false);
   assert.equal('overlay' in restored, false);
+  assert.equal('homePriority' in restored, false);
+  assert.equal('homePrioritySecondsLeft' in restored, false);
   assert.deepEqual(restored.homeReceipt, receipt);
   assert.equal(restored.homeReceiptSecondsLeft, 20);
   assert.equal(
-    selectHomeReaction(restored.chirps, restored.homeReceipt, restored.homeReceiptSecondsLeft, BETA_TESTER)?.id,
+    selectHomeReaction({
+      chirps: restored.chirps,
+      priority: restored.homePriority,
+      prioritySecondsLeft: restored.homePrioritySecondsLeft ?? 0,
+      receipt: restored.homeReceipt,
+      receiptSecondsLeft: restored.homeReceiptSecondsLeft,
+      betaTester: BETA_TESTER,
+    })?.id,
     receipt.id,
   );
-  assert.equal(selectHomeReaction(restored.chirps, restored.homeReceipt, 0, BETA_TESTER)?.id, 'newer-0');
+  assert.equal(selectHomeReaction({
+    chirps: restored.chirps,
+    priority: undefined,
+    prioritySecondsLeft: 0,
+    receipt: restored.homeReceipt,
+    receiptSecondsLeft: 0,
+    betaTester: BETA_TESTER,
+  })?.id, 'newer-0');
 
   const oldPin = selectPersistedState(
     { homeReactionId: 'old', homeReactionSecondsLeft: 20 },
@@ -158,9 +208,9 @@ test('Home keeps a durable receipt independent of bounded Chirp history', async 
   assert.equal('homeReactionId' in oldPin, false);
 });
 
-test('only real receipts survive persistence and their own exposure', async () => {
+test('transient priority expires independently while durable receipts persist', async () => {
   const {
-    advanceHomeReceiptExposure,
+    advanceHomeReactionExposure,
     homeReceiptStateForPersistence,
   } = await loadExperience();
   const { BETA_TESTER } = await loadContent();
@@ -189,32 +239,108 @@ test('only real receipts survive persistence and their own exposure', async () =
   );
 
   assert.deepEqual(
-    advanceHomeReceiptExposure(receipt, 20, 'receipt-a', 7),
-    { homeReceipt: receipt, homeReceiptSecondsLeft: 20 },
+    advanceHomeReactionExposure({
+      priority: { ...receipt, id: 'ten-taps', kind: 'milestone' },
+      prioritySecondsLeft: 20,
+      receipt,
+      receiptSecondsLeft: 20,
+      displayedReactionId: 'stale-reaction',
+      elapsedSeconds: 7,
+    }),
+    {
+      homePriority: { ...receipt, id: 'ten-taps', kind: 'milestone' },
+      homePrioritySecondsLeft: 20,
+      homeReceipt: receipt,
+      homeReceiptSecondsLeft: 20,
+    },
   );
-  assert.deepEqual(
-    advanceHomeReceiptExposure(receipt, 20, receipt.id, 7),
-    { homeReceipt: receipt, homeReceiptSecondsLeft: 13 },
-  );
-  assert.deepEqual(
-    advanceHomeReceiptExposure(receipt, 13, receipt.id, 13),
-    { homeReceipt: undefined, homeReceiptSecondsLeft: 0 },
-  );
+  const milestone = { ...receipt, id: 'ten-taps', kind: 'milestone' };
+  const exposedMilestone = advanceHomeReactionExposure({
+    priority: milestone,
+    prioritySecondsLeft: 20,
+    receipt,
+    receiptSecondsLeft: 20,
+    displayedReactionId: milestone.id,
+    elapsedSeconds: 20,
+  });
+  assert.deepEqual(exposedMilestone, {
+    homePriority: undefined,
+    homePrioritySecondsLeft: 0,
+    homeReceipt: receipt,
+    homeReceiptSecondsLeft: 20,
+  });
+
+  assert.deepEqual(advanceHomeReactionExposure({
+    priority: receipt,
+    prioritySecondsLeft: 20,
+    receipt,
+    receiptSecondsLeft: 20,
+    displayedReactionId: receipt.id,
+    elapsedSeconds: 20,
+  }), {
+    homePriority: undefined,
+    homePrioritySecondsLeft: 0,
+    homeReceipt: undefined,
+    homeReceiptSecondsLeft: 0,
+  });
 });
 
-test('Home receipt exposure requires the full card in the viewport', async () => {
-  const { isVerticalFrameFullyVisible } = await loadExperience();
+test('Home reaction exposure accumulates visible area on oversized accessibility cards', async () => {
+  const { advanceHomeReactionExposure, verticalFrameExposureRate } = await loadExperience();
   const viewport = { y: 100, height: 400 };
 
-  assert.equal(isVerticalFrameFullyVisible(undefined, viewport), false);
-  assert.equal(isVerticalFrameFullyVisible({ y: 180, height: 160 }, viewport), true);
-  assert.equal(isVerticalFrameFullyVisible({ y: 40, height: 59 }, viewport), false);
-  assert.equal(isVerticalFrameFullyVisible({ y: 80, height: 160 }, viewport), false);
-  assert.equal(isVerticalFrameFullyVisible({ y: 450, height: 80 }, viewport), false);
-  assert.equal(isVerticalFrameFullyVisible({ y: 100, height: 0 }, viewport), false);
-  assert.equal(isVerticalFrameFullyVisible({ y: 0, height: 160 }, { y: -20, height: 400 }), true);
-  assert.equal(isVerticalFrameFullyVisible({ y: 430, height: 60 }, viewport, 80), false);
-  assert.equal(isVerticalFrameFullyVisible({ y: 430, height: 60 }, viewport, 0), true);
+  assert.equal(verticalFrameExposureRate(undefined, viewport), 0);
+  assert.equal(verticalFrameExposureRate({ y: 180, height: 160 }, viewport), 1);
+  assert.equal(verticalFrameExposureRate({ y: 20, height: 160 }, viewport), 0.5);
+  assert.equal(verticalFrameExposureRate({ y: 500, height: 80 }, viewport), 0);
+  assert.equal(verticalFrameExposureRate({ y: 100, height: 0 }, viewport), 0);
+  assert.equal(verticalFrameExposureRate({ y: 390, height: 60 }, viewport, 80), 0.5);
+  assert.equal(verticalFrameExposureRate({ y: 390, height: 60 }, viewport), 1);
+
+  const partiallyExposed = {
+    id: 'partial-reaction',
+    who: 'Burnt Out Beta Tester',
+    handle: '@burntoutbeta',
+    kind: 'milestone',
+  };
+  assert.deepEqual(advanceHomeReactionExposure({
+    priority: partiallyExposed,
+    prioritySecondsLeft: 20,
+    receipt: undefined,
+    receiptSecondsLeft: 0,
+    displayedReactionId: partiallyExposed.id,
+    elapsedSeconds: 10 * 0.5,
+  }), {
+    homePriority: partiallyExposed,
+    homePrioritySecondsLeft: 15,
+    homeReceipt: undefined,
+    homeReceiptSecondsLeft: 0,
+  });
+
+  const shortViewport = { y: 4000, height: 568 };
+  const oversizedCard = { y: 0, height: 10000 };
+  const exposureRate = verticalFrameExposureRate(oversizedCard, shortViewport, 104);
+  assert.equal(exposureRate, 1);
+
+  const receipt = {
+    id: 'large-text-receipt',
+    who: 'Burnt Out Beta Tester',
+    handle: '@burntoutbeta',
+    kind: 'paywall',
+  };
+  assert.deepEqual(advanceHomeReactionExposure({
+    priority: receipt,
+    prioritySecondsLeft: 20,
+    receipt,
+    receiptSecondsLeft: 20,
+    displayedReactionId: receipt.id,
+    elapsedSeconds: 20 * exposureRate,
+  }), {
+    homePriority: undefined,
+    homePrioritySecondsLeft: 0,
+    homeReceipt: undefined,
+    homeReceiptSecondsLeft: 0,
+  });
 });
 
 test('Home project copy and automation telemetry follow the latest real state', async () => {
@@ -280,21 +406,6 @@ test('cash debit events report the realized transition', async () => {
     assert.match(outcome.chirpText, /-\$30\.$/);
     assert.equal(resolveGameEvent(event, { ...funded, cash: 0 }), undefined);
   }
-});
-
-test('Home reaction accessibility includes the committed receipt', async () => {
-  const { homeReactionAccessibilityLabel } = await loadExperience();
-  const label = homeReactionAccessibilityLabel({
-    who: 'Burnt Out Beta Tester',
-    text: "the new paywall has a point of view. unfortunately, so do I.",
-    event: 'PAYWALL SHIPPED · HEAT 5',
-    delta: { before: 285, after: 138 },
-  });
-
-  assert.equal(
-    label,
-    'Open Chirp. PAYWALL SHIPPED · HEAT 5. Burnt Out Beta Tester says: the new paywall has a point of view. unfortunately, so do I. MRR $285 → $138 (−$147/mo)',
-  );
 });
 
 test('paywall result presentation follows the committed MRR direction', async () => {

@@ -17,9 +17,10 @@ import {
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
 import {
-  advanceHomeReceiptExposure,
+  advanceHomeReactionExposure,
   calculatePaywallTransaction,
   isDurableHomeReceipt,
+  isPriorityHomeReaction,
   milestonesForProject,
   paywallReaction,
   projectMilestoneId,
@@ -27,7 +28,12 @@ import {
   selectPersistedState,
   tapReactionKind,
 } from './experience';
-import type { DurableHomeReceiptKind, MrrDelta, PaywallTransaction } from './experience';
+import type {
+  DurableHomeReceiptKind,
+  MrrDelta,
+  PaywallTransaction,
+  PriorityHomeReactionKind,
+} from './experience';
 
 export type Project = { id: string; name: string; idea: string; loc: number; need: number; manualTaps: number };
 export type ShippedApp = {
@@ -52,6 +58,7 @@ export type Chirp = {
   event?: string;
   delta?: MrrDelta;
 };
+export type HomePriority = Chirp & { kind: PriorityHomeReactionKind };
 export type HomeReceipt = Chirp & { kind: DurableHomeReceiptKind };
 type ChirpOptions = Omit<Partial<Chirp>, 'id' | 'who' | 'handle' | 'text' | 'likes' | 'liked'> & {
   author?: readonly [string, string];
@@ -93,6 +100,8 @@ export type GameState = {
   achievements: Record<string, boolean>;
   storyMilestones: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
+  homePriority?: HomePriority;
+  homePrioritySecondsLeft: number;
   homeReceipt?: HomeReceipt;
   homeReceiptSecondsLeft: number;
 };
@@ -110,7 +119,7 @@ type Actions = {
   fastTick: () => void;
   slowTick: () => void;
   recordHomeExposure: (elapsedSeconds: number, homeStillVisible: boolean) => void;
-  recordHomeReceiptExposure: (receiptId: string, elapsedSeconds: number) => void;
+  recordHomeReactionExposure: (reactionId: string, elapsedSeconds: number) => void;
   maybeEvent: () => void;
   pushNotif: (text: string, icon?: IconName, emoji?: string) => void;
   expireNotif: (id: string) => void;
@@ -154,6 +163,8 @@ const initial: GameState = {
   achievements: {},
   storyMilestones: {},
   lastSeen: Date.now(),
+  homePriority: undefined,
+  homePrioritySecondsLeft: 0,
   homeReceipt: undefined,
   homeReceiptSecondsLeft: 0,
 };
@@ -180,10 +191,12 @@ export const useGame = create<GameState & Actions>()(
           likes: Math.floor(Math.random() * 900) + 12,
           ...metadata,
         };
+        const homePriority = isPriorityHomeReaction(c, BETA_TESTER) ? c : undefined;
         const homeReceipt = isDurableHomeReceipt(c, BETA_TESTER) ? c : undefined;
         set(s => ({
           chirps: [c, ...s.chirps].slice(0, 30),
           unreadChirps: true,
+          ...(homePriority ? { homePriority, homePrioritySecondsLeft: 20 } : {}),
           ...(homeReceipt ? { homeReceipt, homeReceiptSecondsLeft: 20 } : {}),
         }));
       },
@@ -389,15 +402,19 @@ export const useGame = create<GameState & Actions>()(
         }
       },
 
-      recordHomeReceiptExposure: (receiptId, elapsedSeconds) => {
+      recordHomeReactionExposure: (reactionId, elapsedSeconds) => {
         const s = get();
-        const next = advanceHomeReceiptExposure(
-          s.homeReceipt,
-          s.homeReceiptSecondsLeft,
-          receiptId,
+        const next = advanceHomeReactionExposure({
+          priority: s.homePriority,
+          prioritySecondsLeft: s.homePrioritySecondsLeft,
+          receipt: s.homeReceipt,
+          receiptSecondsLeft: s.homeReceiptSecondsLeft,
+          displayedReactionId: reactionId,
           elapsedSeconds,
-        );
+        });
         if (
+          next.homePriority === s.homePriority &&
+          next.homePrioritySecondsLeft === s.homePrioritySecondsLeft &&
           next.homeReceipt === s.homeReceipt &&
           next.homeReceiptSecondsLeft === s.homeReceiptSecondsLeft
         ) return;

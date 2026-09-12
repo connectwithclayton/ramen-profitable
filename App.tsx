@@ -65,7 +65,6 @@ export default function App() {
           <HomeScreen
             bottomOcclusion={dockOcclusion}
             onOpenCode={() => setTab('code')}
-            onOpenChirp={() => setTab('chirp')}
           />
         )}
         {tab === 'code' && <CodeScreen />}

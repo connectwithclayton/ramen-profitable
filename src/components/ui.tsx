@@ -222,8 +222,18 @@ export function Section({
 }
 
 /** A genuine unit: something that is one thing. The only shape that still gets a border. */
-export function Unit({ children, style, tone }: { children: React.ReactNode; style?: ViewStyle; tone?: string }) {
-  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]}>{children}</View>;
+export function Unit({
+  children,
+  style,
+  tone,
+  onLayout,
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+  tone?: string;
+  onLayout?: ViewProps['onLayout'];
+}) {
+  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]} onLayout={onLayout}>{children}</View>;
 }
 
 export function Divider() {
