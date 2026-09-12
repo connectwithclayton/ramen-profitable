@@ -30,8 +30,9 @@ function RequestBoundBanner({
     return () => { requestActiveRef.current = false; };
   }, []);
 
-  // Residual: RN-GMA 16.5.0 leaves retired native delegates and paid handlers attached.
-  // Retired JS closures are contained here, but recycled-emitter events can still look current; watch for late events after replacement.
+  // Known limitation: Fabric can recycle the native view; RN-GMA 16.5.0 removes the old banner
+  // without clearing its delegate and forwards late callbacks through the current event emitter
+  // without checking callback identity, bypassing this retired-closure guard.
   return (
     <Banner
       {...props}

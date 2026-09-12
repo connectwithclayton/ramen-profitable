@@ -91,6 +91,28 @@ test('Expo config selects production only for exact Release signals', () => {
   ]) {
     assert.deepEqual(evaluate(args, ignoredReleaseSignals), development);
   }
+  const unsupported = spawnSync(
+    process.execPath,
+    ['-e', script, '--', 'start', '--dev-client', '--no-dev'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...environment, ...ignoredReleaseSignals },
+    },
+  );
+  assert.equal(unsupported.status, 1, unsupported.stdout + unsupported.stderr);
+  assert.match(
+    unsupported.stderr,
+    /npx expo start --dev-client --no-dev is unsupported/,
+  );
+  assert.match(
+    unsupported.stderr,
+    /Use npx expo start --dev-client with a Debug development client/,
+  );
+  assert.match(
+    unsupported.stderr,
+    /npx expo run:ios --configuration Release/,
+  );
   const release = {
     admob: { ios: production },
     revenueCat: {

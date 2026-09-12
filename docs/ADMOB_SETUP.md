@@ -35,6 +35,7 @@ For local testing, set the existing `REVENUECAT_TEST_STORE_API_KEY`, then run `n
 - The Expo safety plugin adds a **native Xcode build phase** that validates the IDs captured when native projects were generated. It invokes Expo Constants' pinned Xcode Node wrapper so the guard and embedded public config share the same login-shell and `.xcode.env` layers. For an Xcode Release, it rejects missing, malformed, sample, cross-publisher, or archive-drifted iOS ID pairs. Thus a Debug prebuild archived as Release or a changed release ID pair fails loudly. Regenerate the iOS native project after changing IDs; do not manually edit generated native files.
 - A release JavaScript bundle validates its embedded iOS IDs at module import, even if a purchased user would hide the ad.
 - There is no “allow test release” escape hatch. Debug/sample builds are for development only.
+- **Known limitation:** Under Fabric with RN-GMA 16.5.0, a delayed callback from a replaced banner can remove the current creative and show “The cat is between sponsors,” or falsely mark the current request loaded; a durable fix requires native request identity or a vendor change.
 
 ## Entitlements and consent
 
