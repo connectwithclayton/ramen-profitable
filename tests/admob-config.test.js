@@ -41,16 +41,7 @@ test('native build executable independently validates both identifiers', () => {
   }
   assert.equal(spawnSync(process.execPath, ['scripts/check-admob-release.js', production.appId, production.bannerId], { env: environment }).status, 0);
 });
-test('Expo config consumer permits release evaluation without iOS IDs', () => {
-  for (const mode of [{ EAS_BUILD_PROFILE: 'preview' }, { EAS_BUILD_PROFILE: 'production' }]) {
-    const result = spawnSync(process.execPath, ['-e', "process.stdout.write(JSON.stringify(require('./app.config')({config:{}}).extra.admob))"], { encoding: 'utf8', env: { ...process.env, REVENUECAT_BUILD_MODE: '', EAS_BUILD_PROFILE: '', CONFIGURATION: '', NODE_ENV: '', ADMOB_IOS_APP_ID: '', ADMOB_IOS_BANNER_ID: '', ...mode } });
-    assert.equal(result.status, 0, result.stderr || JSON.stringify(mode));
-    assert.deepEqual(JSON.parse(result.stdout), {
-      ios: { appId: '', bannerId: '' },
-    });
-  }
-});
-test('Expo 57 local run modes override inherited NODE_ENV safely', () => {
+test('Expo config selects production only for an exact Release option', () => {
   const root = path.resolve(__dirname, '..');
   const environment = {
     ...process.env,
@@ -65,11 +56,11 @@ test('Expo 57 local run modes override inherited NODE_ENV safely', () => {
     ADMOB_IOS_BANNER_ID: production.bannerId,
   };
   const script = "process.argv.splice(1, 0, require.resolve('expo/bin/cli')); const { getConfig } = require('expo/config'); const extra = getConfig(process.cwd(), { skipSDKVersionRequirement: true, isPublicConfig: true }).exp.extra; process.stdout.write(JSON.stringify({ admob: extra.admob, revenueCat: extra.revenueCat }));";
-  const evaluate = (args, nodeEnv, explicitMode = '') => {
+  const evaluate = (args, overrides = {}) => {
     const result = spawnSync(process.execPath, ['-e', script, '--', ...args], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...environment, NODE_ENV: nodeEnv, REVENUECAT_BUILD_MODE: explicitMode },
+      env: { ...environment, ...overrides },
     });
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
@@ -78,20 +69,28 @@ test('Expo 57 local run modes override inherited NODE_ENV safely', () => {
     admob: TEST_IDS,
     revenueCat: { testStoreApiKey: 'test_local_value' },
   };
+  const formerReleaseSignals = {
+    EAS_BUILD_PROFILE: 'production',
+    CONFIGURATION: 'Release',
+    NODE_ENV: 'production',
+    REVENUECAT_BUILD_MODE: 'release',
+  };
   for (const args of [
+    [],
     ['start'],
     ['start', '--dev-client'],
+    ['start', '--no-dev'],
     ['run:ios'],
     ['run:ios', '--binary', 'Ramen.app'],
     ['run:ios', '--configuration', 'Debug'],
     ['run:ios', '--configuration=Debug'],
+    ['run:ios', '--configuration', 'Profile'],
+    ['run:ios', '--configuration', 'release'],
+    ['run:ios', '--configuration=Release'],
+    ['run:android', '--variant', 'release'],
   ]) {
-    assert.deepEqual(evaluate(args, 'production'), development);
+    assert.deepEqual(evaluate(args, formerReleaseSignals), development);
   }
-  assert.deepEqual(
-    evaluate(['run:ios', '--configuration', 'Debug'], 'production', 'development'),
-    development,
-  );
   const release = {
     admob: { ios: production },
     revenueCat: {
@@ -99,33 +98,23 @@ test('Expo 57 local run modes override inherited NODE_ENV safely', () => {
       androidApiKey: 'goog_local_value',
     },
   };
-  assert.deepEqual(evaluate(['start', '--no-dev'], 'production'), release);
-  assert.deepEqual(evaluate(['start', '--no-dev'], 'development'), release);
-  assert.deepEqual(evaluate(['run:ios', '--configuration', 'Release'], 'development'), release);
-  assert.deepEqual(evaluate(['run:android', '--variant', 'release'], 'production'), release);
-  assert.deepEqual(evaluate([], 'production'), release);
-  assert.deepEqual(evaluate([], ''), release);
-  const conflict = spawnSync(
-    process.execPath,
-    ['-e', script, '--', 'run:android', '--variant', 'release'],
-    {
-      cwd: root,
-      encoding: 'utf8',
-      env: {
-        ...environment,
-        NODE_ENV: 'production',
-        REVENUECAT_BUILD_MODE: 'development',
-      },
-    },
+  assert.deepEqual(
+    evaluate(['run:ios', '--configuration', 'Release'], {
+      EAS_BUILD_PROFILE: 'development',
+      CONFIGURATION: 'Debug',
+      NODE_ENV: 'development',
+      REVENUECAT_BUILD_MODE: 'development',
+    }),
+    release,
   );
-  assert.equal(conflict.status, 1, conflict.stderr);
-  assert.match(
-    conflict.stderr,
-    /REVENUECAT_BUILD_MODE="development" conflicts with NODE_ENV="production"/,
+  assert.deepEqual(
+    evaluate(['run:ios', '--configuration', 'Release'], {
+      REVENUECAT_TEST_STORE_API_KEY: '',
+      REVENUECAT_IOS_API_KEY: '',
+      REVENUECAT_ANDROID_API_KEY: '',
+      ADMOB_IOS_APP_ID: '',
+      ADMOB_IOS_BANNER_ID: '',
+    }),
+    { admob: { ios: { appId: '', bannerId: '' } }, revenueCat: {} },
   );
-});
-test('declared development profiles use sample inventory regardless of NODE_ENV', () => {
-  const result = spawnSync(process.execPath, ['-e', "process.stdout.write(JSON.stringify(require('./app.config')({config:{}}).extra.admob))"], { encoding: 'utf8', env: { ...process.env, REVENUECAT_BUILD_MODE: '', EAS_BUILD_PROFILE: 'development', NODE_ENV: 'production', ADMOB_IOS_APP_ID: '', ADMOB_IOS_BANNER_ID: '' } });
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), TEST_IDS);
 });

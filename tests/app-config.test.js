@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const appConfig = require('../app.config');
+const { TEST_IDS } = require('../config/admob');
 
 function withEnvironment(values, callback) {
   const previous = {};
@@ -20,33 +21,54 @@ function withEnvironment(values, callback) {
   }
 }
 
-test('rejects a development override for a production EAS profile', () => {
-  assert.throws(
-    () =>
-      withEnvironment(
-        {
-          EAS_BUILD_PROFILE: 'production',
-          REVENUECAT_BUILD_MODE: 'development',
-          REVENUECAT_TEST_STORE_API_KEY: 'test_attack_value',
-        },
-        () => appConfig({ config: {} }),
-      ),
-    /REVENUECAT_BUILD_MODE="development" conflicts with EAS_BUILD_PROFILE="production"/,
-  );
-});
+function withArguments(values, callback) {
+  const previous = process.argv;
+  process.argv = [previous[0], previous[1], ...values];
+  try {
+    return callback();
+  } finally {
+    process.argv = previous;
+  }
+}
 
-test('release configuration accepts valid production AdMob identifiers', () => {
+test('release-like environment variables still select sample inventory', () => {
   const configured = withEnvironment(
     {
       EAS_BUILD_PROFILE: 'production',
+      CONFIGURATION: 'Release',
+      NODE_ENV: 'production',
       REVENUECAT_BUILD_MODE: 'release',
+      REVENUECAT_TEST_STORE_API_KEY: 'test_safe_value',
+      REVENUECAT_IOS_API_KEY: 'appl_release_value',
+      REVENUECAT_ANDROID_API_KEY: 'goog_release_value',
+      ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~1111111111',
+      ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/1111111111',
+    },
+    () => withArguments([], () => appConfig({ config: {} })),
+  );
+  assert.deepEqual(configured.extra.admob, TEST_IDS);
+  assert.deepEqual(configured.extra.revenueCat, {
+    testStoreApiKey: 'test_safe_value',
+  });
+});
+
+test('exact Release option selects valid production identifiers', () => {
+  const configured = withEnvironment(
+    {
+      EAS_BUILD_PROFILE: 'development',
+      CONFIGURATION: 'Debug',
+      NODE_ENV: 'development',
+      REVENUECAT_BUILD_MODE: 'development',
       REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
       REVENUECAT_IOS_API_KEY: 'appl_release_value',
       REVENUECAT_ANDROID_API_KEY: undefined,
       ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~1111111111',
       ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/1111111111',
     },
-    () => appConfig({ config: {} }),
+    () => withArguments(
+      ['run:ios', '--configuration', 'Release'],
+      () => appConfig({ config: {} }),
+    ),
   );
   assert.deepEqual(configured.extra.admob.ios, {
     appId: 'ca-app-pub-1111111111111111~1111111111',
