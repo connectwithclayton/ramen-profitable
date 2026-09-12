@@ -497,9 +497,6 @@ export const useGame = create<RuntimeState & Actions>()(
         set(state => {
           const ownershipActivated = active && !state.goIndieActive;
           const confirmationTime = ownershipActivated ? Date.now() : null;
-          const hydrationUnsettled =
-            state.pendingLaunchInterval === undefined ||
-            state.pendingLaunchInterval?.phase === 'hydrating';
           const hasNewerLifecycleClock =
             state.launchEarningsCutoff !== null &&
             state.lastSeen > state.launchEarningsCutoff;
@@ -515,7 +512,7 @@ export const useGame = create<RuntimeState & Actions>()(
               ? confirmationTime
               : reconciliation.goIndieRateStartsAt;
           return {
-            ...(ownershipActivated && hydrationUnsettled && !hasNewerLifecycleClock
+            ...(ownershipActivated && !hasNewerLifecycleClock
               ? { lastSeen: confirmationTime as number }
               : {}),
             cash: state.cash + reconciliation.earned,

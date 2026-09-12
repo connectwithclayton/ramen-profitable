@@ -1226,6 +1226,82 @@ test('an active restore preserves the paid offline earnings interval', async t =
   assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 });
 
+test('a first-session purchase advances lastSeen so relaunch cannot repay foreground time', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: now,
+    pendingLaunchInterval: null,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  now += 3 * 3600 * 1000;
+  customer = { promise: Promise.resolve(info(true)) };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, true);
+  assert.equal(useGame.getState().lastSeen, now);
+  assert.equal(useGame.getState().goIndieRateStartsAt, now);
+
+  const savedState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: useGame.getState().mrr,
+      lastSeen: useGame.getState().lastSeen,
+      goIndieActive: useGame.getState().goIndieActive,
+      goIndieRateStartsAt: useGame.getState().goIndieRateStartsAt,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    },
+  });
+  now += 61_000;
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  storageRead = async () => savedState;
+  await useGame.persist.rehydrate();
+
+  assert.equal(useGame.getState().applyLaunchOfflineEarnings(), 12.2);
+  assert.equal(useGame.getState().cash, 12.2);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 12.2);
+  listener(info(true));
+  assert.equal(useGame.getState().cash, 24.4);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+});
+
 test('a fresh purchase applies the owner rate only after confirmation', async t => {
   const originalNow = Date.now;
   const previousState = useGame.getState();
