@@ -337,7 +337,7 @@ const initial: RuntimeState = {
 };
 
 export const useGame = create<RuntimeState & Actions>()(
-  persist(
+  persist<RuntimeState & Actions, [], [], Partial<GameState>>(
     (set, get) => ({
       ...initial,
 
@@ -511,6 +511,9 @@ export const useGame = create<RuntimeState & Actions>()(
             ownershipActivated && state.pendingLaunchInterval === null
               ? confirmationTime
               : reconciliation.goIndieRateStartsAt;
+          // First-session confirmation must not persist the launch cutoff as lastSeen:
+          // relaunch would then repay already-ticked foreground time as an away interval.
+          // A later away start is already protected by hasNewerLifecycleClock.
           return {
             ...(ownershipActivated && !hasNewerLifecycleClock
               ? { lastSeen: confirmationTime as number }

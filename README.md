@@ -130,4 +130,4 @@ variable.
 
 ## Catvertising advertising
 
-On iPhone and iPad, the Store contains a real AdMob banner inside its fictional phone; Go Indie removes it. Android contains no advertising. See [AdMob setup, release guards, and privacy handoff](docs/ADMOB_SETUP.md). Ads require a rebuilt native development client and resolved RevenueCat ownership. iOS preview/production builds require real iOS AdMob IDs. The general-audience integration sends no child or under-age treatment signals and requests only non-personalized banners.
+On iPhone and iPad, the Store contains a real AdMob banner inside its fictional phone; Go Indie removes it. Android contains no advertising. See [AdMob setup, release guards, and privacy handoff](docs/ADMOB_SETUP.md). Ads require a rebuilt native development client and resolved RevenueCat ownership. The general-audience integration sends no child or under-age treatment signals and requests only non-personalized banners.

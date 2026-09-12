@@ -1,5 +1,6 @@
 // The ONE AdMob identifier configuration point. Development always uses Google's
-// sample inventory. Supply the two iOS environment values below for an iOS release.
+// sample inventory. Enumerated iOS release selection is documented in
+// docs/ADMOB_SETUP.md; supply the two iOS environment values below for those builds.
 // Sources verified 2026-09-10: https://developers.google.com/admob/ios/quick-start
 // https://developers.google.com/admob/ios/test-ads (inline adaptive banner)
 const TEST_IDS = {
