@@ -951,6 +951,209 @@ test('confirmed non-ownership durably discards a pending owner bonus', async t =
   assert.equal(useGame.getState().cash, 122, 'discarded owner credit must not return after relaunch');
 });
 
+test('pre-hydration lifecycle earnings settle once through the durable revision', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousStorageWrite = storageWrite;
+  const previousCustomer = customer;
+  const previousAppState = mockNative.AppState.currentState;
+  const previousState = useGame.getState();
+  let now = 8_000_000;
+  let tree;
+  let latestWrite = null;
+  const discardWrite = async () => {};
+  const captureWrite = async (_key, value) => { latestWrite = value; };
+  const resetProcessState = () => {
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: 0,
+      mrr: 0,
+      lastSeen: now,
+      goIndieActive: false,
+      goIndieResolved: false,
+      notifs: [],
+      overlay: null,
+      launchEarningsCutoff: null,
+      pendingLaunchInterval: undefined,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    });
+  };
+  const mountLaunch = async () => {
+    await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+    await flush();
+  };
+  const unmountLaunch = async () => {
+    if (!tree) return;
+    await act(async () => { tree.unmount(); });
+    tree = null;
+  };
+  const completeColdStartCycle = async launchTime => {
+    await mountLaunch();
+    now = launchTime + 10_000;
+    await act(async () => { setAppState('background'); });
+    now = launchTime + 71_000;
+    await act(async () => { setAppState('active'); });
+    assert.equal(useGame.getState().cash, 0, 'unhydrated MRR cannot settle the interval early');
+    assert.equal(useGame.getState().lastSeen, now);
+  };
+  Date.now = () => now;
+  t.after(async () => {
+    await unmountLaunch();
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    storageWrite = discardWrite;
+    mockNative.AppState.currentState = previousAppState;
+    useGame.setState(previousState);
+    customer = previousCustomer;
+    storageWrite = previousStorageWrite;
+  });
+
+  storageWrite = discardWrite;
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+
+  const freeLaunchTime = now;
+  resetProcessState();
+  const freeDiskState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: 600,
+      lastSeen: freeLaunchTime - 61_000,
+      goIndieActive: false,
+      pendingOwnerBonus: { revision: 4, amount: 0 },
+    },
+  });
+  const freeDisk = deferred();
+  storageRead = () => freeDisk.promise;
+  const freeHydration = useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await completeColdStartCycle(freeLaunchTime);
+  await act(async () => {
+    freeDisk.resolve(freeDiskState);
+    await freeHydration;
+  });
+  await flush();
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().lastSeen, freeLaunchTime + 71_000);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.ok(useGame.getState().pendingOwnerBonus.revision > 4);
+  assert.equal(useGame.getState().reconcilePendingLaunchEarnings(), 0);
+  const freeRevision = useGame.getState().pendingOwnerBonus.revision;
+  const freeSettledSave = latestWrite;
+  assert.equal(typeof freeSettledSave, 'string');
+
+  storageRead = async () => freeDiskState;
+  await act(async () => { await useGame.persist.rehydrate(); });
+  assert.equal(useGame.getState().cash, 122, 'stale hydration must preserve settled free earnings');
+  assert.equal(useGame.getState().lastSeen, freeLaunchTime + 71_000);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, freeRevision);
+  await unmountLaunch();
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => freeSettledSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 122, 'relaunch must not replay settled free earnings');
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, freeRevision);
+  await unmountLaunch();
+
+  now = 9_000_000;
+  const ownerLaunchTime = now;
+  latestWrite = null;
+  storageWrite = discardWrite;
+  resetProcessState();
+  const ownerDiskState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: 600,
+      lastSeen: ownerLaunchTime - 61_000,
+      goIndieActive: true,
+      pendingOwnerBonus: { revision: 4, amount: 13 },
+    },
+  });
+  const ownerDisk = deferred();
+  storageRead = () => ownerDisk.promise;
+  const ownerHydration = useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await completeColdStartCycle(ownerLaunchTime);
+  await act(async () => {
+    ownerDisk.resolve(ownerDiskState);
+    await ownerHydration;
+  });
+  await flush();
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().lastSeen, ownerLaunchTime + 71_000);
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 135);
+  assert.ok(useGame.getState().pendingOwnerBonus.revision > 4);
+  const debtRevision = useGame.getState().pendingOwnerBonus.revision;
+  const ownerDebtSave = latestWrite;
+  assert.equal(typeof ownerDebtSave, 'string');
+  await unmountLaunch();
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => ownerDebtSave;
+  await useGame.persist.rehydrate();
+  latestWrite = null;
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 135);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, debtRevision);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 257);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.ok(useGame.getState().pendingOwnerBonus.revision > debtRevision);
+  const settledRevision = useGame.getState().pendingOwnerBonus.revision;
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 257);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, settledRevision);
+  const ownerSettledSave = latestWrite;
+  assert.equal(typeof ownerSettledSave, 'string');
+
+  storageRead = async () => ownerDebtSave;
+  await act(async () => { await useGame.persist.rehydrate(); });
+  assert.equal(useGame.getState().cash, 257, 'stale owner debt must not survive its tombstone');
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, settledRevision);
+  await unmountLaunch();
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => ownerSettledSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 257, 'relaunch must not replay settled owner earnings');
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, settledRevision);
+  await unmountLaunch();
+
+  now = 10_000_000;
+  storageWrite = discardWrite;
+  resetProcessState();
+  const failedDisk = deferred();
+  storageRead = () => failedDisk.promise;
+  const failedHydration = useGame.persist.rehydrate();
+  await completeColdStartCycle(now);
+  await act(async () => {
+    failedDisk.reject(new Error('storage unavailable'));
+    await failedHydration;
+  });
+  useGame.setState({ mrr: 120 });
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 12.2, 'a hydration failure must not disable later earnings');
+});
+
 test('an active restore preserves the paid offline earnings interval', async t => {
   const originalNow = Date.now;
   const previousState = useGame.getState();

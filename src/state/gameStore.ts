@@ -119,11 +119,19 @@ export type GameState = {
   homeReceiptSecondsLeft: number;
 };
 
-type PendingLaunchInterval = {
-  from: number;
-  mrr: number;
-  persistedOwner: boolean;
-};
+type PendingLaunchInterval =
+  | {
+      phase: 'hydrating';
+      completedLifecycleUnits: number;
+      backgroundedAt: number | null;
+    }
+  | {
+      phase: 'ready';
+      from: number;
+      mrr: number;
+      persistedOwner: boolean;
+      completedLifecycleUnits: number;
+    };
 
 type RuntimeState = GameState & {
   launchEarningsCutoff: number | null;
@@ -155,11 +163,28 @@ type Actions = {
   applyLaunchOfflineEarnings: () => number;
   applyOfflineEarnings: () => number;
   reconcilePendingLaunchEarnings: () => number;
+  discardPendingLaunchHydration: () => void;
   touchLastSeen: () => void;
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+
+function offlineEarningUnitsBetween(from: number, until: number): number {
+  const awayMs = until - from;
+  if (awayMs < 60_000) return 0;
+  const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
+  return cappedSec / 5;
+}
+
+function offlineEarningsForUnits(
+  mrr: number,
+  units: number,
+  multiplier: number,
+): number {
+  if (mrr <= 0 || units <= 0) return 0;
+  return (mrr / 120) * units * multiplier;
+}
 
 function offlineEarningsBetween(
   mrr: number,
@@ -167,10 +192,11 @@ function offlineEarningsBetween(
   until: number,
   multiplier: number,
 ): number {
-  const awayMs = until - from;
-  if (awayMs < 60_000 || mrr <= 0) return 0;
-  const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
-  return (mrr / 120) * (cappedSec / 5) * multiplier;
+  return offlineEarningsForUnits(
+    mrr,
+    offlineEarningUnitsBetween(from, until),
+    multiplier,
+  );
 }
 
 function appendPendingOwnerBonus(
@@ -198,20 +224,33 @@ function reconcileLaunchCredits(
   let nextLaunchInterval = pendingLaunchInterval;
   let nextOwnerBonus = pendingOwnerBonus;
 
-  if (pendingLaunchInterval && cutoff !== null) {
-    const base = offlineEarningsBetween(
-      pendingLaunchInterval.mrr,
-      pendingLaunchInterval.from,
-      cutoff,
-      1,
-    );
+  if (pendingLaunchInterval?.phase === 'ready' && cutoff !== null) {
+    const base =
+      offlineEarningsBetween(
+        pendingLaunchInterval.mrr,
+        pendingLaunchInterval.from,
+        cutoff,
+        1,
+      ) +
+      offlineEarningsForUnits(
+        pendingLaunchInterval.mrr,
+        pendingLaunchInterval.completedLifecycleUnits,
+        1,
+      );
     earned += base;
+    let ownerBonus = 0;
     if (pendingLaunchInterval.persistedOwner && base > 0) {
       if (ownership === true) {
         earned += base;
       } else if (ownership === null) {
-        nextOwnerBonus = appendPendingOwnerBonus(nextOwnerBonus, base);
+        ownerBonus = base;
       }
+    }
+    if (base > 0) {
+      nextOwnerBonus = {
+        revision: nextOwnerBonus.revision + 1,
+        amount: nextOwnerBonus.amount + ownerBonus,
+      };
     }
     nextLaunchInterval = null;
   }
@@ -607,14 +646,22 @@ export const useGame = create<RuntimeState & Actions>()(
         }
         const cutoff = Date.now();
         const ownership = s.goIndieResolved ? s.goIndieActive : null;
+        const pendingLaunchInterval =
+          s.pendingLaunchInterval === undefined
+            ? {
+                phase: 'hydrating' as const,
+                completedLifecycleUnits: 0,
+                backgroundedAt: null,
+              }
+            : s.pendingLaunchInterval;
         const reconciliation = reconcileLaunchCredits(
-          s.pendingLaunchInterval,
+          pendingLaunchInterval,
           cutoff,
           s.pendingOwnerBonus,
           ownership,
         );
         const earned = reconciliation.earned + (
-          s.pendingLaunchInterval
+          pendingLaunchInterval
             ? 0
             : offlineEarningsBetween(
                 s.mrr,
@@ -636,6 +683,21 @@ export const useGame = create<RuntimeState & Actions>()(
         const now = Date.now();
         let earned = 0;
         set(s => {
+          if (s.pendingLaunchInterval?.phase === 'hydrating') {
+            const backgroundedAt = s.pendingLaunchInterval.backgroundedAt;
+            return {
+              lastSeen: now,
+              pendingLaunchInterval: {
+                ...s.pendingLaunchInterval,
+                completedLifecycleUnits:
+                  s.pendingLaunchInterval.completedLifecycleUnits +
+                  (backgroundedAt === null
+                    ? 0
+                    : offlineEarningUnitsBetween(backgroundedAt, now)),
+                backgroundedAt: null,
+              },
+            };
+          }
           const transition = offlineEarningsTransition({
             mrr: s.mrr,
             from: s.lastSeen,
@@ -657,7 +719,8 @@ export const useGame = create<RuntimeState & Actions>()(
         const s = get();
         const ownership = s.goIndieResolved ? s.goIndieActive : null;
         if (
-          (!s.pendingLaunchInterval || s.launchEarningsCutoff === null) &&
+          (s.pendingLaunchInterval?.phase !== 'ready' ||
+            s.launchEarningsCutoff === null) &&
           (ownership === null || s.pendingOwnerBonus.amount === 0)
         ) {
           return 0;
@@ -681,7 +744,29 @@ export const useGame = create<RuntimeState & Actions>()(
         }
         return result.earned;
       },
-      touchLastSeen: () => set({ lastSeen: Date.now() }),
+      discardPendingLaunchHydration: () => {
+        const pendingLaunchInterval = get().pendingLaunchInterval;
+        if (
+          pendingLaunchInterval === undefined ||
+          pendingLaunchInterval?.phase === 'hydrating'
+        ) {
+          set({ pendingLaunchInterval: null });
+        }
+      },
+      touchLastSeen: () => {
+        const now = Date.now();
+        set(s => ({
+          lastSeen: now,
+          ...(s.pendingLaunchInterval?.phase === 'hydrating'
+            ? {
+                pendingLaunchInterval: {
+                  ...s.pendingLaunchInterval,
+                  backgroundedAt: now,
+                },
+              }
+            : {}),
+        }));
+      },
     }),
     {
       name: 'ramen-profitable-v1',
@@ -713,22 +798,29 @@ export const useGame = create<RuntimeState & Actions>()(
           current.pendingOwnerBonus.revision > persistedOwnerBonus.revision ||
           (current.pendingOwnerBonus.revision === persistedOwnerBonus.revision &&
             current.pendingOwnerBonus.revision > 0);
+        const completedLifecycleUnits =
+          current.pendingLaunchInterval?.phase === 'hydrating'
+            ? current.pendingLaunchInterval.completedLifecycleUnits
+            : 0;
         const savedLaunchInterval =
           typeof persistedState.lastSeen === 'number' &&
           Number.isFinite(persistedState.lastSeen) &&
           typeof persistedState.mrr === 'number' &&
           Number.isFinite(persistedState.mrr)
             ? {
+                phase: 'ready' as const,
                 from: persistedState.lastSeen,
                 mrr: persistedState.mrr,
                 persistedOwner: persistedState.goIndieActive === true,
+                completedLifecycleUnits,
               }
             : null;
         return {
           ...current,
           ...persistedState,
           pendingLaunchInterval:
-            current.pendingLaunchInterval === undefined
+            current.pendingLaunchInterval === undefined ||
+            current.pendingLaunchInterval?.phase === 'hydrating'
               ? savedLaunchInterval
               : current.pendingLaunchInterval,
           ...(preserveCurrentOwnerBonus
@@ -750,7 +842,11 @@ export const useGame = create<RuntimeState & Actions>()(
             : {}),
         };
       },
-      onRehydrateStorage: () => state => {
+      onRehydrateStorage: stateBeforeHydration => (state, error) => {
+        if (error) {
+          stateBeforeHydration.discardPendingLaunchHydration();
+          return;
+        }
         state?.reconcilePendingLaunchEarnings();
       },
       partialize: s => selectPersistedState(s, BETA_TESTER),
