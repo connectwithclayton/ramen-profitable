@@ -59,7 +59,9 @@ const eventMoney = (value: number) =>
 const cashDebitText = (message: string, emoji?: string): GameEventText =>
   (state, patch) => {
     const debit = Math.max(0, state.cash - (patch.cash ?? state.cash));
-    return `${emoji ? `${emoji} ` : ''}${message} -$${eventMoney(debit)}.`;
+    const amount = eventMoney(debit);
+    const displayedDebit = debit > 0 && amount === '0' ? '<$0.01' : `$${amount}`;
+    return `${emoji ? `${emoji} ` : ''}${message} -${displayedDebit}.`;
   };
 
 const cashDebitEvent = (message: string, emoji: string, amount: number): GameEvent => ({

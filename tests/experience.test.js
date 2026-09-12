@@ -563,6 +563,11 @@ test('cash debit events report the realized transition', async () => {
     assert.deepEqual(outcome.patch, { cash: 0 });
     assert.match(outcome.text, /-\$30\.$/);
     assert.match(outcome.chirpText, /-\$30\.$/);
+
+    const subcentOutcome = resolveGameEvent(event, { ...funded, cash: 0.002416 });
+    assert.deepEqual(subcentOutcome.patch, { cash: 0 });
+    assert.match(subcentOutcome.text, /-<\$0\.01\.$/);
+    assert.match(subcentOutcome.chirpText, /-<\$0\.01\.$/);
     assert.equal(resolveGameEvent(event, { ...funded, cash: 0 }), undefined);
   }
 });

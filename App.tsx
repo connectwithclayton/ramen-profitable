@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { View, Text, Pressable, StyleSheet, SafeAreaView, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Defs, LinearGradient, Rect as SvgRect, Stop } from 'react-native-svg';
@@ -24,14 +24,40 @@ const TABS: { key: Tab; icon: IconName; label: string }[] = [
   { key: 'chirp', icon: 'chirp', label: 'Chirp' },
 ];
 
+const hydrationSnapshot = () => useGame.persist.hasHydrated();
+
+function subscribeToHydration(onChange: () => void) {
+  const unsubscribeHydrate = useGame.persist.onHydrate(onChange);
+  const unsubscribeFinish = useGame.persist.onFinishHydration(onChange);
+  return () => {
+    unsubscribeHydrate();
+    unsubscribeFinish();
+  };
+}
+
+function useGameHydrated() {
+  return useSyncExternalStore(subscribeToHydration, hydrationSnapshot, () => false);
+}
+
 export default function App() {
+  const hydrated = useGameHydrated();
+  if (!hydrated) {
+    return (
+      <SafeAreaView style={st.root}>
+        <StatusBar style="light" />
+      </SafeAreaView>
+    );
+  }
+  return <HydratedGame />;
+}
+
+function HydratedGame() {
   const [tab, setTab] = useState<Tab>('home');
   const [dockOcclusion, setDockOcclusion] = useState<number>();
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
   const setGoIndieActive = useGame(s => s.setGoIndieActive);
-  const hydrated = useGame(s => s.day !== undefined);
 
   useGameLoop();
 
