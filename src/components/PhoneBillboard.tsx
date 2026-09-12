@@ -74,6 +74,7 @@ export default function PhoneBillboard({
   const [privacyRequired, setPrivacyRequired] = useState(false);
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [privacyStatusRevision, setPrivacyStatusRevision] = useState(0);
   const [width, setWidth] = useState(0);
   const [bannerWidth, setBannerWidth] = useState(0);
   const [layoutReady, setLayoutReady] = useState(false);
@@ -184,7 +185,11 @@ export default function PhoneBillboard({
         useGame.getState().overlay === null &&
         useGame.getState().notifs.length === 0
       );
-      void prepareAds(isRenderable, retryRejectedConsent).then(allowed => {
+      const preparation = prepareAds(isRenderable, retryRejectedConsent);
+      if (retryRejectedConsent) {
+        setPrivacyStatusRevision(value => value + 1);
+      }
+      void preparation.then(allowed => {
         if (!cancelled) {
           setReady(allowed);
           if (allowed) {
@@ -199,11 +204,16 @@ export default function PhoneBillboard({
         }
       });
     }
+    return () => { cancelled = true; };
+  }, [active, creativeState, noFill, ready, requestable, revision, viewportVisible, width]);
+
+  useEffect(() => {
+    let cancelled = false;
     void privacyOptionsRequired().then(required => {
       if (!cancelled) setPrivacyRequired(required);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [active, creativeState, noFill, ready, requestable, revision, viewportVisible, width]);
+  }, [privacyStatusRevision, revision]);
 
   useEffect(() => {
     setReady(false);

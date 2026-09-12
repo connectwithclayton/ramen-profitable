@@ -269,11 +269,27 @@ test('app launch refreshes paid-user privacy state without requesting an ad', as
   await act(async () => { storeTab.props.onPress(); });
   await flush();
 
-  assert.ok(tree.root.findAllByType('Pressable').some(node => node.props.accessibilityLabel === 'Ad privacy choices'));
+  const privacy = tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityLabel === 'Ad privacy choices');
+  assert.ok(privacy);
   assert.equal(consentFormCalls, 0, 'paid users must not receive a consent form');
   assert.equal(initializationCalls, 0, 'paid users must not initialize Mobile Ads');
   assert.equal(requests.length, 0, 'paid users must not request a banner');
+  const consentInfoCallsBeforeForm = consentInfoCalls;
+  await act(async () => { await privacy.props.onPress(); });
+  await flush();
+  assert.equal(
+    consentInfoCalls,
+    consentInfoCallsBeforeForm + 1,
+    'privacy status must refresh once after the privacy form changes consent',
+  );
+  assert.equal(
+    tree.root.findAllByType('Pressable')
+      .some(node => node.props.accessibilityLabel === 'Ad privacy choices'),
+    false,
+  );
   await act(async () => { tree.unmount(); });
+  consentAllowed = true;
   privacyRequired = false;
   consentStatus = 'NOT_REQUIRED';
 });
@@ -334,6 +350,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
 
   // A fresh install starts unknown, even if a persisted flag says not purchased.
   useGame.setState({ goIndieActive: false, goIndieResolved: false });
+  privacyRequired = true;
   await act(async () => { tree = create(React.createElement(StoreScreen, { viewportBottom: 800 })); });
   await setBillboardWidth(tree, 340);
   const before = requests.length;
@@ -342,7 +359,6 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await act(async () => { restored.resolve(info(true)); await restore; });
   assert.equal(requests.length, before, 'fresh-install restore must never mount an ad');
 
-  privacyRequired = true;
   await act(async () => { listener(info(false)); });
   await flush();
   assert.equal(banners().length, 1);
@@ -1594,8 +1610,10 @@ test('a rejected UMP refresh retries only on a measured visibility return', asyn
     await Promise.all([launchRejected, sharedRejected]);
   });
   await flush();
+  assert.equal(consentInfoCalls, 1, 'a rejected launch refresh must produce one privacy-status read');
   await setBillboardProbeWidth(tree, 300);
   assert.equal(consentInfoUpdateCalls, 1, 'continuous visibility must not immediately retry consent');
+  assert.equal(consentInfoCalls, 1, 'layout changes must not repeat privacy-status reads');
   assert.equal(initializationCalls, 0);
   assert.equal(requests.length, 0);
 
@@ -1613,6 +1631,7 @@ test('a rejected UMP refresh retries only on a measured visibility return', asyn
   assert.equal(consentInfoUpdateCalls, 1, 'visibility return must await its new width measurement');
   await setBillboardProbeWidth(tree, 284);
   assert.equal(consentInfoUpdateCalls, 2, 'the next measured visibility return must retry once');
+  assert.equal(consentInfoCalls, 1, 'retry privacy status must await the replacement consent update');
 
   const recoveredUpdate = consentInfoUpdate;
   const sharedRecovery = adsSession.refreshConsentSession();
@@ -1622,12 +1641,14 @@ test('a rejected UMP refresh retries only on a measured visibility return', asyn
     await Promise.all([recoveredUpdate.promise, sharedRecovery]);
   });
   await flush();
+  assert.equal(consentInfoCalls, 2, 'each consent update must produce one privacy-status read');
   assert.equal(consentFormCalls, 1);
   await act(async () => { consentForm.resolve(); await consentForm.promise; });
   await flush();
   assert.equal(initializationCalls, 1);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].width, 284);
+  assert.equal(consentInfoCalls, 3, 'ad preparation may read consent once after the form settles');
 
   await adsSession.refreshConsentSession();
   assert.equal(consentInfoUpdateCalls, 2, 'a successful refresh must remain deduplicated for the launch');
