@@ -85,6 +85,7 @@ let mockMode = true;
 let nextCustomerInfoRevision = 0;
 let appliedCustomerInfoRevision = 0;
 let ignoreNegativeCustomerInfoThroughRevision = 0;
+let appliedOwnershipRequestTime: number | null = null;
 let customerInfoOperationsInFlight = 0;
 let postPurchaseConfirmationPending = false;
 let initializationPromise: Promise<boolean | null> | null = null;
@@ -133,6 +134,35 @@ function confirmedGoIndieOwnership(): boolean | null {
   return ownership.goIndieResolved ? ownership.goIndieActive : null;
 }
 
+function customerInfoRequestTime(customerInfo: any): number | null {
+  if (typeof customerInfo?.requestDate !== 'string') return null;
+  const requestTime = Date.parse(customerInfo.requestDate);
+  return Number.isFinite(requestTime) ? requestTime : null;
+}
+
+function applyGoIndieOwnership(customerInfo: any, active: boolean): void {
+  const currentOwnership = confirmedGoIndieOwnership();
+  const requestTime = customerInfoRequestTime(customerInfo);
+  if (currentOwnership !== active) {
+    appliedOwnershipRequestTime = requestTime;
+  } else if (
+    requestTime !== null &&
+    (appliedOwnershipRequestTime === null || requestTime > appliedOwnershipRequestTime)
+  ) {
+    appliedOwnershipRequestTime = requestTime;
+  }
+  useGame.getState().setGoIndieActive(active);
+}
+
+function isStrictlyNewerThanAppliedOwnership(customerInfo: any): boolean {
+  const requestTime = customerInfoRequestTime(customerInfo);
+  return (
+    requestTime !== null &&
+    appliedOwnershipRequestTime !== null &&
+    requestTime > appliedOwnershipRequestTime
+  );
+}
+
 function applyCustomerInfo(customerInfo: any, revision: number): boolean | null {
   if (revision <= appliedCustomerInfoRevision) return confirmedGoIndieOwnership();
   const active = isGoIndieActive(customerInfo);
@@ -143,15 +173,15 @@ function applyCustomerInfo(customerInfo: any, revision: number): boolean | null 
     return confirmedGoIndieOwnership();
   }
   appliedCustomerInfoRevision = revision;
-  useGame.getState().setGoIndieActive(active);
+  applyGoIndieOwnership(customerInfo, active);
   return active;
 }
 
 /**
  * RevenueCat listener callbacks carry no operation identity. Upgrades apply
- * immediately; downgrades are discarded, not deferred, while purchase
- * confirmation is pending or a confirmed owner has an operation in flight.
- * A later negative callback received after operations quiesce still applies.
+ * immediately. A confirmed-owner downgrade applies only after operations
+ * quiesce and with a parseable requestDate strictly newer than the currently
+ * applied CustomerInfo; every other downgrade is discarded, not deferred.
  */
 function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
   const active = isGoIndieActive(customerInfo);
@@ -160,7 +190,7 @@ function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
       ignoreNegativeCustomerInfoThroughRevision,
       nextCustomerInfoRevision,
     );
-    useGame.getState().setGoIndieActive(true);
+    applyGoIndieOwnership(customerInfo, true);
     return true;
   }
 
@@ -169,12 +199,13 @@ function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
     postPurchaseConfirmationPending ||
     (ownership.goIndieResolved &&
       ownership.goIndieActive &&
-      customerInfoOperationsInFlight > 0)
+      (customerInfoOperationsInFlight > 0 ||
+        !isStrictlyNewerThanAppliedOwnership(customerInfo)))
   ) {
     return confirmedGoIndieOwnership();
   }
 
-  ownership.setGoIndieActive(false);
+  applyGoIndieOwnership(customerInfo, false);
   return false;
 }
 

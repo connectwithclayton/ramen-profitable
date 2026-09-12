@@ -14,7 +14,11 @@ const deferred = () => {
   const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
   return { promise, resolve, reject };
 };
-const info = active => ({ entitlements: { active: active ? { go_indie: {} } : {} } });
+let nextCustomerInfoRequestTime = Date.parse('2026-09-12T00:00:00.000Z');
+const info = (active, requestDate = new Date(nextCustomerInfoRequestTime += 1_000).toISOString()) => ({
+  entitlements: { active: active ? { go_indie: {} } : {} },
+  requestDate,
+});
 let customer = deferred();
 let restored = deferred();
 let paywall = deferred();
@@ -391,11 +395,12 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
 
 
 test('late CustomerInfo and disk hydration cannot resurrect ads for a known purchaser', async () => {
+  const staleRefreshInfo = info(false);
   customer = deferred();
   const refresh = purchases.hasGoIndie();
   await new Promise(resolve => setImmediate(resolve));
   listener(info(true));
-  customer.resolve(info(false));
+  customer.resolve(staleRefreshInfo);
   assert.equal(await refresh, true);
   assert.equal(useGame.getState().goIndieActive, true);
   const disk = deferred();
@@ -492,32 +497,60 @@ test('an active restore preserves the paid offline earnings interval', async t =
   assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 });
 
-test('a stale restore listener cannot revoke a newer confirmed purchase', async () => {
+test('a delayed Android restore listener cannot revoke a newer confirmed purchase', async t => {
+  const originalNow = Date.now;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: true,
+  });
   customer = { promise: Promise.resolve(info(false)) };
   await purchases.initPurchases();
   listener(info(false));
+  const staleRestoreInfo = info(false);
   restored = deferred();
   const restore = purchases.restoreGoIndiePurchases();
   await new Promise(resolve => setImmediate(resolve));
 
-  customer = { promise: Promise.resolve(info(true)) };
+  const confirmedPurchaseInfo = info(true);
+  customer = { promise: Promise.resolve(confirmedPurchaseInfo) };
   paywall = deferred();
   const purchase = purchases.presentGoIndiePaywall();
   paywall.resolve('PURCHASED');
   assert.equal(await purchase, true);
   assert.equal(useGame.getState().goIndieActive, true);
 
-  const staleRestoreInfo = info(false);
+  restored.resolve(staleRestoreInfo);
+  assert.equal(await restore, true);
+
   listener(staleRestoreInfo);
   assert.equal(useGame.getState().goIndieActive, true);
   assert.equal(useGame.getState().goIndieResolved, true);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
 
-  restored.resolve(staleRestoreInfo);
-  assert.equal(await restore, true);
+  listener(info(false, null));
+  listener(info(false, 'not-a-date'));
+  listener(info(false, confirmedPurchaseInfo.requestDate));
   assert.equal(useGame.getState().goIndieActive, true);
-  assert.equal(useGame.getState().goIndieResolved, true);
-  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+
+  now += 61_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 
   listener(info(false));
   assert.equal(useGame.getState().goIndieActive, false);

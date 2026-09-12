@@ -33,6 +33,7 @@ function RequestBoundBanner({
   // Known limitation: Fabric can recycle the native view; RN-GMA 16.5.0 removes the old banner
   // without clearing its delegate and forwards late callbacks through the current event emitter
   // without checking callback identity, bypassing this retired-closure guard.
+  // Native-view release across replacement cycles remains unmeasured pending real-device verification.
   return (
     <Banner
       {...props}
