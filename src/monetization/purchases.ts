@@ -83,6 +83,8 @@ let RevenueCatUI: any = null;
 let mockMode = true;
 let nextCustomerInfoRevision = 0;
 let appliedCustomerInfoRevision = 0;
+let ignoreNegativeCustomerInfoThroughRevision = 0;
+let postPurchaseConfirmationPending = false;
 let initializationPromise: Promise<boolean | null> | null = null;
 
 const GO_INDIE_ENTITLEMENT = 'go_indie';
@@ -121,8 +123,14 @@ function issueCustomerInfoRevision(): number {
 
 function applyCustomerInfo(customerInfo: any, revision: number): boolean {
   if (revision <= appliedCustomerInfoRevision) return useGame.getState().goIndieActive;
-  appliedCustomerInfoRevision = revision;
   const active = isGoIndieActive(customerInfo);
+  if (
+    !active &&
+    (revision <= ignoreNegativeCustomerInfoThroughRevision || postPurchaseConfirmationPending)
+  ) {
+    return useGame.getState().goIndieActive;
+  }
+  appliedCustomerInfoRevision = revision;
   useGame.getState().setGoIndieActive(active);
   return active;
 }
@@ -202,11 +210,18 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
     const result = await RevenueCatUI.presentPaywall({ offering });
     if (result === uiMod.PAYWALL_RESULT.PURCHASED || result === uiMod.PAYWALL_RESULT.RESTORED) {
       // The UI result alone is not the go_indie entitlement. Fail closed if confirmation is missing.
+      ignoreNegativeCustomerInfoThroughRevision = nextCustomerInfoRevision;
+      postPurchaseConfirmationPending = true;
       const ownership = useGame.getState();
       if (!ownership.goIndieResolved || !ownership.goIndieActive) {
         useGame.setState({ goIndieResolved: false });
       }
-      const active = await refreshGoIndieEntitlement();
+      let active: boolean | null = null;
+      try {
+        active = await refreshGoIndieEntitlement();
+      } finally {
+        postPurchaseConfirmationPending = false;
+      }
       if (active !== true) {
         const currentOwnership = useGame.getState();
         if (currentOwnership.goIndieResolved && currentOwnership.goIndieActive) {

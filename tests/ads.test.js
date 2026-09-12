@@ -412,7 +412,7 @@ test('a stalled purchase refresh cannot discard confirmed restore ownership', as
   assert.equal(await purchase, true);
 });
 
-test('successful payment suppresses ads while confirmation stalls after overlay dismissal', async () => {
+test('a stale negative restore cannot clear the post-payment ad barrier', async () => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
   customer = { promise: Promise.resolve(info(false)) };
@@ -439,6 +439,10 @@ test('successful payment suppresses ads while confirmation stalls after overlay 
   await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
   await act(async () => { useGame.getState().openGoIndiePaywall(); });
 
+  restored = deferred();
+  const restore = purchases.restoreGoIndiePurchases();
+  await new Promise(resolve => setImmediate(resolve));
+
   const refreshInfo = deferred();
   const refreshStarted = deferred();
   customer = {
@@ -452,6 +456,11 @@ test('successful payment suppresses ads while confirmation stalls after overlay 
   await act(async () => {
     paywall.resolve('PURCHASED');
     await refreshStarted.promise;
+  });
+  await act(async () => {
+    listener(info(false));
+    restored.resolve(info(false));
+    assert.equal(await restore, false);
   });
   assert.equal(useGame.getState().goIndieResolved, false);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
