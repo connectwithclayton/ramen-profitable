@@ -85,8 +85,6 @@ let mockMode = true;
 let nextCustomerInfoRevision = 0;
 let appliedCustomerInfoRevision = 0;
 let ignoreNegativeCustomerInfoThroughRevision = 0;
-let appliedOwnershipRequestTime: number | null = null;
-let customerInfoOperationsInFlight = 0;
 let postPurchaseConfirmationPending = false;
 let initializationPromise: Promise<boolean | null> | null = null;
 
@@ -121,12 +119,7 @@ function isGoIndieActive(customerInfo: any): boolean {
 }
 
 function beginCustomerInfoOperation(): number {
-  customerInfoOperationsInFlight += 1;
   return ++nextCustomerInfoRevision;
-}
-
-function finishCustomerInfoOperation(): void {
-  customerInfoOperationsInFlight -= 1;
 }
 
 function confirmedGoIndieOwnership(): boolean | null {
@@ -134,33 +127,8 @@ function confirmedGoIndieOwnership(): boolean | null {
   return ownership.goIndieResolved ? ownership.goIndieActive : null;
 }
 
-function customerInfoRequestTime(customerInfo: any): number | null {
-  if (typeof customerInfo?.requestDate !== 'string') return null;
-  const requestTime = Date.parse(customerInfo.requestDate);
-  return Number.isFinite(requestTime) ? requestTime : null;
-}
-
-function applyGoIndieOwnership(customerInfo: any, active: boolean): void {
-  const currentOwnership = confirmedGoIndieOwnership();
-  const requestTime = customerInfoRequestTime(customerInfo);
-  if (currentOwnership !== active) {
-    appliedOwnershipRequestTime = requestTime;
-  } else if (
-    requestTime !== null &&
-    (appliedOwnershipRequestTime === null || requestTime > appliedOwnershipRequestTime)
-  ) {
-    appliedOwnershipRequestTime = requestTime;
-  }
+function applyGoIndieOwnership(active: boolean): void {
   useGame.getState().setGoIndieActive(active);
-}
-
-function isStrictlyNewerThanAppliedOwnership(customerInfo: any): boolean {
-  const requestTime = customerInfoRequestTime(customerInfo);
-  return (
-    requestTime !== null &&
-    appliedOwnershipRequestTime !== null &&
-    requestTime > appliedOwnershipRequestTime
-  );
 }
 
 function applyCustomerInfo(customerInfo: any, revision: number): boolean | null {
@@ -173,16 +141,10 @@ function applyCustomerInfo(customerInfo: any, revision: number): boolean | null 
     return confirmedGoIndieOwnership();
   }
   appliedCustomerInfoRevision = revision;
-  applyGoIndieOwnership(customerInfo, active);
+  applyGoIndieOwnership(active);
   return active;
 }
 
-/**
- * RevenueCat listener callbacks carry no operation identity. Upgrades apply
- * immediately. A confirmed-owner downgrade applies only after operations
- * quiesce and with a parseable requestDate strictly newer than the currently
- * applied CustomerInfo; every other downgrade is discarded, not deferred.
- */
 function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
   const active = isGoIndieActive(customerInfo);
   if (active) {
@@ -190,36 +152,32 @@ function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
       ignoreNegativeCustomerInfoThroughRevision,
       nextCustomerInfoRevision,
     );
-    applyGoIndieOwnership(customerInfo, true);
+    applyGoIndieOwnership(true);
     return true;
   }
 
   const ownership = useGame.getState();
   if (
     postPurchaseConfirmationPending ||
-    (ownership.goIndieResolved &&
-      ownership.goIndieActive &&
-      (customerInfoOperationsInFlight > 0 ||
-        !isStrictlyNewerThanAppliedOwnership(customerInfo)))
+    (ownership.goIndieResolved && ownership.goIndieActive)
   ) {
     return confirmedGoIndieOwnership();
   }
 
-  applyGoIndieOwnership(customerInfo, false);
+  applyGoIndieOwnership(false);
   return false;
 }
 
-async function refreshGoIndieEntitlement(): Promise<boolean | null> {
+async function refreshGoIndieEntitlement(invalidateCache = false): Promise<boolean | null> {
   if (mockMode || !Purchases) return null;
   const revision = beginCustomerInfoOperation();
   try {
+    if (invalidateCache) await Purchases.invalidateCustomerInfoCache();
     const info = await Purchases.getCustomerInfo();
     return applyCustomerInfo(info, revision);
   } catch (e) {
     console.warn('[purchases] Could not refresh CustomerInfo.', e);
     return null;
-  } finally {
-    finishCustomerInfoOperation();
   }
 }
 
@@ -243,12 +201,13 @@ async function configurePurchases(): Promise<boolean | null> {
     Purchases.setLogHandler(handleRevenueCatLog);
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
+    mockMode = false;
+    console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
+    const ownership = await refreshGoIndieEntitlement(true);
     Purchases.addCustomerInfoUpdateListener((info: any) => {
       applyCustomerInfoUpdate(info);
     });
-    mockMode = false;
-    console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
-    return refreshGoIndieEntitlement();
+    return ownership;
   } catch (e) {
     console.log('[purchases] Native module unavailable (Expo Go?) — mock mode.', e);
     return null;
@@ -325,8 +284,6 @@ export async function restoreGoIndiePurchases(): Promise<boolean | null> {
   } catch (e) {
     console.warn('[purchases] restore failed', e);
     return null;
-  } finally {
-    finishCustomerInfoOperation();
   }
 }
 

@@ -343,8 +343,14 @@ const persistedStateKeys = [
   'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
   'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
   'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
-  'pendingOwnerBonus', 'homeReceipt', 'homeReceiptSecondsLeft',
+  'goIndieRateStartsAt', 'pendingOwnerBonus', 'homeReceipt', 'homeReceiptSecondsLeft',
 ] as const satisfies readonly (keyof GameState)[];
+
+export function parseGoIndieRateStartsAt(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
 
 export function selectPersistedState(
   value: unknown,
@@ -358,6 +364,9 @@ export function selectPersistedState(
       .map(key => [key, source[key]]),
   ) as Partial<GameState>;
   selected.pendingOwnerBonus = parsePendingOwnerBonus(selected.pendingOwnerBonus);
+  if ('goIndieRateStartsAt' in source) {
+    selected.goIndieRateStartsAt = parseGoIndieRateStartsAt(source.goIndieRateStartsAt);
+  }
   const receiptState = homeReceiptStateForPersistence(
     selected.homeReceipt,
     selected.homeReceiptSecondsLeft ?? 0,

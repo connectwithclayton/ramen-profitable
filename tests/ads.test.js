@@ -25,6 +25,7 @@ let paywall = deferred();
 let consentInfoUpdate = deferred();
 let consentForm = deferred();
 let listener;
+const customerInfoBoundaryCalls = [];
 let storageRead = async () => null;
 let storageWrite = async () => {};
 let consentAllowed = true;
@@ -133,8 +134,15 @@ Module._load = function (name, parent, main) {
   if (name === 'react-native-google-mobile-ads') return ads;
   if (name === 'react-native-purchases') return { default: {
     setLogHandler() {}, setLogLevel: async () => {}, configure() {},
-    addCustomerInfoUpdateListener: cb => { listener = cb; },
-    getCustomerInfo: () => customer.promise,
+    invalidateCustomerInfoCache: async () => { customerInfoBoundaryCalls.push('invalidate'); },
+    addCustomerInfoUpdateListener: cb => {
+      customerInfoBoundaryCalls.push('listener');
+      listener = cb;
+    },
+    getCustomerInfo: () => {
+      customerInfoBoundaryCalls.push('getCustomerInfo');
+      return customer.promise;
+    },
     restorePurchases: () => restored.promise,
     getOfferings: async () => ({ current: { availablePackages: [{}] } }),
   }, LOG_LEVEL: { VERBOSE: 'VERBOSE' } };
@@ -156,6 +164,10 @@ const LaunchHarness = () => {
   return null;
 };
 const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
+const refreshOwnership = async active => {
+  customer = { promise: Promise.resolve(info(active)) };
+  return purchases.hasGoIndie();
+};
 const loadFreshStoreScreen = () => {
   for (const path of [
     '../src/monetization/ads.ts',
@@ -273,7 +285,12 @@ const resetAdLifecycleState = () => {
   privacyFormBannerCounts.length = 0;
   appStateListeners.clear();
   mockNative.AppState.currentState = 'active';
-  useGame.setState({ goIndieActive: false, goIndieResolved: true, overlay: null });
+  useGame.setState({
+    goIndieActive: false,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    overlay: null,
+  });
 };
 
 test('app launch refreshes paid-user privacy state without requesting an ad', async () => {
@@ -281,6 +298,15 @@ test('app launch refreshes paid-user privacy state without requesting an ad', as
   let tree;
   await act(async () => { tree = create(React.createElement(App)); });
   await flush();
+  assert.deepEqual(customerInfoBoundaryCalls, ['invalidate', 'getCustomerInfo']);
+  await act(async () => {
+    customer.resolve(info(true));
+    assert.equal(await purchases.initPurchases(), true);
+  });
+  assert.deepEqual(
+    customerInfoBoundaryCalls,
+    ['invalidate', 'getCustomerInfo', 'listener'],
+  );
   assert.equal(consentInfoUpdateCalls, 1, 'UMP must refresh once at launch');
   assert.deepEqual(consentInfoUpdateArguments, [], 'general-audience refresh must not send an age tag');
 
@@ -331,13 +357,16 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await flush();
   assert.equal(banners().length, 0, 'unknown ownership must not render ads');
   assert.equal(initializationCalls, 0);
-  await act(async () => { customer.resolve(info(false)); consentInfoUpdate.resolve(); await initial; });
+  await initial;
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().goIndieResolved, true);
   assert.equal(banners().length, 0, 'consent is still pending');
   await act(async () => { listener(info(true)); consentForm.resolve(); });
   await flush();
   assert.equal(banners().length, 0, 'a purchase during consent must cancel the late ad');
   assert.equal(initializationCalls, 0, 'purchasers must not initialize ads after consent');
-  await act(async () => { listener(info(false)); });
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
   await flush();
   assert.equal(banners().length, 1);
   assert.equal(requests[0].unitId, require('../config/admob').TEST_IDS.ios.bannerId);
@@ -353,7 +382,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await setBillboardWidth(tree, 340);
   assert.equal(banners().length, 0, 'remount cannot resurrect a restored purchaser ad');
 
-  await act(async () => { listener(info(false)); });
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
   await flush();
   assert.equal(banners().length, 1);
   let purchase;
@@ -362,6 +391,9 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   assert.equal(banners().length, 0, 'purchase suppresses without a restart');
 
   await act(async () => { listener(info(false)); });
+  await flush();
+  assert.equal(banners().length, 0, 'a listener cannot revoke confirmed ownership');
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
   await flush();
   assert.equal(banners().length, 1);
   const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
@@ -381,7 +413,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await act(async () => { restored.resolve(info(true)); await restore; });
   assert.equal(requests.length, before, 'fresh-install restore must never mount an ad');
 
-  await act(async () => { listener(info(false)); });
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
   await flush();
   assert.equal(banners().length, 1);
   const privacy = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityLabel === 'Ad privacy choices');
@@ -931,7 +963,7 @@ test('confirmed non-ownership durably discards a pending owner bonus', async t =
   assert.equal(useGame.getState().cash, 122);
   assert.equal(useGame.getState().pendingOwnerBonus.amount, 122);
 
-  await act(async () => { listener(info(false)); });
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
   assert.equal(useGame.getState().goIndieResolved, true);
   assert.equal(useGame.getState().goIndieActive, false);
   assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
@@ -1194,7 +1226,120 @@ test('an active restore preserves the paid offline earnings interval', async t =
   assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 });
 
-test('a delayed Android restore listener cannot revoke a newer confirmed purchase', async t => {
+test('a fresh purchase applies the owner rate only after confirmation', async t => {
+  const originalNow = Date.now;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: now,
+    pendingLaunchInterval: null,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  now += 10_000;
+  useGame.getState().touchLastSeen();
+
+  now += 70_000;
+  customer = { promise: Promise.resolve(info(true)) };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, true);
+  assert.equal(useGame.getState().goIndieRateStartsAt, now);
+
+  now += 20_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 22);
+  assert.equal(useGame.getState().cash, 22);
+  assert.equal(useGame.getState().goIndieRateStartsAt, null);
+  assert.equal(useGame.getState().applyOfflineEarnings(), 0);
+});
+
+test('the fresh-purchase rate boundary survives relaunch and settles once', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  const now = 2_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  const savedState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: 120,
+      lastSeen: now - 90_000,
+      goIndieActive: true,
+      goIndieRateStartsAt: now - 20_000,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    },
+  });
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  storageRead = async () => savedState;
+  await useGame.persist.rehydrate();
+
+  assert.equal(useGame.getState().applyLaunchOfflineEarnings(), 18);
+  assert.equal(useGame.getState().cash, 18);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 4);
+  assert.equal(useGame.getState().goIndieRateStartsAt, null);
+
+  listener(info(true));
+  assert.equal(useGame.getState().cash, 22);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  listener(info(true));
+  assert.equal(useGame.getState().cash, 22);
+
+  await useGame.persist.rehydrate();
+  assert.equal(useGame.getState().cash, 22);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.equal(useGame.getState().goIndieRateStartsAt, null);
+});
+
+test('an identity-less restore listener cannot revoke a confirmed purchase', async t => {
   const originalNow = Date.now;
   const previousState = useGame.getState();
   let now = 1_000_000;
@@ -1220,7 +1365,6 @@ test('a delayed Android restore listener cannot revoke a newer confirmed purchas
   customer = { promise: Promise.resolve(info(false)) };
   await purchases.initPurchases();
   listener(info(false));
-  const staleRestoreInfo = info(false);
   restored = deferred();
   const restore = purchases.restoreGoIndiePurchases();
   await new Promise(resolve => setImmediate(resolve));
@@ -1233,6 +1377,11 @@ test('a delayed Android restore listener cannot revoke a newer confirmed purchas
   assert.equal(await purchase, true);
   assert.equal(useGame.getState().goIndieActive, true);
 
+  const staleRestoreInfo = info(false);
+  assert.ok(
+    Date.parse(staleRestoreInfo.requestDate) > Date.parse(confirmedPurchaseInfo.requestDate),
+    'the older restore must return a CustomerInfo fetched after purchase confirmation',
+  );
   restored.resolve(staleRestoreInfo);
   assert.equal(await restore, true);
 
@@ -1241,15 +1390,13 @@ test('a delayed Android restore listener cannot revoke a newer confirmed purchas
   assert.equal(useGame.getState().goIndieResolved, true);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
 
-  listener(info(false, null));
-  listener(info(false, 'not-a-date'));
-  listener(info(false, confirmedPurchaseInfo.requestDate));
+  listener(info(false));
   assert.equal(useGame.getState().goIndieActive, true);
 
   now += 61_000;
   assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 
-  listener(info(false));
+  assert.equal(await refreshOwnership(false), false);
   assert.equal(useGame.getState().goIndieActive, false);
   assert.equal(useGame.getState().goIndieResolved, true);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), true);
@@ -1258,7 +1405,7 @@ test('a delayed Android restore listener cannot revoke a newer confirmed purchas
 test('a stalled purchase refresh cannot discard confirmed restore ownership', async () => {
   customer = { promise: Promise.resolve(info(false)) };
   await purchases.initPurchases();
-  listener(info(false));
+  assert.equal(await refreshOwnership(false), false);
 
   restored = deferred();
   const restore = purchases.restoreGoIndiePurchases();
@@ -1359,7 +1506,7 @@ test('a stale negative restore cannot clear the post-payment ad barrier', async 
 });
 
 test('a paywall success without a confirmed go_indie entitlement fails closed', async () => {
-  listener(info(false));
+  assert.equal(await refreshOwnership(false), false);
   paywall = deferred();
   customer = { promise: Promise.reject(new Error('offline after payment')) };
   // Attach a handler immediately; the production refresh consumes this later.
@@ -2339,7 +2486,7 @@ test('ownership invalidation keeps an open ad destination blocked until foregrou
   useGame.setState({ notifs: [] });
   customer = { promise: Promise.resolve(info(false)) };
   await purchases.initPurchases();
-  await act(async () => { listener(info(false)); });
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
   let tree;
   t.after(async () => {
     if (tree) await act(async () => { tree.unmount(); });
@@ -2367,7 +2514,7 @@ test('ownership invalidation keeps an open ad destination blocked until foregrou
   await flush();
   assert.equal(banners().length, 0, 'confirmed ownership must retire the presenting banner');
 
-  await act(async () => { listener(info(false)); });
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
   await flush();
   assert.equal(banners().length, 0, 'a later valid downgrade must not mount a successor behind the destination');
   assert.equal(probes().length, 0, 'ownership changes cannot establish that the destination closed');
@@ -3006,4 +3153,42 @@ test('Android omits Catvertising and describes only the offline Go Indie benefit
     mockNative.Platform.OS = previousOS;
     useGame.setState({ overlay: null });
   }
+});
+
+test('launch refresh invalidates cached ownership before applying a refund', async t => {
+  const previousState = useGame.getState();
+  const previousOS = mockNative.Platform.OS;
+  t.after(() => {
+    mockNative.Platform.OS = previousOS;
+    useGame.setState({
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  mockNative.Platform.OS = 'ios';
+  useGame.setState({
+    goIndieActive: true,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    pendingLaunchInterval: null,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  customer = { promise: Promise.resolve(info(false)) };
+  customerInfoBoundaryCalls.length = 0;
+  delete require.cache[require.resolve('../src/monetization/purchases.ts')];
+  const launchPurchases = require('../src/monetization/purchases.ts');
+
+  assert.equal(await launchPurchases.initPurchases(), false);
+  assert.deepEqual(
+    customerInfoBoundaryCalls,
+    ['invalidate', 'getCustomerInfo', 'listener'],
+  );
+  assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), true);
 });
