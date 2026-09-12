@@ -57,7 +57,7 @@ function HydratedGame() {
   const [dockOcclusion, setDockOcclusion] = useState<number>();
   const [iosStoreMounted, setIosStoreMounted] = useState(false);
   const [screenHostTop, setScreenHostTop] = useState<number | undefined>();
-  const [dockTop, setDockTop] = useState<number | undefined>();
+  const [dockFadeTop, setDockFadeTop] = useState<number | undefined>();
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
@@ -83,9 +83,9 @@ function HydratedGame() {
   const storeActive = tab === 'store';
   const retainStore = Platform.OS === 'ios';
   const storeViewportBottom =
-    screenHostTop === undefined || dockTop === undefined
+    screenHostTop === undefined || dockFadeTop === undefined
       ? undefined
-      : Math.max(0, dockTop - screenHostTop);
+      : Math.max(0, dockFadeTop - screenHostTop);
 
   return (
     <SafeAreaView style={st.root}>
@@ -116,7 +116,15 @@ function HydratedGame() {
         {tab === 'chirp' && <ChirpScreen />}
       </View>
 
-      <View pointerEvents="none" style={st.dockFade}>
+      <View
+        testID="dock-fade"
+        pointerEvents="none"
+        style={st.dockFade}
+        onLayout={event => {
+          const next = event.nativeEvent.layout.y;
+          setDockFadeTop(current => current === next ? current : next);
+        }}
+      >
         <Svg width="100%" height="100%">
           <Defs>
             <LinearGradient id="dockFade" x1="0" y1="0" x2="0" y2="1">
@@ -133,11 +141,7 @@ function HydratedGame() {
       <View
         style={st.dock}
         accessibilityRole="tablist"
-        onLayout={event => {
-          setDockOcclusion(event.nativeEvent.layout.height + DOCK_BOTTOM);
-          const next = event.nativeEvent.layout.y;
-          setDockTop(current => current === next ? current : next);
-        }}
+        onLayout={event => setDockOcclusion(event.nativeEvent.layout.height + DOCK_BOTTOM)}
       >
         {TABS.map(t => {
           const active = tab === t.key;

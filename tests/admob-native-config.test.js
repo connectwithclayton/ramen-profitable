@@ -25,7 +25,9 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     for (const dir of ['config', 'plugins', 'scripts', 'assets']) fs.cpSync(path.join(root, dir), path.join(fixture, dir), { recursive: true });
     fs.symlinkSync(path.join(root, 'node_modules'), path.join(fixture, 'node_modules'), 'dir');
     const clearedVariables = [
+      'EAS_BUILD',
       'EAS_BUILD_PROFILE',
+      'EAS_BUILD_PLATFORM',
       'NODE_ENV',
       'REVENUECAT_BUILD_MODE',
       'CONFIGURATION',
@@ -117,16 +119,18 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~2222222222',
       ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/3333333333',
     };
-    const environmentOnlyProduction = prebuild({
+    const easProduction = prebuild({
+      EAS_BUILD: 'true',
+      EAS_BUILD_PLATFORM: 'ios',
       NODE_ENV: 'production',
       EAS_BUILD_PROFILE: 'production',
       REVENUECAT_BUILD_MODE: 'release',
       ...productionIds,
     });
-    assert.equal(environmentOnlyProduction.status, 0, environmentOnlyProduction.stdout + environmentOnlyProduction.stderr);
-    const environmentOnlyInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
-    assert.equal(environmentOnlyInfo.GADApplicationIdentifier, TEST_IDS.ios.appId);
-    assert.equal(runPhase('Release', productionIds).status, 1);
+    assert.equal(easProduction.status, 0, easProduction.stdout + easProduction.stderr);
+    const easProductionInfo = plist.parse(fs.readFileSync(path.join(fixture, 'ios/RamenProfitable/Info.plist'), 'utf8'));
+    assert.equal(easProductionInfo.GADApplicationIdentifier, productionIds.ADMOB_IOS_APP_ID);
+    assert.equal(runPhase('Release', productionIds).status, 0);
     const production = prebuild({
       CONFIGURATION: 'Release',
       NODE_ENV: 'production',

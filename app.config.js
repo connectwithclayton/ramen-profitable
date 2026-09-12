@@ -4,6 +4,40 @@ const REVENUECAT_DEVELOPMENT_PROFILES = new Set([
   'ios-simulator',
 ]);
 const REVENUECAT_RELEASE_PROFILES = new Set(['preview', 'production']);
+const ADMOB_IOS_RELEASE_PROFILES = new Set(['preview', 'production']);
+
+function commandOption(args, command, name) {
+  if (args[0] !== command) return undefined;
+  for (let index = 1; index < args.length; index++) {
+    if (args[index] === name) return args[index + 1];
+    const prefix = `${name}=`;
+    if (args[index].startsWith(prefix)) {
+      return args[index].slice(prefix.length);
+    }
+  }
+  return undefined;
+}
+
+function revenueCatCommandMode(args) {
+  const iosConfiguration = commandOption(
+    args,
+    'run:ios',
+    '--configuration',
+  );
+  if (iosConfiguration === 'Debug') return 'development';
+  if (iosConfiguration === 'Release') return 'release';
+
+  const androidVariant = commandOption(args, 'run:android', '--variant');
+  if (androidVariant === 'debug') return 'development';
+  if (androidVariant === 'release') return 'release';
+  return undefined;
+}
+
+function revenueCatXcodeMode() {
+  if (process.env.CONFIGURATION === 'Debug') return 'development';
+  if (process.env.CONFIGURATION === 'Release') return 'release';
+  return undefined;
+}
 
 function revenueCatBuildMode(args) {
   const profile = process.env.EAS_BUILD_PROFILE;
@@ -13,18 +47,11 @@ function revenueCatBuildMode(args) {
       : profile && REVENUECAT_RELEASE_PROFILES.has(profile)
         ? 'release'
         : undefined;
-  const androidReleaseMode =
-    args[0] === 'run:android' &&
-    args.some(
-      (argument, index) =>
-        argument === '--variant=release' ||
-        (argument === '--variant' && args[index + 1] === 'release'),
-    )
-      ? 'release'
-      : undefined;
+  const commandMode = revenueCatCommandMode(args);
+  const xcodeMode = revenueCatXcodeMode();
+  const contextualMode = commandMode ?? xcodeMode ?? profileMode;
   const defaultMode =
     process.env.NODE_ENV === 'production' ? 'release' : 'development';
-  const inferredMode = profileMode ?? androidReleaseMode ?? defaultMode;
   const explicitMode = process.env.REVENUECAT_BUILD_MODE;
   if (explicitMode) {
     if (explicitMode !== 'development' && explicitMode !== 'release') {
@@ -32,21 +59,41 @@ function revenueCatBuildMode(args) {
         'REVENUECAT_BUILD_MODE must be either "development" or "release".',
       );
     }
-    if (explicitMode !== inferredMode) {
-      const source = profileMode
-        ? `EAS_BUILD_PROFILE="${profile}"`
-        : androidReleaseMode
-          ? 'the explicit Android --variant release command'
-          : `NODE_ENV="${process.env.NODE_ENV ?? ''}"`;
+    if (contextualMode && explicitMode !== contextualMode) {
+      const source = commandMode
+        ? 'the explicit local Expo build command'
+        : xcodeMode
+          ? `CONFIGURATION="${process.env.CONFIGURATION}"`
+          : `EAS_BUILD_PROFILE="${profile}"`;
       throw new Error(
         `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
-          `this configuration requires "${inferredMode}" mode.`,
+          `this configuration requires "${contextualMode}" mode.`,
       );
     }
-    return inferredMode;
   }
 
-  return inferredMode;
+  const mode = contextualMode ?? explicitMode ?? defaultMode;
+  process.env.REVENUECAT_BUILD_MODE = mode;
+  return mode;
+}
+
+function isAdMobReleaseBuild(args) {
+  const cliConfiguration = commandOption(
+    args,
+    'run:ios',
+    '--configuration',
+  );
+  if (cliConfiguration !== undefined) {
+    return cliConfiguration === 'Release';
+  }
+  if (process.env.CONFIGURATION) {
+    return process.env.CONFIGURATION === 'Release';
+  }
+  return (
+    process.env.EAS_BUILD === 'true' &&
+    process.env.EAS_BUILD_PLATFORM === 'ios' &&
+    ADMOB_IOS_RELEASE_PROFILES.has(process.env.EAS_BUILD_PROFILE)
+  );
 }
 
 function cleanKey(value) {
@@ -79,13 +126,7 @@ module.exports = ({ config }) => {
         'or build with npx expo run:ios --configuration Release.',
     );
   }
-  const adMobRelease =
-    process.env.CONFIGURATION === 'Release' ||
-    args.some(
-      (argument, index) =>
-        argument === '--configuration=Release' ||
-        (argument === '--configuration' && args[index + 1] === 'Release'),
-    );
+  const adMobRelease = isAdMobReleaseBuild(args);
   const revenueCatMode = revenueCatBuildMode(args);
   const revenueCat =
     revenueCatMode === 'release'

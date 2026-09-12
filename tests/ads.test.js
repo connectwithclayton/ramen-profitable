@@ -214,11 +214,11 @@ const setBillboardWidth = async (tree, width) => {
   await setStoreBillboardViewport(tree);
   await setBillboardProbeWidth(tree, width);
 };
-const setDockTop = async (tree, y) => {
-  const dock = tree.root.findAllByProps({ accessibilityRole: 'tablist' })[0];
-  assert.ok(dock?.props.onLayout, 'App must expose the measured dock boundary');
+const setDockFadeTop = async (tree, y) => {
+  const dockFade = tree.root.findAllByProps({ testID: 'dock-fade' })[0];
+  assert.ok(dockFade?.props.onLayout, 'App must expose the measured dock-fade boundary');
   await act(async () => {
-    dock.props.onLayout({ nativeEvent: { layout: { x: 12, y, width: 366, height: 54 } } });
+    dockFade.props.onLayout({ nativeEvent: { layout: { x: 0, y, width: 390, height: 172 } } });
   });
   await flush();
 };
@@ -234,9 +234,9 @@ const setDefaultAppViewport = async tree => {
   if (tree.root.findAllByProps({ testID: 'screen-host' }).length === 0) return;
   await act(async () => {
     const host = tree.root.findAllByProps({ testID: 'screen-host' })[0];
-    const dock = tree.root.findAllByProps({ accessibilityRole: 'tablist' })[0];
+    const dockFade = tree.root.findAllByProps({ testID: 'dock-fade' })[0];
     host.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 800 } } });
-    dock.props.onLayout({ nativeEvent: { layout: { x: 12, y: 800, width: 366, height: 54 } } });
+    dockFade.props.onLayout({ nativeEvent: { layout: { x: 0, y: 800, width: 390, height: 172 } } });
   });
   await flush();
 };
@@ -407,6 +407,51 @@ test('late CustomerInfo and disk hydration cannot resurrect ads for a known purc
   assert.equal(useGame.getState().goIndieActive, true);
 });
 
+test('late hydration preserves the post-entitlement earnings clock', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: 100,
+    goIndieActive: false,
+    goIndieResolved: false,
+  });
+  const disk = deferred();
+  storageRead = () => disk.promise;
+  const hydration = useGame.persist.rehydrate();
+  listener(info(true));
+  now += 5_000;
+  useGame.getState().touchLastSeen();
+  const departedAt = useGame.getState().lastSeen;
+  disk.resolve(JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: 100, goIndieActive: false },
+  }));
+  await hydration;
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(useGame.getState().lastSeen, departedAt);
+
+  now += 61_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+});
+
 test('an active restore preserves the paid offline earnings interval', async t => {
   const originalNow = Date.now;
   const previousState = useGame.getState();
@@ -549,7 +594,7 @@ test('a stale negative restore cannot clear the post-payment ad barrier', async 
   await act(async () => {
     listener(info(false));
     restored.resolve(info(false));
-    assert.equal(await restore, false);
+    assert.equal(await restore, null);
   });
   assert.equal(useGame.getState().goIndieResolved, false);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
@@ -585,6 +630,17 @@ test('a paywall success without a confirmed go_indie entitlement fails closed', 
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
 });
 
+test('suppressed CustomerInfo cannot confirm unresolved persisted ownership', async () => {
+  useGame.setState({ goIndieActive: true, goIndieResolved: false });
+  paywall = deferred();
+  customer = { promise: Promise.resolve(info(false)) };
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, null);
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+});
+
 test('release runtime accepts a valid pair and rejects cross-publisher identifiers', () => {
   const modulePath = require.resolve('../src/monetization/ads.ts');
   admobConfig = {
@@ -611,14 +667,14 @@ test('release runtime accepts a valid pair and rejects cross-publisher identifie
   }
 });
 
-test('the measured dock boundary requires the full billboard above the dock', async () => {
+test('the measured dock-fade boundary requires the full billboard above the fade', async () => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
   const FreshApp = loadFreshApp();
   let tree;
   try {
     await act(async () => { tree = create(React.createElement(FreshApp)); });
-    await setDockTop(tree, 768);
+    await setDockFadeTop(tree, 638);
     const storeTab = tree.root.findAllByType('Pressable')
       .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
     await act(async () => { storeTab.props.onPress(); });
@@ -634,7 +690,7 @@ test('the measured dock boundary requires the full billboard above the dock', as
     assert.equal(
       tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
       0,
-      'a dock measurement without the screen origin must fail closed',
+      'a dock-fade measurement without the screen origin must fail closed',
     );
     assert.equal(requests.length, 0);
 
@@ -642,25 +698,25 @@ test('the measured dock boundary requires the full billboard above the dock', as
     assert.equal(
       tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
       0,
-      'a billboard entirely behind the normalized dock boundary must not activate ad measurement',
-    );
-    assert.equal(requests.length, 0);
-
-    await setStoreBillboardViewport(tree, { ...frame, scrollY: 20 });
-    assert.equal(
-      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
-      0,
-      'a billboard partially behind the dock must not activate ad measurement',
+      'a billboard entirely behind the normalized dock-fade boundary must not activate ad measurement',
     );
     assert.equal(requests.length, 0);
 
     await setStoreBillboardViewport(tree, { ...frame, scrollY: 60 });
+    assert.equal(
+      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
+      0,
+      'a billboard above the dock but beneath the fade must not activate ad measurement',
+    );
+    assert.equal(requests.length, 0);
+
+    await setStoreBillboardViewport(tree, { ...frame, scrollY: 189 });
     await setBillboardProbeWidth(tree, 320);
     await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
     await flush();
     await act(async () => { consentForm.resolve(); await consentForm.promise; });
     await flush();
-    assert.equal(requests.length, 1, 'full containment above the dock must permit one request');
+    assert.equal(requests.length, 1, 'full containment above the dock fade must permit one request');
   } finally {
     if (tree) await act(async () => { tree.unmount(); });
   }

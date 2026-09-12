@@ -550,7 +550,12 @@ export const useGame = create<GameState & Actions>()(
         ...current,
         ...selectPersistedState(persisted, BETA_TESTER),
         // A late disk read must not overwrite fresh RevenueCat ownership.
-        ...(current.goIndieResolved ? { goIndieActive: current.goIndieActive } : {}),
+        ...(current.goIndieResolved
+          ? {
+              goIndieActive: current.goIndieActive,
+              ...(current.goIndieActive ? { lastSeen: current.lastSeen } : {}),
+            }
+          : {}),
       }),
       partialize: s => selectPersistedState(s, BETA_TESTER),
     }

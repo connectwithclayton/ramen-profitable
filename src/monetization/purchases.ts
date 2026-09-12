@@ -121,14 +121,19 @@ function issueCustomerInfoRevision(): number {
   return ++nextCustomerInfoRevision;
 }
 
-function applyCustomerInfo(customerInfo: any, revision: number): boolean {
-  if (revision <= appliedCustomerInfoRevision) return useGame.getState().goIndieActive;
+function confirmedGoIndieOwnership(): boolean | null {
+  const ownership = useGame.getState();
+  return ownership.goIndieResolved ? ownership.goIndieActive : null;
+}
+
+function applyCustomerInfo(customerInfo: any, revision: number): boolean | null {
+  if (revision <= appliedCustomerInfoRevision) return confirmedGoIndieOwnership();
   const active = isGoIndieActive(customerInfo);
   if (
     !active &&
     (revision <= ignoreNegativeCustomerInfoThroughRevision || postPurchaseConfirmationPending)
   ) {
-    return useGame.getState().goIndieActive;
+    return confirmedGoIndieOwnership();
   }
   appliedCustomerInfoRevision = revision;
   useGame.getState().setGoIndieActive(active);
