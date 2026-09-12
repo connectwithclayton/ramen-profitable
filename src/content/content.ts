@@ -88,7 +88,10 @@ export const SHOP: ShopItem[] = [
   { id: 'agent', name: 'Agentic coding rig', desc: 'Auto-writes 20 LOC/sec', cost: 900, apply: s => ({ autoCode: s.autoCode + 20 }) },
 ];
 
-export const CHIRPERS: [string, string][] = [
+export const BETA_TESTER = ['Burnt Out Beta Tester', '@testflight_gremlin'] as const;
+export const PLAYER = ['You', '@buildinpublic'] as const;
+
+export const CHIRPERS: (readonly [string, string])[] = [
   ['Indie Dev Dan', '@shipfast_dan'],
   ['Paywall Patty', '@churnqueen'],
   ['VC Larper', '@preseed_energy'],
@@ -100,7 +103,7 @@ export const CHIRPERS: [string, string][] = [
   ['Product Hunt Regular', '@4th_place_tuesday'],
   ['Pivoted to AI', '@formerly_web3'],
   ['Angel Investor', '@checksize_25k'],
-  ['Burnt Out Beta Tester', '@testflight_gremlin'],
+  BETA_TESTER,
 ];
 
 export const REVIEW_MSGS = [

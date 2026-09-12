@@ -1,19 +1,30 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { APP_IDEAS, REJECTIONS, EVENTS, DARK_EVENTS, SHOP, CHIRPERS, MRR_GOAL, PAYWALL_AXES, ACHIEVEMENTS } from '../content/content';
+import {
+  ACHIEVEMENTS,
+  APP_IDEAS,
+  BETA_TESTER,
+  CHIRPERS,
+  DARK_EVENTS,
+  EVENTS,
+  MRR_GOAL,
+  PAYWALL_AXES,
+  PLAYER,
+  REJECTIONS,
+  SHOP,
+} from '../content/content';
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
 import {
-  BETA_TESTER,
-  PLAYER,
   calculatePaywallTransaction,
-  financialDeltas,
+  hasStateChange,
+  isEligibleHomeReaction,
   milestonesForProject,
   paywallReaction,
   projectMilestoneId,
 } from './experience';
-import type { StoryDelta } from './experience';
+import type { PaywallTransaction, StoryDelta } from './experience';
 
 export type Project = { id: string; name: string; idea: string; loc: number; need: number; manualTaps: number };
 export type ShippedApp = {
@@ -51,7 +62,7 @@ export type Overlay =
   | { type: 'verdict'; ok: boolean; appName: string; rule?: string; flavor?: string; gain?: number }
   | { type: 'paywall' }
   | { type: 'paywallDesigner'; appId: string }
-  | { type: 'paywallResult'; appId: string; mult: number; dark: number }
+  | { type: 'paywallResult'; appId: string; transaction: PaywallTransaction }
   | { type: 'win' }
   | null;
 
@@ -193,7 +204,7 @@ export const useGame = create<GameState & Actions>()(
           likes: Math.floor(Math.random() * 900) + 12,
           ...metadata,
         };
-        const pinsHome = c.kind === 'verdict' || c.kind === 'paywall' || c.kind === 'purchase';
+        const pinsHome = isEligibleHomeReaction(c, BETA_TESTER) && c.kind !== 'ambient';
         set(s => ({
           chirps: [c, ...s.chirps].slice(0, 30),
           unreadChirps: true,
@@ -218,18 +229,10 @@ export const useGame = create<GameState & Actions>()(
         const project: Project = { id: uid(), name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250), manualTaps: 0 };
         const startedReply = projectMilestoneId(project.id, 'started-reply');
         const milestones = { ...milestonesForProject(s.storyMilestones, project.id), [startedReply]: true };
-        const beat: StoryBeat = {
-          text: `does ${name} have dark mode? haven't opened it yet.`,
-          options: { author: BETA_TESTER, kind: 'milestone', subjectId: project.id, subject: name, event: 'FIRST BETA REPLY' },
-          priority: 1,
-          projectId: project.id,
-        };
         set({
           project,
           storyMilestones: milestones,
-          pendingStoryBeats: [...s.pendingStoryBeats.filter(item => item.projectId === project.id), beat]
-            .sort((a, b) => b.priority - a.priority)
-            .slice(0, 4),
+          pendingStoryBeats: s.pendingStoryBeats.filter(item => !item.projectId || item.projectId === project.id),
         });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
           author: PLAYER,
@@ -238,6 +241,13 @@ export const useGame = create<GameState & Actions>()(
           subject: name,
           event: 'PROJECT STARTED',
         });
+        get().pushChirp(`does ${name} have dark mode? haven't opened it yet.`, {
+          author: BETA_TESTER,
+          kind: 'milestone',
+          subjectId: project.id,
+          subject: name,
+          event: 'FIRST BETA REPLY',
+        });
       },
 
       tapCode: () => {
@@ -245,29 +255,22 @@ export const useGame = create<GameState & Actions>()(
         if (!s.project || s.project.loc >= s.project.need) return false;
         if (s.energy < 1) {
           s.pushNotif('Out of energy. Coffee exists for a reason.', 'energy');
-          if (s.autoCode <= 0) {
-            const key = projectMilestoneId(s.project.id, 'energy-depleted');
-            if (!s.storyMilestones[key]) {
-              set({ storyMilestones: { ...s.storyMilestones, [key]: true } });
-              get().pushChirp('Have you tried delegating? My cat is between roles.', {
-                author: BETA_TESTER,
-                kind: 'milestone',
-                subjectId: s.project.id,
-                subject: s.project.name,
-                event: 'ENERGY DEPLETED',
-              });
-            }
-          }
           return false;
         }
         const nextLoc = s.project.loc + s.tapPower;
+        const nextEnergy = s.energy - 1;
         const manualTaps = (s.project.manualTaps ?? 0) + 1;
         const tenTapKey = projectMilestoneId(s.project.id, 'ten-taps');
+        const depletedKey = projectMilestoneId(s.project.id, 'energy-depleted');
         const hitTenTaps = manualTaps >= 10 && !s.storyMilestones[tenTapKey];
+        const depletedEnergy = nextEnergy < 1 && s.autoCode <= 0 && !s.storyMilestones[depletedKey];
+        const storyMilestones = { ...s.storyMilestones };
+        if (hitTenTaps) storyMilestones[tenTapKey] = true;
+        if (depletedEnergy) storyMilestones[depletedKey] = true;
         set({
-          energy: s.energy - 1,
+          energy: nextEnergy,
           project: { ...s.project, loc: nextLoc, manualTaps },
-          ...(hitTenTaps ? { storyMilestones: { ...s.storyMilestones, [tenTapKey]: true } } : {}),
+          ...(hitTenTaps || depletedEnergy ? { storyMilestones } : {}),
         });
         if (hitTenTaps) {
           get().pushChirp(`${Math.floor(nextLoc)} lines in and the launch thread is already longer than the app.`, {
@@ -276,6 +279,15 @@ export const useGame = create<GameState & Actions>()(
             subjectId: s.project.id,
             subject: s.project.name,
             event: 'TEN TAPS',
+          });
+        }
+        if (depletedEnergy) {
+          get().pushChirp('Have you tried delegating? My cat is between roles.', {
+            author: BETA_TESTER,
+            kind: 'milestone',
+            subjectId: s.project.id,
+            subject: s.project.name,
+            event: 'ENERGY DEPLETED',
           });
         }
         return true;
@@ -311,6 +323,7 @@ export const useGame = create<GameState & Actions>()(
         } else {
           const base = 40 + Math.floor(Math.random() * 160);
           const gain = base * s.mrrMult;
+          const delta: StoryDelta = { metric: 'mrr', before: s.mrr, after: s.mrr + gain };
           set({
             apps: [...s.apps, { id: uid(), name: p.name, idea: p.idea, live: true, baseMrr: base, mult: 1, dark: 0, hasPaywall: false }],
             mrr: s.mrr + gain,
@@ -324,7 +337,14 @@ export const useGame = create<GameState & Actions>()(
             subjectId: p.id,
             subject: p.name,
             event: 'APP REVIEW · APPROVED',
-            deltas: [{ metric: 'mrr', before: s.mrr, after: s.mrr + gain }],
+          });
+          get().pushChirp(`${p.name} is live. congratulations. feature request: dark mode.`, {
+            author: BETA_TESTER,
+            kind: 'verdict',
+            subjectId: p.id,
+            subject: p.name,
+            event: 'BETA TESTER · APPROVED',
+            deltas: [delta],
           });
           s.unlock('first_ship');
           if (get().apps.filter(a => a.live).length >= 3) s.unlock('portfolio');
@@ -403,7 +423,9 @@ export const useGame = create<GameState & Actions>()(
         if (s.mrr >= 1000) s.unlock('mrr_1000');
 
         const current = get();
-        const pending = current.pendingStoryBeats.filter(beat => !beat.projectId || beat.projectId === current.project?.id);
+        const pending = current.pendingStoryBeats
+          .filter(beat => !beat.projectId || beat.projectId === current.project?.id)
+          .sort((a, b) => b.priority - a.priority);
         const beforeFirstShip = !current.apps.some(app => app.live);
         const canDeliverAmbient =
           current.storyActiveSeconds - current.lastAmbientStoryAt >= 20 &&
@@ -441,14 +463,13 @@ export const useGame = create<GameState & Actions>()(
         const useDark = totalDark >= 3 && Math.random() < 0.35;
         const ev = useDark ? pick(DARK_EVENTS) : pick(EVENTS);
         const applied = ev.apply(s);
-        const deltas = financialDeltas(s, applied);
+        if (!hasStateChange<GameState>(s, applied)) return;
         set(applied);
         s.pushNotif(ev.text, ev.icon);
-        if (deltas.length > 0 || Math.random() < 0.4) {
+        if (Math.random() < 0.4) {
           s.pushChirp(ev.chirpText ?? ev.text, {
             kind: 'event',
             event: 'LIVE EVENT',
-            deltas,
           });
         }
       },
@@ -483,8 +504,8 @@ export const useGame = create<GameState & Actions>()(
         const { mult, dark } = transaction;
         set({
           apps: s.apps.map(a => (a.id === appId ? { ...a, mult, dark, hasPaywall: true } : a)),
-          mrr: transaction.afterMrr,
-          overlay: { type: 'paywallResult', appId, mult, dark },
+          mrr: transaction.delta.after,
+          overlay: { type: 'paywallResult', appId, transaction },
         });
         s.unlock('paywall_first');
         if (dark >= 5) {

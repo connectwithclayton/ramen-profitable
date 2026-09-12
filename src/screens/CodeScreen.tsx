@@ -15,7 +15,7 @@ import {
 } from '../components/ui';
 import { C } from '../theme';
 import { EnergyIcon, IdeaIcon, LaunchIcon } from '../components/icons';
-import { secondsUntilNextLine } from '../state/experience';
+import { codeProgressStatus } from '../state/experience';
 
 const RING = 248;
 const R_BUILD = 110;
@@ -118,11 +118,16 @@ export default function CodeScreen({ onOpenStore }: { onOpenStore: () => void })
   const p = s.project;
   const spent = p ? Math.min(1, p.loc / p.need) : 0;
   const done = Boolean(p && p.loc >= p.need);
-  const drained = s.energy < 1;
+  const progressStatus = codeProgressStatus({
+    done,
+    energy: s.energy,
+    energyRegen: s.energyRegen,
+    autoCode: s.autoCode,
+  });
+  const drained = progressStatus.drained;
   const built = p ? Math.round((p.loc / p.need) * 100) : 0;
   const locText = p ? fmtN(p.loc) : '0';
   const locSize = locText.length > 7 ? 30 : locText.length > 5 ? 40 : 54;
-  const nextLineSeconds = secondsUntilNextLine(s.energy, s.energyRegen);
 
   const writeLabel = p
     ? `Write code. Plus ${s.tapPower} ${s.tapPower === 1 ? 'line' : 'lines'} of code, costs 1 energy. ` +
@@ -173,21 +178,17 @@ export default function CodeScreen({ onOpenStore }: { onOpenStore: () => void })
           </View>
 
           <MonoText style={[st.prompt, drained && !done && { color: C.pink }]}>
-            {done
-              ? 'SHIP IT AND FIND OUT'
-              : drained
-                ? s.autoCode > 0 ? 'OUT OF ENERGY · AUTOMATION IS STILL WRITING' : 'OUT OF ENERGY · REGENERATING'
-                : 'TAP THE RING TO WRITE CODE'}
+            {progressStatus.prompt}
           </MonoText>
 
-          {drained && !done && s.autoCode <= 0 && (
+          {progressStatus.manualTapLabel && (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={'Next line in ' + nextLineSeconds + ' seconds. Open Store.'}
+              accessibilityLabel={progressStatus.manualTapAccessibilityLabel}
               onPress={onOpenStore}
               style={({ pressed }) => [st.waitAction, pressed && { opacity: 0.6 }]}
             >
-              <MonoText style={st.waitText}>NEXT LINE IN {nextLineSeconds}S · OPEN STORE →</MonoText>
+              <MonoText style={st.waitText}>{progressStatus.manualTapLabel}</MonoText>
             </Pressable>
           )}
 

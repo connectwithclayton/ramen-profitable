@@ -9,6 +9,7 @@ import { presentGoIndiePaywall } from '../monetization/purchases';
 import PaywallDesigner from './PaywallDesigner';
 import { CelebrateIcon, RamenProfitableIcon } from './icons';
 import { handleApprovedVerdictAction } from './approvedVerdictActions';
+import { paywallResultPresentation } from '../state/experience';
 
 function Spinner() {
   const spin = useRef(new Animated.Value(0)).current;
@@ -60,6 +61,9 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
   const [goIndiePending, setGoIndiePending] = useState(false);
+  const paywallResult = overlay?.type === 'paywallResult'
+    ? paywallResultPresentation(overlay.transaction)
+    : null;
 
   useEffect(() => {
     if (overlay?.type === 'verdict') {
@@ -157,17 +161,18 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
 
         {overlay.type === 'paywallDesigner' && <PaywallDesigner appId={overlay.appId} />}
 
-        {overlay.type === 'paywallResult' && (
+        {overlay.type === 'paywallResult' && paywallResult && (
           <>
-            <Eyebrow color={overlay.dark >= 5 ? C.pink : C.mint}>Paywall shipped</Eyebrow>
-            <Text style={st.h1}>conv ×{overlay.mult.toFixed(2)}</Text>
-            <Text style={st.body}>
-              {overlay.dark >= 5
-                ? 'Revenue is up. Somewhere, a subreddit stirs.'
-                : overlay.dark > 0
-                ? 'A little heat. Probably fine. Probably.'
-                : 'Clean paywall. Your conscience sparkles. Your CFO weeps.'}
-            </Text>
+            <Eyebrow
+              color={overlay.transaction.dark >= 5 || paywallResult.direction === 'down' ? C.pink : C.mint}
+            >
+              Paywall shipped
+            </Eyebrow>
+            <Text style={st.h1}>conv ×{overlay.transaction.mult.toFixed(2)}</Text>
+            <MonoText style={[st.resultReceipt, { color: paywallResult.direction === 'down' ? C.pink : C.mint }]}>
+              {paywallResult.receipt}
+            </MonoText>
+            <Text style={st.body}>{paywallResult.body}</Text>
             <Btn label="Watch the numbers" onPress={dismiss} style={{ marginTop: 16 }} />
           </>
         )}
@@ -222,6 +227,7 @@ const st = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   heroIcon: { alignItems: 'center' },
   body: { color: C.mut, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 19 },
+  resultReceipt: { fontSize: 11, textAlign: 'center', marginTop: 10 },
   spinner: {
     width: 36,
     height: 36,

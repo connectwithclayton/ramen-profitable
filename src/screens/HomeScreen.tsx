@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useGame, MRR_GOAL } from '../state/gameStore';
-import { ACHIEVEMENTS } from '../content/content';
+import { ACHIEVEMENTS, BETA_TESTER } from '../content/content';
 import {
   Btn,
   Divider,
@@ -22,7 +22,12 @@ import {
 } from '../components/ui';
 import { C, R } from '../theme';
 import { AbTestIcon, DrawnIcon, EnergyIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
-import { selectHomeReaction } from '../state/experience';
+import {
+  formatStoryDelta,
+  homeAutomationStatus,
+  homeEmptyProjectCopy,
+  selectHomeReaction,
+} from '../state/experience';
 
 /** One shipped app: monogram, what it is, what it earns, what you can do to it. */
 function AppRow({
@@ -97,9 +102,6 @@ function AppRow({
   );
 }
 
-const receiptMoney = (value: number) =>
-  `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-
 export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: () => void; onOpenChirp: () => void }) {
   const s = useGame();
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
@@ -107,8 +109,10 @@ export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: ()
   const unlocked = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
   const free = !s.hasJob;
   const canQuit = s.hasJob && s.mrr >= MRR_GOAL;
-  const reaction = selectHomeReaction(s.chirps, s.homeReactionId, s.homeReactionSecondsLeft);
+  const reaction = selectHomeReaction(s.chirps, s.homeReactionId, s.homeReactionSecondsLeft, BETA_TESTER);
   const projectDone = Boolean(s.project && s.project.loc >= s.project.need);
+  const automationStatus = homeAutomationStatus(s.autoCode, s.project);
+  const emptyProjectCopy = homeEmptyProjectCopy(s.apps);
 
   return (
     <Screen>
@@ -173,7 +177,7 @@ export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: ()
                 const change = delta.after - delta.before;
                 return (
                   <MonoText key={delta.metric} style={[st.receipt, { color: change >= 0 ? C.mint : C.pink }]}>
-                    {delta.metric.toUpperCase()} {receiptMoney(delta.before)} → {receiptMoney(delta.after)} ({change >= 0 ? '+' : '−'}{receiptMoney(Math.abs(change))}{delta.metric === 'mrr' ? '/mo' : ''})
+                    {formatStoryDelta(delta)}
                   </MonoText>
                 );
               })}
@@ -242,17 +246,15 @@ export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: ()
               accessibilityLabel={'Build progress for ' + s.project.name}
               accessibilityValue={{ now: Math.min(100, Math.round((s.project.loc / s.project.need) * 100)), min: 0, max: 100 }}
             />
-            {s.autoCode > 0 && (
-              <MonoText style={st.automation}>AUTO {s.autoCode} LOC/S · PROGRESS RUNS WHILE OPEN</MonoText>
+            {automationStatus && (
+              <MonoText style={st.automation}>{automationStatus}</MonoText>
             )}
             <Btn small label={projectDone ? 'Submit for review' : 'Continue coding'} onPress={onOpenCode} style={st.projectButton} />
           </Unit>
         ) : (
           <Unit style={st.projectUnit}>
             <Text style={st.empty}>
-              {s.apps.length === 0
-                ? 'Nothing shipped yet. Everyone starts at zero.'
-                : 'The last launch is out in the world. The next idea is waiting.'}
+              {emptyProjectCopy}
             </Text>
             <Btn
               small
