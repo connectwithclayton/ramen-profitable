@@ -43,13 +43,32 @@ export const REJECTIONS: [string, string][] = [
   ['Guideline 4.0 — Design', 'Your icon has the rounded corners pre-applied. It now has two sets.'],
 ];
 
+type GameEventText = string | ((state: GameState, patch: Partial<GameState>) => string);
+
 export type GameEvent = {
   kind: 'good' | 'bad';
-  text: string;
-  chirpText?: string;
+  text: GameEventText;
+  chirpText?: GameEventText;
   icon?: IconName;
   apply: (s: GameState) => Partial<GameState>;
 };
+
+const eventMoney = (value: number) =>
+  value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+const cashDebitText = (message: string, emoji?: string): GameEventText =>
+  (state, patch) => {
+    const debit = Math.max(0, state.cash - (patch.cash ?? state.cash));
+    return `${emoji ? `${emoji} ` : ''}${message} -$${eventMoney(debit)}.`;
+  };
+
+const cashDebitEvent = (message: string, emoji: string, amount: number): GameEvent => ({
+  kind: 'bad',
+  text: cashDebitText(message),
+  chirpText: cashDebitText(message, emoji),
+  icon: 'cash',
+  apply: state => ({ cash: Math.max(0, state.cash - amount) }),
+});
 
 export const EVENTS: GameEvent[] = [
   { kind: 'good', text: '⭐️ 5-star review: "life changing. also crashes sometimes."', apply: s => ({ mrr: s.mrr * 1.05 }) },
@@ -59,12 +78,12 @@ export const EVENTS: GameEvent[] = [
   { kind: 'bad', text: 'You got Sherlocked. Apple announced your app, but worse, at WWDC.', chirpText: '🍎 You got Sherlocked. Apple announced your app, but worse, at WWDC.', icon: 'app-store', apply: s => ({ mrr: s.mrr * 0.88 }) },
   { kind: 'bad', text: '⭐️ 1-star review: "app opened. did not read minds. uninstalling."', apply: s => ({ mrr: s.mrr * 0.95 }) },
   { kind: 'good', text: 'Barista spelled your name right. Morale up. Energy restored.', chirpText: '☕️ Barista spelled your name right. Morale up. Energy restored.', icon: 'caffeine', apply: s => ({ energy: Math.min(s.energyMax, s.energy + 20) }) },
-  { kind: 'bad', text: 'Your Mac needs a new battery. -$60.', chirpText: '💸 Your Mac needs a new battery. -$60.', icon: 'cash', apply: s => ({ cash: Math.max(0, s.cash - 60) }) },
+  cashDebitEvent('Your Mac needs a new battery.', '💸', 60),
   { kind: 'good', text: 'You made a "10 indie apps I actually use" list. Number 9.', chirpText: '📰 You made a "10 indie apps I actually use" list. Number 9.', icon: 'press', apply: s => ({ mrr: s.mrr * 1.1 }) },
   { kind: 'good', text: 'A competitor raised $12M and immediately got worse.', chirpText: '📈 A competitor raised $12M and immediately got worse.', icon: 'growth', apply: s => ({ mrr: s.mrr * 1.06 }) },
   { kind: 'good', text: 'Annual plans renewed. You had forgotten about them too.', chirpText: '💰 Annual plans renewed. You had forgotten about them too.', icon: 'cash', apply: s => ({ cash: s.cash + 45 }) },
   { kind: 'good', text: 'You slept eight hours by accident.', chirpText: '🌙 You slept eight hours by accident.', icon: 'night', apply: s => ({ energy: Math.min(s.energyMax, s.energy + 25) }) },
-  { kind: 'bad', text: 'Apple Developer Program membership renewed. -$99.', chirpText: '🍎 Apple Developer Program membership renewed. -$99.', icon: 'cash', apply: s => ({ cash: Math.max(0, s.cash - 99) }) },
+  cashDebitEvent('Apple Developer Program membership renewed.', '🍎', 99),
   { kind: 'bad', text: 'App Store Connect logged you out mid-submission. Twice.', chirpText: '🔒 App Store Connect logged you out mid-submission. Twice.', icon: 'app-store', apply: s => ({ energy: Math.max(0, s.energy - 15) }) },
   { kind: 'bad', text: 'A Reddit thread found you. Top comment: "why not just use a spreadsheet".', chirpText: '🔥 A Reddit thread found you. Top comment: "why not just use a spreadsheet".', icon: 'trending', apply: s => ({ mrr: s.mrr * 0.96 }) },
   { kind: 'bad', text: 'Support inbox: 14 emails, 11 asking for a feature that already exists.', chirpText: '📮 Support inbox: 14 emails, 11 asking for a feature that already exists.', icon: 'churn', apply: s => ({ energy: Math.max(0, s.energy - 10) }) },

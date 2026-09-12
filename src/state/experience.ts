@@ -1,7 +1,6 @@
 import type { PaywallAxis, PaywallChoice } from '../content/content';
 
-export type StoryDelta = {
-  metric: 'mrr' | 'cash';
+export type MrrDelta = {
   before: number;
   after: number;
 };
@@ -9,7 +8,7 @@ export type StoryDelta = {
 export type PaywallTransaction = {
   mult: number;
   dark: number;
-  delta: StoryDelta;
+  delta: MrrDelta;
 };
 
 export function projectMilestoneId(projectId: string, milestone: string) {
@@ -24,6 +23,12 @@ export function milestonesForProject(
   return Object.fromEntries(
     Object.entries(milestones).filter(([key]) => !key.startsWith('project:') || key.startsWith(`project:${projectId}:`)),
   );
+}
+
+export function tapReactionKind(hitTenTaps: boolean, depletedEnergy: boolean) {
+  if (hitTenTaps) return 'ten-taps' as const;
+  if (depletedEnergy) return 'energy-depleted' as const;
+  return undefined;
 }
 
 export function secondsUntilNextLine(energy: number, energyRegen: number) {
@@ -136,7 +141,7 @@ export function calculatePaywallTransaction({
   return {
     mult,
     dark,
-    delta: { metric: 'mrr', before: totalMrr, after: afterMrr },
+    delta: { before: totalMrr, after: afterMrr },
   };
 }
 
@@ -159,28 +164,63 @@ export function hasStateChange<State extends object>(state: State, patch: Partia
   );
 }
 
+type EventText<State> = string | ((state: State, patch: Partial<State>) => string);
+
+export function resolveGameEvent<State extends object>(
+  event: {
+    text: EventText<State>;
+    chirpText?: EventText<State>;
+    apply: (state: State) => Partial<State>;
+  },
+  state: State,
+) {
+  const patch = event.apply(state);
+  if (!hasStateChange(state, patch)) return undefined;
+  const resolveText = (text: EventText<State>) =>
+    typeof text === 'function' ? text(state, patch) : text;
+  return {
+    patch,
+    text: resolveText(event.text),
+    chirpText: resolveText(event.chirpText ?? event.text),
+  };
+}
+
 const receiptMoney = (value: number) =>
   `$${value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-export function storyDirection(delta: StoryDelta) {
+export function mrrDirection(delta: MrrDelta) {
   if (delta.after > delta.before) return 'up' as const;
   if (delta.after < delta.before) return 'down' as const;
   return 'unchanged' as const;
 }
 
-export function formatStoryDelta(delta: StoryDelta) {
+export function formatMrrDelta(delta: MrrDelta) {
   const change = delta.after - delta.before;
   const signedChange = change > 0
     ? `+${receiptMoney(change)}`
     : change < 0
       ? `−${receiptMoney(Math.abs(change))}`
       : 'no change';
-  const period = change !== 0 && delta.metric === 'mrr' ? '/mo' : '';
-  return `${delta.metric.toUpperCase()} ${receiptMoney(delta.before)} → ${receiptMoney(delta.after)} (${signedChange}${period})`;
+  const period = change !== 0 ? '/mo' : '';
+  return `MRR ${receiptMoney(delta.before)} → ${receiptMoney(delta.after)} (${signedChange}${period})`;
+}
+
+export function homeReactionAccessibilityLabel(reaction: {
+  who: string;
+  text: string;
+  event?: string;
+  delta?: MrrDelta;
+}) {
+  return [
+    'Open Chirp.',
+    reaction.event ? `${reaction.event}.` : undefined,
+    `${reaction.who} says: ${reaction.text}`,
+    reaction.delta ? formatMrrDelta(reaction.delta) : undefined,
+  ].filter(Boolean).join(' ');
 }
 
 export function paywallResultPresentation(transaction: PaywallTransaction) {
-  const direction = storyDirection(transaction.delta);
+  const direction = mrrDirection(transaction.delta);
   let body: string;
   if (direction === 'up') {
     body = transaction.dark >= 5
@@ -201,5 +241,5 @@ export function paywallResultPresentation(transaction: PaywallTransaction) {
         ? 'MRR held steady. All that heat moved nothing.'
         : 'MRR held steady. Your conscience still sparkles.';
   }
-  return { direction, body, receipt: formatStoryDelta(transaction.delta) };
+  return { direction, body, receipt: formatMrrDelta(transaction.delta) };
 }

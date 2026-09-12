@@ -23,9 +23,10 @@ import {
 import { C, R } from '../theme';
 import { AbTestIcon, DrawnIcon, EnergyIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
 import {
-  formatStoryDelta,
+  formatMrrDelta,
   homeAutomationStatus,
   homeEmptyProjectCopy,
+  homeReactionAccessibilityLabel,
   selectHomeReaction,
 } from '../state/experience';
 
@@ -163,7 +164,7 @@ export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: ()
           <SectionHeader title="From Chirp" meta={reaction.event} />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={'Open Chirp. ' + reaction.who + ' says: ' + reaction.text}
+            accessibilityLabel={homeReactionAccessibilityLabel(reaction)}
             onPress={onOpenChirp}
             style={({ pressed }) => [pressed && { opacity: 0.65 }]}
           >
@@ -173,14 +174,13 @@ export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: ()
                 <MonoText style={st.reactionHandle}>{reaction.handle}</MonoText>
               </View>
               <Text style={st.reactionText}>{reaction.text}</Text>
-              {reaction.deltas?.map(delta => {
-                const change = delta.after - delta.before;
-                return (
-                  <MonoText key={delta.metric} style={[st.receipt, { color: change >= 0 ? C.mint : C.pink }]}>
-                    {formatStoryDelta(delta)}
-                  </MonoText>
-                );
-              })}
+              {reaction.delta && (
+                <MonoText
+                  style={[st.receipt, { color: reaction.delta.after >= reaction.delta.before ? C.mint : C.pink }]}
+                >
+                  {formatMrrDelta(reaction.delta)}
+                </MonoText>
+              )}
               <MonoText style={st.openChirp}>OPEN CHIRP →</MonoText>
             </Unit>
           </Pressable>

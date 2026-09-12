@@ -18,13 +18,14 @@ import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
 import {
   calculatePaywallTransaction,
-  hasStateChange,
   isEligibleHomeReaction,
   milestonesForProject,
   paywallReaction,
   projectMilestoneId,
+  resolveGameEvent,
+  tapReactionKind,
 } from './experience';
-import type { PaywallTransaction, StoryDelta } from './experience';
+import type { MrrDelta, PaywallTransaction } from './experience';
 
 export type Project = { id: string; name: string; idea: string; loc: number; need: number; manualTaps: number };
 export type ShippedApp = {
@@ -46,11 +47,8 @@ export type Chirp = {
   likes: number;
   liked?: boolean;
   kind?: StoryKind;
-  subjectId?: string;
-  subject?: string;
   event?: string;
-  deltas?: StoryDelta[];
-  heat?: number;
+  delta?: MrrDelta;
 };
 type ChirpOptions = Omit<Partial<Chirp>, 'id' | 'who' | 'handle' | 'text' | 'likes' | 'liked'> & {
   author?: readonly [string, string];
@@ -227,25 +225,19 @@ export const useGame = create<GameState & Actions>()(
         ]);
         const [name, idea] = pickAppIdea(APP_IDEAS, usedNames);
         const project: Project = { id: uid(), name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250), manualTaps: 0 };
-        const startedReply = projectMilestoneId(project.id, 'started-reply');
-        const milestones = { ...milestonesForProject(s.storyMilestones, project.id), [startedReply]: true };
         set({
           project,
-          storyMilestones: milestones,
+          storyMilestones: milestonesForProject(s.storyMilestones, project.id),
           pendingStoryBeats: s.pendingStoryBeats.filter(item => !item.projectId || item.projectId === project.id),
         });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
           author: PLAYER,
           kind: 'milestone',
-          subjectId: project.id,
-          subject: name,
           event: 'PROJECT STARTED',
         });
         get().pushChirp(`does ${name} have dark mode? haven't opened it yet.`, {
           author: BETA_TESTER,
           kind: 'milestone',
-          subjectId: project.id,
-          subject: name,
           event: 'FIRST BETA REPLY',
         });
       },
@@ -264,6 +256,7 @@ export const useGame = create<GameState & Actions>()(
         const depletedKey = projectMilestoneId(s.project.id, 'energy-depleted');
         const hitTenTaps = manualTaps >= 10 && !s.storyMilestones[tenTapKey];
         const depletedEnergy = nextEnergy < 1 && s.autoCode <= 0 && !s.storyMilestones[depletedKey];
+        const reactionKind = tapReactionKind(hitTenTaps, depletedEnergy);
         const storyMilestones = { ...s.storyMilestones };
         if (hitTenTaps) storyMilestones[tenTapKey] = true;
         if (depletedEnergy) storyMilestones[depletedKey] = true;
@@ -272,21 +265,17 @@ export const useGame = create<GameState & Actions>()(
           project: { ...s.project, loc: nextLoc, manualTaps },
           ...(hitTenTaps || depletedEnergy ? { storyMilestones } : {}),
         });
-        if (hitTenTaps) {
+        if (reactionKind === 'ten-taps') {
           get().pushChirp(`${Math.floor(nextLoc)} lines in and the launch thread is already longer than the app.`, {
             author: BETA_TESTER,
             kind: 'milestone',
-            subjectId: s.project.id,
-            subject: s.project.name,
             event: 'TEN TAPS',
           });
         }
-        if (depletedEnergy) {
+        if (reactionKind === 'energy-depleted') {
           get().pushChirp('Have you tried delegating? My cat is between roles.', {
             author: BETA_TESTER,
             kind: 'milestone',
-            subjectId: s.project.id,
-            subject: s.project.name,
             event: 'ENERGY DEPLETED',
           });
         }
@@ -315,15 +304,13 @@ export const useGame = create<GameState & Actions>()(
           s.pushChirp(`App Review rejected ${p.name}. ${rule}. i'm fine. this is fine.`, {
             author: PLAYER,
             kind: 'verdict',
-            subjectId: p.id,
-            subject: p.name,
             event: 'APP REVIEW · REJECTED',
           });
           s.unlock('first_reject');
         } else {
           const base = 40 + Math.floor(Math.random() * 160);
           const gain = base * s.mrrMult;
-          const delta: StoryDelta = { metric: 'mrr', before: s.mrr, after: s.mrr + gain };
+          const delta: MrrDelta = { before: s.mrr, after: s.mrr + gain };
           set({
             apps: [...s.apps, { id: uid(), name: p.name, idea: p.idea, live: true, baseMrr: base, mult: 1, dark: 0, hasPaywall: false }],
             mrr: s.mrr + gain,
@@ -334,17 +321,13 @@ export const useGame = create<GameState & Actions>()(
           s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`, {
             author: PLAYER,
             kind: 'verdict',
-            subjectId: p.id,
-            subject: p.name,
             event: 'APP REVIEW · APPROVED',
           });
           get().pushChirp(`${p.name} is live. congratulations. feature request: dark mode.`, {
             author: BETA_TESTER,
             kind: 'verdict',
-            subjectId: p.id,
-            subject: p.name,
             event: 'BETA TESTER · APPROVED',
-            deltas: [delta],
+            delta,
           });
           s.unlock('first_ship');
           if (get().apps.filter(a => a.live).length >= 3) s.unlock('portfolio');
@@ -376,8 +359,6 @@ export const useGame = create<GameState & Actions>()(
           get().pushChirp(`${rate} LOC/sec. You have been promoted to code reviewer.`, {
             author: BETA_TESTER,
             kind: 'purchase',
-            subjectId: s.project?.id,
-            subject: s.project?.name,
             event: 'AUTOMATION PURCHASED',
           });
         }
@@ -462,12 +443,12 @@ export const useGame = create<GameState & Actions>()(
         const totalDark = s.apps.filter(a => a.live).reduce((n, a) => n + (a.dark ?? 0), 0);
         const useDark = totalDark >= 3 && Math.random() < 0.35;
         const ev = useDark ? pick(DARK_EVENTS) : pick(EVENTS);
-        const applied = ev.apply(s);
-        if (!hasStateChange<GameState>(s, applied)) return;
-        set(applied);
-        s.pushNotif(ev.text, ev.icon);
+        const outcome = resolveGameEvent(ev, s);
+        if (!outcome) return;
+        set(outcome.patch);
+        s.pushNotif(outcome.text, ev.icon);
         if (Math.random() < 0.4) {
-          s.pushChirp(ev.chirpText ?? ev.text, {
+          s.pushChirp(outcome.chirpText, {
             kind: 'event',
             event: 'LIVE EVENT',
           });
@@ -516,11 +497,8 @@ export const useGame = create<GameState & Actions>()(
         get().pushChirp(paywallReaction(app.name, transaction, picks), {
           author: BETA_TESTER,
           kind: 'paywall',
-          subjectId: app.id,
-          subject: app.name,
           event: `PAYWALL SHIPPED · HEAT ${dark}`,
-          deltas: [transaction.delta],
-          heat: dark,
+          delta: transaction.delta,
         });
       },
 

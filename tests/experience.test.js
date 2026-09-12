@@ -27,7 +27,6 @@ test('paywall receipt captures the committed transaction values', async () => {
 
   assert.equal(receipt.mult, 1.69);
   assert.equal(receipt.dark, 5);
-  assert.equal(receipt.delta.metric, 'mrr');
   assert.equal(receipt.delta.before, 230);
   assert.ok(Math.abs(receipt.delta.after - 300.2) < Number.EPSILON * 300.2);
 });
@@ -35,7 +34,7 @@ test('paywall receipt captures the committed transaction values', async () => {
 test('paywall reaction only mentions close behavior the player committed', async () => {
   const { calculatePaywallTransaction, paywallReaction } = await loadExperience();
   const { PAYWALL_AXES } = await loadContent();
-  const transaction = { mult: 1.6, dark: 5, delta: { metric: 'mrr', before: 100, after: 160 } };
+  const transaction = { mult: 1.6, dark: 5, delta: { before: 100, after: 160 } };
 
   assert.match(paywallReaction('Caffiend', transaction, { close: 'delayed' }), /FIVE SECONDS/);
   assert.doesNotMatch(paywallReaction('Caffiend', transaction, { close: 'tiny' }), /FIVE SECONDS/);
@@ -78,6 +77,18 @@ test('energy countdown follows the live regeneration rate', async () => {
   assert.equal(automated.prompt, 'OUT OF ENERGY · AUTOMATION IS STILL WRITING');
   assert.equal(automated.manualTapLabel, 'MANUAL TAP IN 5S · OPEN STORE →');
   assert.equal(automated.manualTapAccessibilityLabel, 'Enough energy for another manual tap in 5 seconds. Open Store.');
+
+  const completed = codeProgressStatus({ done: true, energy: 0.4, energyRegen: 0.06, autoCode: 6 });
+  assert.deepEqual(completed, { drained: true, prompt: 'SHIP IT AND FIND OUT' });
+});
+
+test('ten-tap reaction takes precedence over simultaneous depletion', async () => {
+  const { tapReactionKind } = await loadExperience();
+
+  assert.equal(tapReactionKind(true, true), 'ten-taps');
+  assert.equal(tapReactionKind(true, false), 'ten-taps');
+  assert.equal(tapReactionKind(false, true), 'energy-depleted');
+  assert.equal(tapReactionKind(false, false), undefined);
 });
 
 test('Home selects intentional beta-tester reactions and ignores player verdicts', async () => {
@@ -114,6 +125,40 @@ test('semantic no-op patches are rejected before event output', async () => {
   assert.equal(hasStateChange({ cash: 10, energy: 50 }, {}), false);
 });
 
+test('cash debit events report the realized transition', async () => {
+  const { resolveGameEvent } = await loadExperience();
+  const { EVENTS } = await loadContent();
+  const funded = { cash: 100, mrr: 100, energy: 50, energyMax: 50 };
+  const debitEvents = EVENTS.filter(event => {
+    const after = event.apply(funded).cash;
+    return after === 40 || after === 1;
+  });
+
+  assert.equal(debitEvents.length, 2);
+  for (const event of debitEvents) {
+    const outcome = resolveGameEvent(event, { ...funded, cash: 30 });
+    assert.deepEqual(outcome.patch, { cash: 0 });
+    assert.match(outcome.text, /-\$30\.$/);
+    assert.match(outcome.chirpText, /-\$30\.$/);
+    assert.equal(resolveGameEvent(event, { ...funded, cash: 0 }), undefined);
+  }
+});
+
+test('Home reaction accessibility includes the committed receipt', async () => {
+  const { homeReactionAccessibilityLabel } = await loadExperience();
+  const label = homeReactionAccessibilityLabel({
+    who: 'Burnt Out Beta Tester',
+    text: "the new paywall has a point of view. unfortunately, so do I.",
+    event: 'PAYWALL SHIPPED · HEAT 5',
+    delta: { before: 285, after: 138 },
+  });
+
+  assert.equal(
+    label,
+    'Open Chirp. PAYWALL SHIPPED · HEAT 5. Burnt Out Beta Tester says: the new paywall has a point of view. unfortunately, so do I. MRR $285 → $138 (−$147/mo)',
+  );
+});
+
 test('paywall result presentation follows the committed MRR direction', async () => {
   const { calculatePaywallTransaction, paywallResultPresentation } = await loadExperience();
   const { PAYWALL_AXES } = await loadContent();
@@ -129,12 +174,12 @@ test('paywall result presentation follows the committed MRR direction', async ()
 
   assert.equal(transaction.mult, 1.38);
   assert.equal(transaction.dark, 5);
-  assert.deepEqual(transaction.delta, { metric: 'mrr', before: 285, after: 138 });
+  assert.deepEqual(transaction.delta, { before: 285, after: 138 });
   assert.equal(decreased.direction, 'down');
   assert.equal(decreased.receipt, 'MRR $285 → $138 (−$147/mo)');
   assert.match(decreased.body, /decreased/i);
   assert.doesNotMatch(decreased.body, /\b(up|increased)\b/i);
 
-  assert.equal(paywallResultPresentation({ mult: 1.2, dark: 0, delta: { metric: 'mrr', before: 100, after: 120 } }).direction, 'up');
-  assert.equal(paywallResultPresentation({ mult: 1, dark: 0, delta: { metric: 'mrr', before: 100, after: 100 } }).direction, 'unchanged');
+  assert.equal(paywallResultPresentation({ mult: 1.2, dark: 0, delta: { before: 100, after: 120 } }).direction, 'up');
+  assert.equal(paywallResultPresentation({ mult: 1, dark: 0, delta: { before: 100, after: 100 } }).direction, 'unchanged');
 });
