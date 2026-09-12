@@ -19,10 +19,9 @@ import { pickAppIdea } from './projectIdeas';
 import {
   advanceHomeReactionExposure,
   calculatePaywallTransaction,
-  isDurableHomeReceipt,
-  isPriorityHomeReaction,
   milestonesForProject,
   paywallReaction,
+  priorityHomeReactionState,
   projectMilestoneId,
   resolveGameEvent,
   selectPersistedState,
@@ -191,13 +190,11 @@ export const useGame = create<GameState & Actions>()(
           likes: Math.floor(Math.random() * 900) + 12,
           ...metadata,
         };
-        const homePriority = isPriorityHomeReaction(c, BETA_TESTER) ? c : undefined;
-        const homeReceipt = isDurableHomeReceipt(c, BETA_TESTER) ? c : undefined;
+        const homeReactionState = priorityHomeReactionState(c, BETA_TESTER);
         set(s => ({
           chirps: [c, ...s.chirps].slice(0, 30),
           unreadChirps: true,
-          ...(homePriority ? { homePriority, homePrioritySecondsLeft: 20 } : {}),
-          ...(homeReceipt ? { homeReceipt, homeReceiptSecondsLeft: 20 } : {}),
+          ...(homeReactionState ?? {}),
         }));
       },
       markChirpsRead: () => set({ unreadChirps: false }),

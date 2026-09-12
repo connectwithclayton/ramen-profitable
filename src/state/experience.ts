@@ -86,8 +86,9 @@ export function homeAutomationStatus(
     : undefined;
 }
 
-export function homeProjectActionLabel(done: boolean) {
-  return done ? 'Open Code to submit' : 'Continue coding';
+export function homeProjectActionLabel(project: { loc: number; need: number } | null) {
+  if (!project) return 'Open Code to start';
+  return project.loc >= project.need ? 'Open Code to submit' : 'Continue coding';
 }
 
 export function sampleHomeExposure(
@@ -162,6 +163,20 @@ export function isPriorityHomeReaction<T extends HomeReaction>(
       chirp.kind === 'verdict' ||
       chirp.kind === 'paywall'),
   );
+}
+
+export function priorityHomeReactionState<T extends HomeReaction>(
+  chirp: T,
+  betaTester: StoryAuthor,
+) {
+  if (!isPriorityHomeReaction(chirp, betaTester)) return undefined;
+  const receipt = isDurableHomeReceipt(chirp, betaTester) ? chirp : undefined;
+  return {
+    homePriority: chirp,
+    homePrioritySecondsLeft: 20,
+    homeReceipt: receipt,
+    homeReceiptSecondsLeft: receipt ? 20 : 0,
+  };
 }
 
 export function selectHomeReaction<T extends HomeReaction>({

@@ -134,6 +134,51 @@ test('Home selects intentional beta-tester reactions and ignores player verdicts
   })?.id, 'ambient');
 });
 
+test('Home priority ignores ambience and drops replaced earned responses', async () => {
+  const { priorityHomeReactionState } = await loadExperience();
+  const { BETA_TESTER } = await loadContent();
+  const earned = {
+    id: 'ten-taps',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'milestone',
+  };
+  const ambient = {
+    id: 'affordable',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'ambient',
+  };
+  const receipt = {
+    id: 'paywall',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'paywall',
+  };
+  const current = {
+    homePriority: earned,
+    homePrioritySecondsLeft: 20,
+    homeReceipt: undefined,
+    homeReceiptSecondsLeft: 0,
+  };
+
+  assert.deepEqual(
+    { ...current, ...(priorityHomeReactionState(ambient, BETA_TESTER) ?? {}) },
+    current,
+  );
+  assert.deepEqual(priorityHomeReactionState(earned, BETA_TESTER), current);
+  assert.deepEqual(priorityHomeReactionState(receipt, BETA_TESTER), {
+    homePriority: receipt,
+    homePrioritySecondsLeft: 20,
+    homeReceipt: receipt,
+    homeReceiptSecondsLeft: 20,
+  });
+  assert.deepEqual({
+    ...priorityHomeReactionState(receipt, BETA_TESTER),
+    ...priorityHomeReactionState(earned, BETA_TESTER),
+  }, current);
+});
+
 test('Home keeps a durable receipt independent of bounded Chirp history', async () => {
   const { selectHomeReaction, selectPersistedState } = await loadExperience();
   const { BETA_TESTER } = await loadContent();
@@ -208,7 +253,7 @@ test('Home keeps a durable receipt independent of bounded Chirp history', async 
   assert.equal('homeReactionId' in oldPin, false);
 });
 
-test('transient priority expires independently while durable receipts persist', async () => {
+test('only durable receipts persist and matching priority layers expire together', async () => {
   const {
     advanceHomeReactionExposure,
     homeReceiptStateForPersistence,
@@ -238,38 +283,35 @@ test('transient priority expires independently while durable receipts persist', 
     { homeReceipt: undefined, homeReceiptSecondsLeft: 0 },
   );
 
-  assert.deepEqual(
-    advanceHomeReactionExposure({
-      priority: { ...receipt, id: 'ten-taps', kind: 'milestone' },
-      prioritySecondsLeft: 20,
-      receipt,
-      receiptSecondsLeft: 20,
-      displayedReactionId: 'stale-reaction',
-      elapsedSeconds: 7,
-    }),
-    {
-      homePriority: { ...receipt, id: 'ten-taps', kind: 'milestone' },
-      homePrioritySecondsLeft: 20,
-      homeReceipt: receipt,
-      homeReceiptSecondsLeft: 20,
-    },
-  );
   const milestone = { ...receipt, id: 'ten-taps', kind: 'milestone' };
   const exposedMilestone = advanceHomeReactionExposure({
     priority: milestone,
     prioritySecondsLeft: 20,
-    receipt,
-    receiptSecondsLeft: 20,
+    receipt: undefined,
+    receiptSecondsLeft: 0,
     displayedReactionId: milestone.id,
     elapsedSeconds: 20,
   });
   assert.deepEqual(exposedMilestone, {
     homePriority: undefined,
     homePrioritySecondsLeft: 0,
+    homeReceipt: undefined,
+    homeReceiptSecondsLeft: 0,
+  });
+
+  assert.deepEqual(advanceHomeReactionExposure({
+    priority: receipt,
+    prioritySecondsLeft: 20,
+    receipt,
+    receiptSecondsLeft: 20,
+    displayedReactionId: 'stale-reaction',
+    elapsedSeconds: 7,
+  }), {
+    homePriority: receipt,
+    homePrioritySecondsLeft: 20,
     homeReceipt: receipt,
     homeReceiptSecondsLeft: 20,
   });
-
   assert.deepEqual(advanceHomeReactionExposure({
     priority: receipt,
     prioritySecondsLeft: 20,
@@ -352,8 +394,9 @@ test('Home project copy and automation telemetry follow the latest real state', 
   assert.equal(homeAutomationStatus(6, { loc: 10, need: 100 }), 'AUTO 6 LOC/S · PROGRESS RUNS WHILE OPEN');
   assert.equal(homeAutomationStatus(6, { loc: 100, need: 100 }), undefined);
   assert.equal(homeAutomationStatus(6, null), undefined);
-  assert.equal(homeProjectActionLabel(false), 'Continue coding');
-  assert.equal(homeProjectActionLabel(true), 'Open Code to submit');
+  assert.equal(homeProjectActionLabel(null), 'Open Code to start');
+  assert.equal(homeProjectActionLabel({ loc: 10, need: 100 }), 'Continue coding');
+  assert.equal(homeProjectActionLabel({ loc: 100, need: 100 }), 'Open Code to submit');
 });
 
 test('Home reaction expiry uses measured visible foreground time', async () => {

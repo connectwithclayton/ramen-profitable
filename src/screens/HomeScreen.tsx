@@ -406,7 +406,7 @@ export default function HomeScreen({
             {automationStatus && (
               <MonoText style={st.automation}>{automationStatus}</MonoText>
             )}
-            <Btn small label={homeProjectActionLabel(projectDone)} onPress={onOpenCode} style={st.projectButton} />
+            <Btn small label={homeProjectActionLabel(s.project)} onPress={onOpenCode} style={st.projectButton} />
           </Unit>
         ) : (
           <Unit style={st.projectUnit}>
@@ -415,7 +415,7 @@ export default function HomeScreen({
             </Text>
             <Btn
               small
-              label={s.apps.length === 0 ? 'Start your first app' : 'Start another app'}
+              label={homeProjectActionLabel(s.project)}
               onPress={onOpenCode}
               style={st.projectCta}
             />
