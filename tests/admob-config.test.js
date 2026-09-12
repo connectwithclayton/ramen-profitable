@@ -87,7 +87,8 @@ test('Expo config selects production only for exact Release signals', () => {
     ['run:ios', '--configuration=Debug'],
     ['run:ios', '--configuration', 'Profile'],
     ['run:ios', '--configuration', 'release'],
-    ['run:ios', '--configuration=Release'],
+    ['run:ios', '--configuration=Profile'],
+    ['run:ios', '--configuration=release'],
     ['run:android', '--variant', 'release'],
   ]) {
     assert.deepEqual(evaluate(args, ignoredReleaseSignals), development);
@@ -99,7 +100,9 @@ test('Expo config selects production only for exact Release signals', () => {
     ['start', '--go', '--no-dev'],
     ['start', '-g', '--no-dev'],
     ['start', '--no-dev', '--dev-client'],
+    ['start', '--no-dev=true'],
     ['--no-dev'],
+    ['--no-dev=true'],
   ]) {
     const unsupported = spawnSync(
       process.execPath,
@@ -150,6 +153,15 @@ test('Expo config selects production only for exact Release signals', () => {
   );
   assert.deepEqual(
     evaluate(['run:ios', '--configuration', 'Release'], {
+      EAS_BUILD_PROFILE: 'development',
+      CONFIGURATION: 'Debug',
+      NODE_ENV: 'development',
+      REVENUECAT_BUILD_MODE: 'development',
+    }),
+    release,
+  );
+  assert.deepEqual(
+    evaluate(['run:ios', '--configuration=Release'], {
       EAS_BUILD_PROFILE: 'development',
       CONFIGURATION: 'Debug',
       NODE_ENV: 'development',

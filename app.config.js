@@ -18,7 +18,11 @@ function releaseKey(name, expectedPrefix) {
 
 module.exports = ({ config }) => {
   const args = process.argv.slice(2);
-  if (args.includes('--no-dev')) {
+  if (
+    args.some(
+      argument => argument === '--no-dev' || argument.startsWith('--no-dev='),
+    )
+  ) {
     throw new Error(
       'npx expo start --no-dev is unsupported for Catvertising because it ' +
         'serves a production-mode bundle with development inventory. ' +
@@ -30,7 +34,8 @@ module.exports = ({ config }) => {
     process.env.CONFIGURATION === 'Release' ||
     args.some(
       (argument, index) =>
-        argument === '--configuration' && args[index + 1] === 'Release',
+        argument === '--configuration=Release' ||
+        (argument === '--configuration' && args[index + 1] === 'Release'),
     );
   const revenueCat =
     release

@@ -69,6 +69,7 @@ export default function PhoneBillboard({
 }) {
   const eligible = useGame(mayRequestAds);
   const overlay = useGame(s => s.overlay !== null);
+  const notificationsClear = useGame(s => s.notifs.length === 0);
   const [ready, setReady] = useState(false);
   const [privacyRequired, setPrivacyRequired] = useState(false);
   const [privacyBusy, setPrivacyBusy] = useState(false);
@@ -91,7 +92,7 @@ export default function PhoneBillboard({
   const sectionYRef = useRef<number | null>(null);
   const phoneYRef = useRef<number | null>(null);
   const billboardLayoutRef = useRef<{ y: number; height: number } | null>(null);
-  const surfaceActive = active && foreground && !overlay && !destinationOpen;
+  const surfaceActive = active && foreground && !overlay && !destinationOpen && notificationsClear;
   const retainedVisibilityActive = surfaceActive && viewportVisible;
   const measurementActive = retainedVisibilityActive && !privacyBusy;
   const requestable = measurementActive && layoutReady && eligible && width > 0;
@@ -180,7 +181,8 @@ export default function PhoneBillboard({
         viewportVisible &&
         widthRef.current > 0 &&
         AppState.currentState === 'active' &&
-        useGame.getState().overlay === null
+        useGame.getState().overlay === null &&
+        useGame.getState().notifs.length === 0
       );
       void prepareAds(isRenderable, retryRejectedConsent).then(allowed => {
         if (!cancelled) {

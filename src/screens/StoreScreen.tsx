@@ -89,8 +89,8 @@ export default function StoreScreen({
       frame &&
       frame.height > 0 &&
       viewport.height > 0 &&
-      frame.y + frame.height > top &&
-      frame.y < bottom
+      frame.y >= top &&
+      frame.y + frame.height <= bottom
     );
     if (billboardInViewportRef.current === visible) return;
     billboardInViewportRef.current = visible;

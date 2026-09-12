@@ -541,7 +541,7 @@ test('release runtime accepts a valid pair and rejects cross-publisher identifie
   }
 });
 
-test('the measured dock boundary prevents requests for a fully covered billboard', async () => {
+test('the measured dock boundary requires the full billboard above the dock', async () => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
   const FreshApp = loadFreshApp();
@@ -577,12 +577,20 @@ test('the measured dock boundary prevents requests for a fully covered billboard
     assert.equal(requests.length, 0);
 
     await setStoreBillboardViewport(tree, { ...frame, scrollY: 20 });
+    assert.equal(
+      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
+      0,
+      'a billboard partially behind the dock must not activate ad measurement',
+    );
+    assert.equal(requests.length, 0);
+
+    await setStoreBillboardViewport(tree, { ...frame, scrollY: 60 });
     await setBillboardProbeWidth(tree, 320);
     await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
     await flush();
     await act(async () => { consentForm.resolve(); await consentForm.promise; });
     await flush();
-    assert.equal(requests.length, 1, 'scrolling a positive slice above the dock must permit one request');
+    assert.equal(requests.length, 1, 'full containment above the dock must permit one request');
   } finally {
     if (tree) await act(async () => { tree.unmount(); });
   }
@@ -891,7 +899,7 @@ test('replaced banners drop stale native callbacks before shared state changes',
   assert.equal(hasNoFillCopy(), true, 'only the current no-fill may reveal fallback copy');
 });
 
-test('scroll intersection returns replace one expired creative without timers', async t => {
+test('fully visible scroll returns replace one expired creative without timers', async t => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
   const originalNow = Date.now;
@@ -962,8 +970,8 @@ test('scroll intersection returns replace one expired creative without timers', 
   assert.equal(probes().length, 0, 'an offscreen billboard must not expose an ad measurement boundary');
   assert.equal(requests.length, 0, 'an initially offscreen billboard must not request an advert');
 
-  await scrollTo(101);
-  assert.equal(probes().length, 1, 'one pixel of vertical intersection must activate measurement');
+  await scrollTo(150);
+  assert.equal(probes().length, 1, 'full vertical visibility must activate measurement');
   await setBillboardProbeWidth(tree, 320);
   await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
   await flush();
@@ -1036,8 +1044,8 @@ test('scroll intersection returns replace one expired creative without timers', 
   await flush();
   assert.equal(requests.length, 1, 'expiry while offscreen must not issue a request');
 
-  await scrollTo(749);
-  assert.equal(probes().length, 1, 'a positive vertical intersection must create a fresh measurement boundary');
+  await scrollTo(700);
+  assert.equal(probes().length, 1, 'full vertical visibility must create a fresh measurement boundary');
   assert.strictEqual(banners()[0], loadedBanner, 'an expired return must await fresh width');
   assert.equal(bannerConcealed(), true);
   assert.equal(requests.length, 1);
@@ -1049,12 +1057,12 @@ test('scroll intersection returns replace one expired creative without timers', 
   assert.deepEqual(nativeWidthTeardowns, []);
   const replacement = banners()[0];
 
-  await scrollTo(749);
+  await scrollTo(700);
   await setBillboardProbeWidth(tree, 320);
   assert.strictEqual(banners()[0], replacement);
   assert.equal(requests.length, 2, 'repeated visible scroll events must not duplicate the replacement');
   await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
-  await scrollTo(749);
+  await scrollTo(700);
   await setBillboardProbeWidth(tree, 320);
   assert.strictEqual(banners()[0], replacement);
   assert.equal(requests.length, 2, 'settling the replacement must not create another request');
@@ -1670,6 +1678,72 @@ test('an overlay blocks consent presentation and Mobile Ads initialization', asy
   assert.equal(initializationCalls, 1);
   assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
   await act(async () => { tree.unmount(); });
+});
+
+test('notifications block ad preparation and conceal retained creatives', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+
+  try {
+    await setBillboardWidth(tree, 320);
+    await act(async () => { useGame.getState().pushNotif('Payday.', 'day-job'); });
+    await flush();
+    assert.equal(probes().length, 0, 'a notification must remove the active measurement boundary');
+
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    assert.equal(consentFormCalls, 0, 'a notification shown during refresh must block consent presentation');
+    assert.equal(initializationCalls, 0);
+    assert.equal(requests.length, 0);
+
+    await act(async () => { useGame.setState({ notifs: [] }); });
+    await flush();
+    assert.equal(probes().length, 1, 'clearing notifications must create a fresh measurement boundary');
+    await setBillboardProbeWidth(tree, 320);
+    assert.equal(consentFormCalls, 1);
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(initializationCalls, 1);
+    assert.equal(banners().length, 1);
+    assert.equal(requests.length, 1);
+    await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+    const loadedBanner = banners()[0];
+    assert.equal(bannerConcealed(), false);
+
+    await act(async () => { useGame.getState().pushNotif('An event occurred.', 'store'); });
+    await flush();
+    assert.equal(probes().length, 0);
+    assert.strictEqual(banners()[0], loadedBanner, 'a notification may retain the loaded native banner');
+    assert.equal(bannerConcealed(), true, 'a notification must conceal and disable the retained advert');
+    assert.equal(requests.length, 1);
+
+    await act(async () => { useGame.setState({ notifs: [] }); });
+    await flush();
+    assert.equal(probes().length, 1);
+    assert.strictEqual(banners()[0], loadedBanner);
+    assert.equal(bannerConcealed(), true, 'a notification return must await fresh geometry');
+    await setBillboardProbeWidth(tree, 320);
+    assert.strictEqual(banners()[0], loadedBanner);
+    assert.equal(bannerConcealed(), false);
+    assert.equal(requests.length, 1, 'clearing notifications must not duplicate the loaded request');
+  } finally {
+    useGame.setState({ notifs: [] });
+    await act(async () => { tree.unmount(); });
+  }
 });
 
 test('backgrounding blocks consent presentation and Mobile Ads initialization', async () => {
