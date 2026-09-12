@@ -2,7 +2,7 @@ const path = require('node:path');
 const { load } = require('@expo/env');
 const { getConfig } = require('expo/config');
 const { assertProductionIds } = require('../config/admob');
-const [appId, bannerId] = process.argv.slice(2);
+const [appId, bannerId, xcodeConfiguration] = process.argv.slice(2);
 
 function resolveArchiveIds() {
   const projectRoot = path.resolve(__dirname, '..');
@@ -18,7 +18,7 @@ function resolveArchiveIds() {
 try {
   const capturedIds = { appId, bannerId };
   assertProductionIds(capturedIds);
-  if (process.env.CONFIGURATION === 'Release') {
+  if (xcodeConfiguration === 'Release') {
     const archiveIds = resolveArchiveIds();
     assertProductionIds(archiveIds);
     if (

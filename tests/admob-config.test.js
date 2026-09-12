@@ -78,8 +78,9 @@ test('Expo config selects production only for exact Release signals', () => {
   for (const args of [
     [],
     ['start'],
+    ['start', '-d'],
     ['start', '--dev-client'],
-    ['start', '--no-dev'],
+    ['start', '--go'],
     ['run:ios'],
     ['run:ios', '--binary', 'Ramen.app'],
     ['run:ios', '--configuration', 'Debug'],
@@ -91,28 +92,46 @@ test('Expo config selects production only for exact Release signals', () => {
   ]) {
     assert.deepEqual(evaluate(args, ignoredReleaseSignals), development);
   }
-  const unsupported = spawnSync(
-    process.execPath,
-    ['-e', script, '--', 'start', '--dev-client', '--no-dev'],
-    {
-      cwd: root,
-      encoding: 'utf8',
-      env: { ...environment, ...ignoredReleaseSignals },
-    },
-  );
-  assert.equal(unsupported.status, 1, unsupported.stdout + unsupported.stderr);
-  assert.match(
-    unsupported.stderr,
-    /npx expo start --dev-client --no-dev is unsupported/,
-  );
-  assert.match(
-    unsupported.stderr,
-    /Use npx expo start --dev-client with a Debug development client/,
-  );
-  assert.match(
-    unsupported.stderr,
-    /npx expo run:ios --configuration Release/,
-  );
+  for (const args of [
+    ['start', '--no-dev'],
+    ['start', '-d', '--no-dev'],
+    ['start', '--dev-client', '--no-dev'],
+    ['start', '--go', '--no-dev'],
+    ['start', '-g', '--no-dev'],
+    ['start', '--no-dev', '--dev-client'],
+    ['--no-dev'],
+  ]) {
+    const unsupported = spawnSync(
+      process.execPath,
+      ['-e', script, '--', ...args],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...environment, ...ignoredReleaseSignals },
+      },
+    );
+    assert.equal(
+      unsupported.status,
+      1,
+      `${args.join(' ')}\n${unsupported.stdout}${unsupported.stderr}`,
+    );
+    assert.match(
+      unsupported.stderr,
+      /npx expo start --no-dev is unsupported for Catvertising/,
+    );
+    assert.match(
+      unsupported.stderr,
+      /serves a production-mode bundle with development inventory/,
+    );
+    assert.match(
+      unsupported.stderr,
+      /Use npx expo start --dev-client with a Debug development client/,
+    );
+    assert.match(
+      unsupported.stderr,
+      /npx expo run:ios --configuration Release/,
+    );
+  }
   const release = {
     admob: { ios: production },
     revenueCat: {

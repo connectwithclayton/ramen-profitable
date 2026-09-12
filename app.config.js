@@ -18,13 +18,10 @@ function releaseKey(name, expectedPrefix) {
 
 module.exports = ({ config }) => {
   const args = process.argv.slice(2);
-  if (
-    args[0] === 'start' &&
-    args.includes('--dev-client') &&
-    args.includes('--no-dev')
-  ) {
+  if (args.includes('--no-dev')) {
     throw new Error(
-      'npx expo start --dev-client --no-dev is unsupported for Catvertising. ' +
+      'npx expo start --no-dev is unsupported for Catvertising because it ' +
+        'serves a production-mode bundle with development inventory. ' +
         'Use npx expo start --dev-client with a Debug development client, ' +
         'or build with npx expo run:ios --configuration Release.',
     );

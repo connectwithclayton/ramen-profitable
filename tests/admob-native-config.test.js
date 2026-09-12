@@ -160,6 +160,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.deepEqual(JSON.parse(capturedArguments), [
       releaseRuntime.extra.admob.ios.appId,
       releaseRuntime.extra.admob.ios.bannerId,
+      'Release',
     ]);
     const changedProductionIds = [
       {
@@ -220,6 +221,19 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
         `Xcode local identifier overrides were accepted\n${divergentXcodeEnvironment.stdout}${divergentXcodeEnvironment.stderr}`,
       );
       assert.match(divergentXcodeEnvironment.stderr, /do not match the identifiers captured during prebuild/);
+      fs.writeFileSync(
+        xcodeLocalEnvironment,
+        `export CONFIGURATION='Debug'\nexport ADMOB_IOS_APP_ID='${xcodeLocalIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${xcodeLocalIds.ADMOB_IOS_BANNER_ID}'\n`,
+      );
+      const xcodeDebugRuntime = constantsConfigThroughXcode({ CONFIGURATION: 'Release' });
+      assert.deepEqual(xcodeDebugRuntime.extra.admob, TEST_IDS);
+      const overriddenXcodeConfiguration = runPhase('Release');
+      assert.equal(
+        overriddenXcodeConfiguration.status,
+        1,
+        `Xcode local configuration bypassed the Release guard\n${overriddenXcodeConfiguration.stdout}${overriddenXcodeConfiguration.stderr}`,
+      );
+      assert.match(overriddenXcodeConfiguration.stderr, /Google TEST identifier/);
     } finally {
       fs.writeFileSync(xcodeEnvironment, originalXcodeEnvironment);
       fs.rmSync(projectLocalEnvironment, { force: true });
@@ -231,8 +245,9 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/9999999999',
     };
     fs.mkdirSync(loginHome);
+    const loginProfile = path.join(loginHome, '.bash_profile');
     fs.writeFileSync(
-      path.join(loginHome, '.bash_profile'),
+      loginProfile,
       `export ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
     );
     const divergentLoginEnvironment = runPhase('Release', { HOME: loginHome });
@@ -242,6 +257,17 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       `login-shell identifier overrides were accepted\n${divergentLoginEnvironment.stdout}${divergentLoginEnvironment.stderr}`,
     );
     assert.match(divergentLoginEnvironment.stderr, /do not match the identifiers captured during prebuild/);
+    fs.writeFileSync(
+      loginProfile,
+      `export CONFIGURATION='Debug'\nexport ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
+    );
+    const overriddenLoginConfiguration = runPhase('Release', { HOME: loginHome });
+    assert.equal(
+      overriddenLoginConfiguration.status,
+      1,
+      `login-shell configuration bypassed the Release guard\n${overriddenLoginConfiguration.stdout}${overriddenLoginConfiguration.stderr}`,
+    );
+    assert.match(overriddenLoginConfiguration.stderr, /Google TEST identifier/);
     const sampleRuntime = runPhase('Release', {
       ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
       ADMOB_IOS_BANNER_ID: TEST_IDS.ios.bannerId,
