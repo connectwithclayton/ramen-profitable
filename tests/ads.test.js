@@ -82,7 +82,10 @@ const ads = {
       if (consentInfoGate) await consentInfoGate.promise;
       return { status: consentStatus, canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' };
     },
-    showPrivacyOptionsForm: async () => { consentAllowed = false; },
+    showPrivacyOptionsForm: async () => {
+      consentAllowed = false;
+      privacyRequired = false;
+    },
   },
   BannerAd: props => {
     const instanceId = React.useRef(null);
@@ -329,6 +332,11 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await act(async () => { await privacy.props.onPress(); });
   await flush();
   assert.equal(banners().length, 0, 'withdrawal cannot leave the old creative mounted');
+  assert.equal(
+    tree.root.findAllByType('Pressable').some(node => node.props.accessibilityLabel === 'Ad privacy choices'),
+    false,
+    'privacy requirements must refresh after choices change',
+  );
   await act(async () => { tree.unmount(); });
 });
 

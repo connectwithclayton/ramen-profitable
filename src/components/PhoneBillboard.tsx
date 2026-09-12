@@ -11,7 +11,7 @@ const CREATIVE_EXPIRY_MS = 60 * 60_000;
 type CreativeState = 'idle' | 'pending' | 'loaded' | 'failed' | 'retrying';
 export type BillboardViewportFrame = { y: number; height: number };
 type BannerComponent = NonNullable<ReturnType<typeof adsModule>>['BannerAd'];
-type RequestBoundBannerProps = React.ComponentProps<BannerComponent> & {
+type RequestBoundBannerProps = Omit<React.ComponentProps<BannerComponent>, 'onPaid'> & {
   Banner: BannerComponent;
 };
 
@@ -21,7 +21,6 @@ function RequestBoundBanner({
   onAdFailedToLoad,
   onAdLoaded,
   onAdOpened,
-  onPaid,
   ...props
 }: RequestBoundBannerProps) {
   const requestActiveRef = useRef(true);
@@ -51,10 +50,6 @@ function RequestBoundBanner({
       onAdOpened={onAdOpened ? () => {
         if (!requestActiveRef.current) return;
         onAdOpened();
-      } : undefined}
-      onPaid={onPaid ? event => {
-        if (!requestActiveRef.current) return;
-        onPaid(event);
       } : undefined}
     />
   );
@@ -186,7 +181,7 @@ export default function PhoneBillboard({
         AppState.currentState === 'active' &&
         useGame.getState().overlay === null
       );
-      void prepareAds(isRenderable, retryRejectedConsent).then(async allowed => {
+      void prepareAds(isRenderable, retryRejectedConsent).then(allowed => {
         if (!cancelled) {
           setReady(allowed);
           if (allowed) {
@@ -199,8 +194,6 @@ export default function PhoneBillboard({
             setCreativeState('failed');
           }
         }
-        const required = await privacyOptionsRequired().catch(() => false);
-        if (!cancelled) setPrivacyRequired(required);
       });
     }
     void privacyOptionsRequired().then(required => {
