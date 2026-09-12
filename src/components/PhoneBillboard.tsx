@@ -61,11 +61,13 @@ export default function PhoneBillboard({
   active = true,
   indie,
   onViewportFrameChange,
+  viewportMeasurementCurrent,
   viewportVisible,
 }: {
   active?: boolean;
   indie: boolean;
   onViewportFrameChange: (frame: BillboardViewportFrame) => void;
+  viewportMeasurementCurrent: boolean;
   viewportVisible: boolean;
 }) {
   const eligible = useGame(mayRequestAds);
@@ -96,10 +98,11 @@ export default function PhoneBillboard({
   const billboardLayoutRef = useRef<{ y: number; height: number } | null>(null);
   const surfaceActive = active && foreground && !overlay && !destinationOpen && notificationsClear;
   const retainedVisibilityActive = surfaceActive && viewportVisible;
+  const requestVisibilityActive = retainedVisibilityActive && viewportMeasurementCurrent;
   const measurementActive = retainedVisibilityActive && !privacyBusy;
-  const requestable = measurementActive && layoutReady && eligible && width > 0;
+  const requestable = requestVisibilityActive && !privacyBusy && layoutReady && eligible && width > 0;
   const nativeRequestInFlight = ready && (creativeState === 'pending' || creativeState === 'retrying');
-  const wasRetainedVisibilityActiveRef = useRef(retainedVisibilityActive);
+  const wasRequestVisibilityActiveRef = useRef(requestVisibilityActive);
   const consentRetryAuthorizedRef = useRef(false);
   const expiredVisibilityReturnDue = (
     creativeState === 'loaded' &&
@@ -155,18 +158,16 @@ export default function PhoneBillboard({
     reportViewportFrame();
   }, [reportViewportFrame]);
 
-  // Measured billboard-to-ScrollView intersection joins presentation state into one visibility signal;
-  // route-by-route proxy enumeration was tried and kept missing cases.
   useLayoutEffect(() => {
-    if (retainedVisibilityActive === wasRetainedVisibilityActiveRef.current) return;
-    wasRetainedVisibilityActiveRef.current = retainedVisibilityActive;
-    if (retainedVisibilityActive && eligible && consentRetryAvailable()) {
+    if (requestVisibilityActive === wasRequestVisibilityActiveRef.current) return;
+    wasRequestVisibilityActiveRef.current = requestVisibilityActive;
+    if (requestVisibilityActive && eligible && consentRetryAvailable()) {
       consentRetryAuthorizedRef.current = true;
     }
     setLoadedVisibilityReturnAt(
-      retainedVisibilityActive && creativeStateRef.current === 'loaded' ? Date.now() : null,
+      requestVisibilityActive && creativeStateRef.current === 'loaded' ? Date.now() : null,
     );
-  }, [eligible, retainedVisibilityActive]);
+  }, [eligible, requestVisibilityActive]);
 
   useLayoutEffect(() => {
     if (!measurementActive) setLayoutReady(false);
@@ -181,6 +182,7 @@ export default function PhoneBillboard({
       const isRenderable = () => (
         !cancelled &&
         active &&
+        viewportMeasurementCurrent &&
         viewportVisible &&
         widthRef.current > 0 &&
         AppState.currentState === 'active' &&
@@ -207,7 +209,7 @@ export default function PhoneBillboard({
       });
     }
     return () => { cancelled = true; };
-  }, [active, creativeState, noFill, ready, requestable, revision, viewportVisible]);
+  }, [active, creativeState, noFill, ready, requestable, revision, viewportMeasurementCurrent, viewportVisible]);
 
   useEffect(() => {
     let cancelled = false;

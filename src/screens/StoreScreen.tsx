@@ -44,6 +44,19 @@ const AISLES: { title: string; ids: string[] }[] = [
 const AISLED = new Set(AISLES.flatMap(a => a.ids));
 const HIDDEN_UPGRADES: Record<string, boolean> = {};
 
+function scrollContinuesAfterDrag(event: NativeSyntheticEvent<NativeScrollEvent>): boolean {
+  const { contentOffset, targetContentOffset, velocity } = event.nativeEvent;
+  if (
+    targetContentOffset &&
+    Number.isFinite(targetContentOffset.y) &&
+    Number.isFinite(contentOffset.y)
+  ) {
+    return targetContentOffset.y !== contentOffset.y;
+  }
+  if (velocity && Number.isFinite(velocity.y)) return velocity.y !== 0;
+  return true;
+}
+
 export default function StoreScreen({
   active = true,
   viewportBottom,
@@ -63,6 +76,7 @@ export default function StoreScreen({
   })));
   const [restoring, setRestoring] = useState(false);
   const [billboardInViewport, setBillboardInViewport] = useState(false);
+  const [viewportMeasurementCurrent, setViewportMeasurementCurrent] = useState(true);
   const billboardInViewportRef = useRef(false);
   const billboardFrameRef = useRef<BillboardViewportFrame | null>(null);
   const viewportRef = useRef({ offsetY: 0, height: 0, insetTop: 0, insetBottom: 0 });
@@ -118,6 +132,25 @@ export default function StoreScreen({
     updateBillboardVisibility();
   }, [updateBillboardVisibility]);
 
+  // Accepted limitation: UIKit can move an already-loaded banner beneath the dock fade before
+  // coalesced React Native events reach JavaScript. Keeping that banner mounted avoids scroll
+  // flicker, but JavaScript cannot close the native movement gap; a durable fix requires
+  // native-side occlusion enforcement.
+  const onScreenScrollBegin = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setViewportMeasurementCurrent(false);
+    onScreenScroll(event);
+  }, [onScreenScroll]);
+
+  const onScreenScrollEndDrag = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    onScreenScroll(event);
+    if (!scrollContinuesAfterDrag(event)) setViewportMeasurementCurrent(true);
+  }, [onScreenScroll]);
+
+  const onScreenMomentumScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    onScreenScroll(event);
+    setViewportMeasurementCurrent(true);
+  }, [onScreenScroll]);
+
   const onBillboardFrameChange = useCallback((frame: BillboardViewportFrame) => {
     billboardFrameRef.current = frame;
     updateBillboardVisibility();
@@ -141,6 +174,10 @@ export default function StoreScreen({
     <Screen
       onLayout={catvertising ? onScreenLayout : undefined}
       onScroll={catvertising ? onScreenScroll : undefined}
+      onScrollBeginDrag={catvertising ? onScreenScrollBegin : undefined}
+      onScrollEndDrag={catvertising ? onScreenScrollEndDrag : undefined}
+      onMomentumScrollBegin={catvertising ? onScreenScrollBegin : undefined}
+      onMomentumScrollEnd={catvertising ? onScreenMomentumScrollEnd : undefined}
     >
       <ScreenTop
         day={s.day}
@@ -214,6 +251,7 @@ export default function StoreScreen({
           active={active}
           indie={indie}
           onViewportFrameChange={onBillboardFrameChange}
+          viewportMeasurementCurrent={viewportMeasurementCurrent}
           viewportVisible={billboardInViewport}
         />
       )}

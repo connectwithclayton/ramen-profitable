@@ -1859,6 +1859,107 @@ test('fully visible scroll returns replace one expired creative without timers',
   assert.deepEqual(intervalDelays, [], 'visibility recovery must not schedule loops');
 });
 
+test('scrolling blocks new banner requests until a settled viewport measurement', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const storeScroll = () => tree.root.findAllByType('ScrollView')
+    .find(node => typeof node.props.onLayout === 'function' && typeof node.props.onScroll === 'function');
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => (
+      node.props.testID !== 'catvertising-billboard-frame' &&
+      node.props.collapsable === false &&
+      node.props.onLayout
+    ));
+  const scrollEvent = (y, { targetY, velocityY } = {}) => ({
+    nativeEvent: {
+      contentInset: { top: 0, right: 0, bottom: 0, left: 0 },
+      contentOffset: { x: 0, y },
+      contentSize: { width: 390, height: 1400 },
+      layoutMeasurement: { width: 390, height: 600 },
+      ...(targetY === undefined ? {} : { targetContentOffset: { x: 0, y: targetY } }),
+      ...(velocityY === undefined ? {} : { velocity: { x: 0, y: velocityY } }),
+    },
+  });
+  const sendScroll = async (handlerName, y, options) => {
+    const handler = storeScroll()?.props[handlerName];
+    assert.equal(typeof handler, 'function', `Store must expose ${handlerName}`);
+    await act(async () => { handler(scrollEvent(y, options)); });
+    await flush();
+  };
+  const assertLoadedBannerPresented = expected => {
+    assert.strictEqual(banners()[0], expected, 'scroll freshness must retain the loaded native banner');
+    const layers = tree.root.findAllByType('View')
+      .filter(node => node.props.accessibilityElementsHidden !== undefined);
+    assert.equal(layers.length, 2, 'the billboard and native banner wrappers must remain mounted');
+    for (const layer of layers) {
+      const styles = (Array.isArray(layer.props.style) ? layer.props.style.flat(Infinity) : [layer.props.style])
+        .filter(Boolean);
+      assert.equal(layer.props.accessibilityElementsHidden, false);
+      assert.equal(layer.props.pointerEvents, 'auto');
+      assert.equal(styles.some(style => style.display === 'none' || style.opacity === 0), false);
+    }
+  };
+
+  await setStoreBillboardViewport(tree, {
+    scrollY: 0,
+    viewportHeight: 600,
+    sectionY: 600,
+    phoneY: 80,
+    billboardY: 20,
+    billboardHeight: 50,
+  });
+  assert.equal(probes().length, 0);
+
+  await sendScroll('onScrollBeginDrag', 0);
+  await sendScroll('onScroll', 150);
+  assert.equal(probes().length, 1, 'scrolling into view may measure without authorizing a request');
+  await setBillboardProbeWidth(tree, 320);
+  await act(async () => {
+    consentInfoUpdate.resolve();
+    consentForm.resolve();
+    await Promise.all([consentInfoUpdate.promise, consentForm.promise]);
+  });
+  assert.equal(consentInfoUpdateCalls, 0, 'dragging must not begin consent or an ad request');
+  assert.equal(requests.length, 0);
+
+  await sendScroll('onScrollEndDrag', 150, { targetY: 180, velocityY: 1 });
+  await sendScroll('onMomentumScrollBegin', 150, { targetY: 180, velocityY: 1 });
+  await sendScroll('onScroll', 160);
+  assert.equal(requests.length, 0, 'momentum must keep the request gate closed');
+
+  await sendScroll('onMomentumScrollEnd', 160, { targetY: 160, velocityY: 0 });
+  await flush();
+  assert.equal(consentInfoUpdateCalls, 1, 'the settled measurement may start consent exactly once');
+  assert.equal(consentFormCalls, 1);
+  assert.equal(requests.length, 1, 'the settled visible measurement may issue one request');
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+
+  now += 60 * 60_000;
+  await sendScroll('onScrollBeginDrag', 160);
+  await sendScroll('onScroll', 170);
+  assert.equal(requests.length, 1, 'an expired replacement must wait while dragging');
+  assertLoadedBannerPresented(loadedBanner);
+
+  await sendScroll('onScrollEndDrag', 170, { targetY: 170, velocityY: 0 });
+  await flush();
+  assert.equal(requests.length, 2, 'a no-momentum settled measurement may replace the expired banner');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+});
+
 test('visibility returns replace creatives one hour after the latest native load', async t => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });

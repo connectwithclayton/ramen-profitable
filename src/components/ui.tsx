@@ -120,17 +120,39 @@ export const money = (n: number) => `$${Math.floor(n).toLocaleString()}`;
  *               deliberately has no Hero container.
  * ------------------------------------------------------------------ */
 
-type ScreenProps = Pick<ScrollViewProps, 'onLayout' | 'onScroll' | 'scrollEventThrottle'> & {
+type ScreenProps = Pick<
+  ScrollViewProps,
+  | 'onLayout'
+  | 'onScroll'
+  | 'scrollEventThrottle'
+  | 'onScrollBeginDrag'
+  | 'onScrollEndDrag'
+  | 'onMomentumScrollBegin'
+  | 'onMomentumScrollEnd'
+> & {
   children: React.ReactNode;
 };
 
-export function Screen({ children, onLayout, onScroll, scrollEventThrottle }: ScreenProps) {
+export function Screen({
+  children,
+  onLayout,
+  onScroll,
+  scrollEventThrottle,
+  onScrollBeginDrag,
+  onScrollEndDrag,
+  onMomentumScrollBegin,
+  onMomentumScrollEnd,
+}: ScreenProps) {
   return (
     <ScrollView
       contentContainerStyle={st.screen}
       showsVerticalScrollIndicator={false}
       onLayout={onLayout}
       onScroll={onScroll}
+      onScrollBeginDrag={onScrollBeginDrag}
+      onScrollEndDrag={onScrollEndDrag}
+      onMomentumScrollBegin={onMomentumScrollBegin}
+      onMomentumScrollEnd={onMomentumScrollEnd}
       scrollEventThrottle={scrollEventThrottle ?? (onScroll ? 16 : undefined)}
     >
       {children}
