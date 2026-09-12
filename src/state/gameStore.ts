@@ -17,9 +17,8 @@ import {
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
 import {
-  advanceHomeStoryClock,
-  canDeliverAmbientStory,
   calculatePaywallTransaction,
+  homeReactionSecondsAfterExposure,
   isEligibleHomeReaction,
   milestonesForProject,
   paywallReaction,
@@ -92,9 +91,6 @@ export type GameState = {
   achievements: Record<string, boolean>;
   storyMilestones: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
-  storyActiveSeconds: number;
-  lastAmbientStoryAt: number;
-  preShipAmbientCount: number;
   homeReactionId?: string;
   homeReactionSecondsLeft: number;
 };
@@ -111,6 +107,7 @@ type Actions = {
   quitJob: () => void;
   fastTick: () => void;
   slowTick: () => void;
+  recordHomeExposure: (elapsedSeconds: number, homeStillVisible: boolean) => void;
   maybeEvent: () => void;
   pushNotif: (text: string, icon?: IconName, emoji?: string) => void;
   expireNotif: (id: string) => void;
@@ -171,9 +168,6 @@ const initial: GameState = {
   achievements: {},
   storyMilestones: {},
   lastSeen: Date.now(),
-  storyActiveSeconds: 0,
-  lastAmbientStoryAt: -20,
-  preShipAmbientCount: 0,
   homeReactionId: undefined,
   homeReactionSecondsLeft: 0,
 };
@@ -374,16 +368,9 @@ export const useGame = create<GameState & Actions>()(
 
       slowTick: () => {
         const s = get();
-        const storyClock = advanceHomeStoryClock({
-          homeCovered: s.overlay !== null,
-          storyActiveSeconds: s.storyActiveSeconds,
-          homeReactionSecondsLeft: s.homeReactionSecondsLeft,
-          elapsedSeconds: 5,
-        });
         const next: Partial<GameState> = {
           cash: s.cash + s.mrr / 120,
           dayTick: s.dayTick + 1,
-          ...storyClock,
         };
         if (s.dayTick + 1 >= 6) {
           next.dayTick = 0;
@@ -396,31 +383,33 @@ export const useGame = create<GameState & Actions>()(
         set(next);
         if (s.mrr >= 100) s.unlock('mrr_100');
         if (s.mrr >= 1000) s.unlock('mrr_1000');
+      },
+
+      recordHomeExposure: (elapsedSeconds, homeStillVisible) => {
+        if (elapsedSeconds <= 0) return;
+        const s = get();
+        if (s.homeReactionSecondsLeft > 0) {
+          set({
+            homeReactionSecondsLeft: homeReactionSecondsAfterExposure(
+              s.homeReactionSecondsLeft,
+              elapsedSeconds,
+            ),
+          });
+        }
 
         const current = get();
-        const beforeFirstShip = !current.apps.some(app => app.live);
-        const canDeliverAmbient = canDeliverAmbientStory({
-          homeCovered: current.overlay !== null,
-          activeSeconds: current.storyActiveSeconds,
-          lastDeliveredAt: current.lastAmbientStoryAt,
-          beforeFirstShip,
-          preShipCount: current.preShipAmbientCount,
-        });
-        if (canDeliverAmbient) {
-          const claude = SHOP.find(item => item.id === 'claude');
-          const affordableKey = 'upgrade:claude-affordable';
-          if (claude && current.cash >= claude.cost && !current.upgrades.claude && !current.storyMilestones[affordableKey]) {
-            set({
-              storyMilestones: { ...current.storyMilestones, [affordableKey]: true },
-              lastAmbientStoryAt: current.storyActiveSeconds,
-              preShipAmbientCount: current.preShipAmbientCount + (beforeFirstShip ? 1 : 0),
-            });
-            get().pushChirp(`${claude.name} is within budget — ${claude.desc.toLowerCase()}.`, {
-              author: BETA_TESTER,
-              kind: 'ambient',
-              event: 'UPGRADE WITHIN BUDGET',
-            });
-          }
+        if (!homeStillVisible || current.overlay !== null) return;
+        const claude = SHOP.find(item => item.id === 'claude');
+        const affordableKey = 'upgrade:claude-affordable';
+        // The 20-second ambient gap and three-line pre-ship cap hold by construction while this is the only
+        // ambient callback and its persisted milestone makes it one-shot. Reinstate enforcement before adding another.
+        if (claude && current.cash >= claude.cost && !current.upgrades.claude && !current.storyMilestones[affordableKey]) {
+          set({ storyMilestones: { ...current.storyMilestones, [affordableKey]: true } });
+          get().pushChirp(`${claude.name} is within budget — ${claude.desc.toLowerCase()}.`, {
+            author: BETA_TESTER,
+            kind: 'ambient',
+            event: 'UPGRADE WITHIN BUDGET',
+          });
         }
       },
 

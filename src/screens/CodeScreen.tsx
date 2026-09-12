@@ -101,7 +101,7 @@ function Ring({
   );
 }
 
-export default function CodeScreen({ onOpenStore }: { onOpenStore: () => void }) {
+export default function CodeScreen() {
   const s = useGame();
   const [floats, setFloats] = useState<number[]>([]);
   const nextId = useRef(0);
@@ -182,14 +182,12 @@ export default function CodeScreen({ onOpenStore }: { onOpenStore: () => void })
           </MonoText>
 
           {progressStatus.manualTapLabel && (
-            <Pressable
-              accessibilityRole="button"
+            <MonoText
               accessibilityLabel={progressStatus.manualTapAccessibilityLabel}
-              onPress={onOpenStore}
-              style={({ pressed }) => [st.waitAction, pressed && { opacity: 0.6 }]}
+              style={st.waitText}
             >
-              <MonoText style={st.waitText}>{progressStatus.manualTapLabel}</MonoText>
-            </Pressable>
+              {progressStatus.manualTapLabel}
+            </MonoText>
           )}
 
           {done && (
@@ -275,8 +273,7 @@ const st = StyleSheet.create({
   floatText: { color: C.mint, fontSize: 13, fontWeight: '700' },
 
   prompt: { color: C.mut, fontSize: 10, letterSpacing: 2, textAlign: 'center' },
-  waitAction: { alignSelf: 'center', marginTop: 11, paddingVertical: 5, paddingHorizontal: 8 },
-  waitText: { color: C.gold, fontSize: 10, letterSpacing: 0.8 },
+  waitText: { alignSelf: 'center', color: C.gold, fontSize: 10, letterSpacing: 0.8, marginTop: 11 },
   meta: {
     flexDirection: 'row',
     justifyContent: 'space-between',

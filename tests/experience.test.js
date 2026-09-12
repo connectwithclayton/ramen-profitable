@@ -75,8 +75,8 @@ test('energy countdown follows the live regeneration rate', async () => {
 
   const automated = codeProgressStatus({ done: false, energy: 0.4, energyRegen: 0.06, autoCode: 6 });
   assert.equal(automated.prompt, 'OUT OF ENERGY · AUTOMATION IS STILL WRITING');
-  assert.equal(automated.manualTapLabel, 'MANUAL TAP IN 5S · OPEN STORE →');
-  assert.equal(automated.manualTapAccessibilityLabel, 'Enough energy for another manual tap in 5 seconds. Open Store.');
+  assert.equal(automated.manualTapLabel, 'MANUAL TAP IN 5S');
+  assert.equal(automated.manualTapAccessibilityLabel, 'Enough energy for another manual tap in 5 seconds.');
 
   const completed = codeProgressStatus({ done: true, energy: 0.4, energyRegen: 0.06, autoCode: 6 });
   assert.deepEqual(completed, { drained: true, prompt: 'SHIP IT AND FIND OUT' });
@@ -124,59 +124,29 @@ test('Home project copy and automation telemetry follow the latest real state', 
   assert.equal(homeProjectActionLabel(true), 'Open Code to submit');
 });
 
-test('ambient delivery respects its active-time gap and pre-ship cap', async () => {
-  const { advanceHomeStoryClock, canDeliverAmbientStory } = await loadExperience();
+test('Home reaction expiry uses measured visible foreground time', async () => {
+  const { homeReactionSecondsAfterExposure, sampleHomeExposure } = await loadExperience();
+  let visibleSince;
+  let visibleSeconds = 0;
 
-  let coveredClock = { storyActiveSeconds: 20, homeReactionSecondsLeft: 20 };
-  for (let tick = 0; tick < 4; tick++) {
-    coveredClock = advanceHomeStoryClock({
-      homeCovered: true,
-      ...coveredClock,
-      elapsedSeconds: 5,
-    });
-  }
-  assert.deepEqual(coveredClock, { storyActiveSeconds: 20, homeReactionSecondsLeft: 20 });
-  assert.deepEqual(advanceHomeStoryClock({
-    homeCovered: false,
-    ...coveredClock,
-    elapsedSeconds: 5,
-  }), { storyActiveSeconds: 25, homeReactionSecondsLeft: 15 });
+  const sample = (now, remainsVisible) => {
+    const exposure = sampleHomeExposure(visibleSince, now, remainsVisible);
+    visibleSince = exposure.nextStartedAt;
+    visibleSeconds += exposure.elapsedSeconds;
+  };
 
-  assert.equal(canDeliverAmbientStory({
-    homeCovered: true,
-    activeSeconds: 20,
-    lastDeliveredAt: 0,
-    beforeFirstShip: false,
-    preShipCount: 0,
-  }), false);
-  assert.equal(canDeliverAmbientStory({
-    homeCovered: false,
-    activeSeconds: 19,
-    lastDeliveredAt: 0,
-    beforeFirstShip: false,
-    preShipCount: 0,
-  }), false);
-  assert.equal(canDeliverAmbientStory({
-    homeCovered: false,
-    activeSeconds: 20,
-    lastDeliveredAt: 0,
-    beforeFirstShip: false,
-    preShipCount: 0,
-  }), true);
-  assert.equal(canDeliverAmbientStory({
-    homeCovered: false,
-    activeSeconds: 20,
-    lastDeliveredAt: 0,
-    beforeFirstShip: true,
-    preShipCount: 3,
-  }), false);
-  assert.equal(canDeliverAmbientStory({
-    homeCovered: false,
-    activeSeconds: 20,
-    lastDeliveredAt: 0,
-    beforeFirstShip: false,
-    preShipCount: 3,
-  }), true);
+  sample(0, true);
+  sample(7000, false);
+  sample(67000, false);
+  sample(67000, true);
+  sample(80000, false);
+
+  assert.equal(visibleSeconds, 20);
+  assert.equal(homeReactionSecondsAfterExposure(20, visibleSeconds), 0);
+  assert.deepEqual(sampleHomeExposure(1000, 2375, true), {
+    elapsedSeconds: 1.375,
+    nextStartedAt: 2375,
+  });
 });
 
 test('semantic no-op patches are rejected before event output', async () => {

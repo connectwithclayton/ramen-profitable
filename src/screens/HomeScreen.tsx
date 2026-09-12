@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { AppState, Platform, View, Text, Pressable, StyleSheet } from 'react-native';
 import { useGame, MRR_GOAL } from '../state/gameStore';
 import { ACHIEVEMENTS, BETA_TESTER } from '../content/content';
 import {
@@ -28,8 +28,60 @@ import {
   homeEmptyProjectCopy,
   homeProjectActionLabel,
   homeReactionAccessibilityLabel,
+  sampleHomeExposure,
   selectHomeReaction,
 } from '../state/experience';
+
+function useHomeExposureReporter(
+  covered: boolean,
+  record: (elapsedSeconds: number, homeStillVisible: boolean) => void,
+) {
+  React.useEffect(() => {
+    if (covered) return;
+
+    let appState = AppState.currentState;
+    let focused = true;
+    let visibleSince = appState === 'active' ? performance.now() : undefined;
+
+    const report = (homeStillVisible: boolean) => {
+      const sample = sampleHomeExposure(visibleSince, performance.now(), homeStillVisible);
+      visibleSince = sample.nextStartedAt;
+      if (sample.elapsedSeconds > 0) {
+        record(sample.elapsedSeconds, homeStillVisible);
+      }
+    };
+
+    const interval = setInterval(() => {
+      if (appState === 'active' && focused) report(true);
+    }, 1000);
+    const appStateSubscription = AppState.addEventListener('change', nextState => {
+      if (appState === 'active' && focused) report(false);
+      appState = nextState;
+      if (appState === 'active' && focused) visibleSince = performance.now();
+    });
+    const blurSubscription = Platform.OS === 'android'
+      ? AppState.addEventListener('blur', () => {
+          if (appState === 'active' && focused) report(false);
+          focused = false;
+        })
+      : undefined;
+    const focusSubscription = Platform.OS === 'android'
+      ? AppState.addEventListener('focus', () => {
+          if (focused) return;
+          focused = true;
+          if (appState === 'active') visibleSince = performance.now();
+        })
+      : undefined;
+
+    return () => {
+      if (appState === 'active' && focused) report(false);
+      clearInterval(interval);
+      appStateSubscription.remove();
+      blurSubscription?.remove();
+      focusSubscription?.remove();
+    };
+  }, [covered, record]);
+}
 
 /** One shipped app: monogram, what it is, what it earns, what you can do to it. */
 function AppRow({
@@ -106,6 +158,7 @@ function AppRow({
 
 export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: () => void; onOpenChirp: () => void }) {
   const s = useGame();
+  useHomeExposureReporter(s.overlay !== null, s.recordHomeExposure);
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
   const live = s.apps.filter(a => a.live).length;
   const unlocked = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;

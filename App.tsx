@@ -60,7 +60,7 @@ export default function App() {
 
       <View style={{ flex: 1 }}>
         {tab === 'home' && <HomeScreen onOpenCode={() => setTab('code')} onOpenChirp={() => setTab('chirp')} />}
-        {tab === 'code' && <CodeScreen onOpenStore={() => setTab('store')} />}
+        {tab === 'code' && <CodeScreen />}
         {tab === 'store' && <StoreScreen />}
         {tab === 'chirp' && <ChirpScreen />}
       </View>

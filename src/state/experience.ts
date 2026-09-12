@@ -63,8 +63,8 @@ export function codeProgressStatus({
   return {
     drained,
     prompt: autoCode > 0 ? 'OUT OF ENERGY · AUTOMATION IS STILL WRITING' : 'OUT OF ENERGY · REGENERATING',
-    manualTapLabel: `MANUAL TAP IN ${seconds}S · OPEN STORE →`,
-    manualTapAccessibilityLabel: `Enough energy for another manual tap in ${duration}. Open Store.`,
+    manualTapLabel: `MANUAL TAP IN ${seconds}S`,
+    manualTapAccessibilityLabel: `Enough energy for another manual tap in ${duration}.`,
   };
 }
 
@@ -89,38 +89,19 @@ export function homeProjectActionLabel(done: boolean) {
   return done ? 'Open Code to submit' : 'Continue coding';
 }
 
-export function advanceHomeStoryClock({
-  homeCovered,
-  storyActiveSeconds,
-  homeReactionSecondsLeft,
-  elapsedSeconds,
-}: {
-  homeCovered: boolean;
-  storyActiveSeconds: number;
-  homeReactionSecondsLeft: number;
-  elapsedSeconds: number;
-}) {
-  if (homeCovered) return { storyActiveSeconds, homeReactionSecondsLeft };
+export function sampleHomeExposure(
+  startedAt: number | undefined,
+  now: number,
+  remainsVisible: boolean,
+) {
   return {
-    storyActiveSeconds: storyActiveSeconds + elapsedSeconds,
-    homeReactionSecondsLeft: Math.max(0, homeReactionSecondsLeft - elapsedSeconds),
+    elapsedSeconds: startedAt === undefined ? 0 : Math.max(0, now - startedAt) / 1000,
+    nextStartedAt: remainsVisible ? now : undefined,
   };
 }
 
-export function canDeliverAmbientStory({
-  homeCovered,
-  activeSeconds,
-  lastDeliveredAt,
-  beforeFirstShip,
-  preShipCount,
-}: {
-  homeCovered: boolean;
-  activeSeconds: number;
-  lastDeliveredAt: number;
-  beforeFirstShip: boolean;
-  preShipCount: number;
-}) {
-  return !homeCovered && activeSeconds - lastDeliveredAt >= 20 && (!beforeFirstShip || preShipCount < 3);
+export function homeReactionSecondsAfterExposure(secondsLeft: number, elapsedSeconds: number) {
+  return Math.max(0, secondsLeft - elapsedSeconds);
 }
 
 type HomeReaction = { id: string; who: string; handle: string; kind?: string };
