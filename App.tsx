@@ -59,8 +59,8 @@ export default function App() {
       <StatusBar style="light" />
 
       <View style={{ flex: 1 }}>
-        {tab === 'home' && <HomeScreen />}
-        {tab === 'code' && <CodeScreen />}
+        {tab === 'home' && <HomeScreen onOpenCode={() => setTab('code')} onOpenChirp={() => setTab('chirp')} />}
+        {tab === 'code' && <CodeScreen onOpenStore={() => setTab('store')} />}
         {tab === 'store' && <StoreScreen />}
         {tab === 'chirp' && <ChirpScreen />}
       </View>

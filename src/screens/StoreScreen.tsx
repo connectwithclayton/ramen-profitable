@@ -145,13 +145,6 @@ export default function StoreScreen() {
         </Unit>
       </Section>
 
-      <Section>
-        <SectionHeader title="Coming next" meta="v0.1" />
-        <Text style={st.roadmap}>
-          In v1.0: paywall designer minigame · A/B tests · real ads on in-game billboards · hiring · acquisition offers
-          you'll regret refusing
-        </Text>
-      </Section>
     </Screen>
   );
 }
@@ -169,5 +162,4 @@ const st = StyleSheet.create({
   lockedShort: { color: C.pink, fontSize: 10, letterSpacing: 0.8, marginTop: 3 },
   indie: { marginTop: 12 },
   indieCopy: { color: C.mut, fontSize: 13, lineHeight: 19 },
-  roadmap: { color: C.dim, fontSize: 12, lineHeight: 19, marginTop: 10 },
 });

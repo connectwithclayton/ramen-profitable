@@ -15,6 +15,7 @@ import {
 } from '../components/ui';
 import { C } from '../theme';
 import { EnergyIcon, IdeaIcon, LaunchIcon } from '../components/icons';
+import { secondsUntilNextLine } from '../state/experience';
 
 const RING = 248;
 const R_BUILD = 110;
@@ -100,7 +101,7 @@ function Ring({
   );
 }
 
-export default function CodeScreen() {
+export default function CodeScreen({ onOpenStore }: { onOpenStore: () => void }) {
   const s = useGame();
   const [floats, setFloats] = useState<number[]>([]);
   const nextId = useRef(0);
@@ -121,6 +122,7 @@ export default function CodeScreen() {
   const built = p ? Math.round((p.loc / p.need) * 100) : 0;
   const locText = p ? fmtN(p.loc) : '0';
   const locSize = locText.length > 7 ? 30 : locText.length > 5 ? 40 : 54;
+  const nextLineSeconds = secondsUntilNextLine(s.energy, s.energyRegen);
 
   const writeLabel = p
     ? `Write code. Plus ${s.tapPower} ${s.tapPower === 1 ? 'line' : 'lines'} of code, costs 1 energy. ` +
@@ -171,8 +173,23 @@ export default function CodeScreen() {
           </View>
 
           <MonoText style={[st.prompt, drained && !done && { color: C.pink }]}>
-            {done ? 'SHIP IT AND FIND OUT' : drained ? 'OUT OF ENERGY · REGENERATING' : 'TAP THE RING TO WRITE CODE'}
+            {done
+              ? 'SHIP IT AND FIND OUT'
+              : drained
+                ? s.autoCode > 0 ? 'OUT OF ENERGY · AUTOMATION IS STILL WRITING' : 'OUT OF ENERGY · REGENERATING'
+                : 'TAP THE RING TO WRITE CODE'}
           </MonoText>
+
+          {drained && !done && s.autoCode <= 0 && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={'Next line in ' + nextLineSeconds + ' seconds. Open Store.'}
+              onPress={onOpenStore}
+              style={({ pressed }) => [st.waitAction, pressed && { opacity: 0.6 }]}
+            >
+              <MonoText style={st.waitText}>NEXT LINE IN {nextLineSeconds}S · OPEN STORE →</MonoText>
+            </Pressable>
+          )}
 
           {done && (
             <Btn
@@ -257,6 +274,8 @@ const st = StyleSheet.create({
   floatText: { color: C.mint, fontSize: 13, fontWeight: '700' },
 
   prompt: { color: C.mut, fontSize: 10, letterSpacing: 2, textAlign: 'center' },
+  waitAction: { alignSelf: 'center', marginTop: 11, paddingVertical: 5, paddingHorizontal: 8 },
+  waitText: { color: C.gold, fontSize: 10, letterSpacing: 0.8 },
   meta: {
     flexDirection: 'row',
     justifyContent: 'space-between',

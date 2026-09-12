@@ -4,8 +4,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { APP_IDEAS, REJECTIONS, EVENTS, DARK_EVENTS, SHOP, CHIRPERS, MRR_GOAL, PAYWALL_AXES, ACHIEVEMENTS } from '../content/content';
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
+import {
+  BETA_TESTER,
+  PLAYER,
+  calculatePaywallTransaction,
+  financialDeltas,
+  milestonesForProject,
+  paywallReaction,
+  projectMilestoneId,
+} from './experience';
+import type { StoryDelta } from './experience';
 
-export type Project = { name: string; idea: string; loc: number; need: number };
+export type Project = { id: string; name: string; idea: string; loc: number; need: number; manualTaps: number };
 export type ShippedApp = {
   id: string;
   name: string;
@@ -16,7 +26,25 @@ export type ShippedApp = {
   dark: number; // dark-pattern heat
   hasPaywall: boolean;
 };
-export type Chirp = { id: string; who: string; handle: string; text: string; likes: number; liked?: boolean };
+export type StoryKind = 'ambient' | 'milestone' | 'purchase' | 'verdict' | 'paywall' | 'event';
+export type Chirp = {
+  id: string;
+  who: string;
+  handle: string;
+  text: string;
+  likes: number;
+  liked?: boolean;
+  kind?: StoryKind;
+  subjectId?: string;
+  subject?: string;
+  event?: string;
+  deltas?: StoryDelta[];
+  heat?: number;
+};
+type ChirpOptions = Omit<Partial<Chirp>, 'id' | 'who' | 'handle' | 'text' | 'likes' | 'liked'> & {
+  author?: readonly [string, string];
+};
+type StoryBeat = { text: string; options: ChirpOptions; priority: number; projectId?: string };
 export type Notif = { id: string; text: string; icon?: IconName; emoji?: string };
 export type Overlay =
   | { type: 'review'; appName: string }
@@ -52,7 +80,15 @@ export type GameState = {
   goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
+  storyMilestones: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
+  // Session-only delivery state. Persisted receipts live in chirps; timers and queues do not.
+  pendingStoryBeats: StoryBeat[];
+  storyActiveSeconds: number;
+  lastAmbientStoryAt: number;
+  preShipAmbientCount: number;
+  homeReactionId?: string;
+  homeReactionSecondsLeft: number;
 };
 
 type Actions = {
@@ -70,7 +106,7 @@ type Actions = {
   maybeEvent: () => void;
   pushNotif: (text: string, icon?: IconName, emoji?: string) => void;
   expireNotif: (id: string) => void;
-  pushChirp: (text: string) => void;
+  pushChirp: (text: string, options?: ChirpOptions) => void;
   markChirpsRead: () => void;
   toggleChirpLike: (id: string) => void;
   openPaywallDesigner: (appId: string) => void;
@@ -87,6 +123,7 @@ const persistedStateKeys = [
   'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
   'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
   'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
+  'storyMilestones',
 ] as const satisfies readonly (keyof GameState)[];
 
 function selectPersistedState(value: unknown): Partial<GameState> {
@@ -124,7 +161,14 @@ const initial: GameState = {
   goIndieResolved: false,
   won: false,
   achievements: {},
+  storyMilestones: {},
   lastSeen: Date.now(),
+  pendingStoryBeats: [],
+  storyActiveSeconds: 0,
+  lastAmbientStoryAt: -20,
+  preShipAmbientCount: 0,
+  homeReactionId: undefined,
+  homeReactionSecondsLeft: 0,
 };
 
 export const useGame = create<GameState & Actions>()(
@@ -138,10 +182,23 @@ export const useGame = create<GameState & Actions>()(
       },
       expireNotif: id => set(s => ({ notifs: s.notifs.filter(n => n.id !== id) })),
 
-      pushChirp: text => {
-        const [who, handle] = pick(CHIRPERS);
-        const c: Chirp = { id: uid(), who, handle, text, likes: Math.floor(Math.random() * 900) + 12 };
-        set(s => ({ chirps: [c, ...s.chirps].slice(0, 30), unreadChirps: true }));
+      pushChirp: (text, options) => {
+        const [who, handle] = options?.author ?? pick(CHIRPERS);
+        const { author: _author, ...metadata } = options ?? {};
+        const c: Chirp = {
+          id: uid(),
+          who,
+          handle,
+          text,
+          likes: Math.floor(Math.random() * 900) + 12,
+          ...metadata,
+        };
+        const pinsHome = c.kind === 'verdict' || c.kind === 'paywall' || c.kind === 'purchase';
+        set(s => ({
+          chirps: [c, ...s.chirps].slice(0, 30),
+          unreadChirps: true,
+          ...(pinsHome ? { homeReactionId: c.id, homeReactionSecondsLeft: 20 } : {}),
+        }));
       },
       markChirpsRead: () => set({ unreadChirps: false }),
       toggleChirpLike: id =>
@@ -158,8 +215,29 @@ export const useGame = create<GameState & Actions>()(
           ...(s.project ? [s.project.name] : []),
         ]);
         const [name, idea] = pickAppIdea(APP_IDEAS, usedNames);
-        set({ project: { name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250) } });
-        get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`);
+        const project: Project = { id: uid(), name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250), manualTaps: 0 };
+        const startedReply = projectMilestoneId(project.id, 'started-reply');
+        const milestones = { ...milestonesForProject(s.storyMilestones, project.id), [startedReply]: true };
+        const beat: StoryBeat = {
+          text: `does ${name} have dark mode? haven't opened it yet.`,
+          options: { author: BETA_TESTER, kind: 'milestone', subjectId: project.id, subject: name, event: 'FIRST BETA REPLY' },
+          priority: 1,
+          projectId: project.id,
+        };
+        set({
+          project,
+          storyMilestones: milestones,
+          pendingStoryBeats: [...s.pendingStoryBeats.filter(item => item.projectId === project.id), beat]
+            .sort((a, b) => b.priority - a.priority)
+            .slice(0, 4),
+        });
+        get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
+          author: PLAYER,
+          kind: 'milestone',
+          subjectId: project.id,
+          subject: name,
+          event: 'PROJECT STARTED',
+        });
       },
 
       tapCode: () => {
@@ -167,12 +245,39 @@ export const useGame = create<GameState & Actions>()(
         if (!s.project || s.project.loc >= s.project.need) return false;
         if (s.energy < 1) {
           s.pushNotif('Out of energy. Coffee exists for a reason.', 'energy');
+          if (s.autoCode <= 0) {
+            const key = projectMilestoneId(s.project.id, 'energy-depleted');
+            if (!s.storyMilestones[key]) {
+              set({ storyMilestones: { ...s.storyMilestones, [key]: true } });
+              get().pushChirp('Have you tried delegating? My cat is between roles.', {
+                author: BETA_TESTER,
+                kind: 'milestone',
+                subjectId: s.project.id,
+                subject: s.project.name,
+                event: 'ENERGY DEPLETED',
+              });
+            }
+          }
           return false;
         }
+        const nextLoc = s.project.loc + s.tapPower;
+        const manualTaps = (s.project.manualTaps ?? 0) + 1;
+        const tenTapKey = projectMilestoneId(s.project.id, 'ten-taps');
+        const hitTenTaps = manualTaps >= 10 && !s.storyMilestones[tenTapKey];
         set({
           energy: s.energy - 1,
-          project: { ...s.project, loc: s.project.loc + s.tapPower },
+          project: { ...s.project, loc: nextLoc, manualTaps },
+          ...(hitTenTaps ? { storyMilestones: { ...s.storyMilestones, [tenTapKey]: true } } : {}),
         });
+        if (hitTenTaps) {
+          get().pushChirp(`${Math.floor(nextLoc)} lines in and the launch thread is already longer than the app.`, {
+            author: BETA_TESTER,
+            kind: 'milestone',
+            subjectId: s.project.id,
+            subject: s.project.name,
+            event: 'TEN TAPS',
+          });
+        }
         return true;
       },
 
@@ -193,8 +298,15 @@ export const useGame = create<GameState & Actions>()(
             apps: [...s.apps, { id: uid(), name: p.name, idea: p.idea, live: false, baseMrr: 0, mult: 1, dark: 0, hasPaywall: false }],
             project: null,
             overlay: { type: 'verdict', ok: false, appName: p.name, rule, flavor },
+            pendingStoryBeats: s.pendingStoryBeats.filter(beat => beat.projectId !== p.id),
           });
-          s.pushChirp(`App Review rejected ${p.name}. ${rule}. i'm fine. this is fine.`);
+          s.pushChirp(`App Review rejected ${p.name}. ${rule}. i'm fine. this is fine.`, {
+            author: PLAYER,
+            kind: 'verdict',
+            subjectId: p.id,
+            subject: p.name,
+            event: 'APP REVIEW · REJECTED',
+          });
           s.unlock('first_reject');
         } else {
           const base = 40 + Math.floor(Math.random() * 160);
@@ -204,8 +316,16 @@ export const useGame = create<GameState & Actions>()(
             mrr: s.mrr + gain,
             project: null,
             overlay: { type: 'verdict', ok: true, appName: p.name, gain },
+            pendingStoryBeats: s.pendingStoryBeats.filter(beat => beat.projectId !== p.id),
           });
-          s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`);
+          s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`, {
+            author: PLAYER,
+            kind: 'verdict',
+            subjectId: p.id,
+            subject: p.name,
+            event: 'APP REVIEW · APPROVED',
+            deltas: [{ metric: 'mrr', before: s.mrr, after: s.mrr + gain }],
+          });
           s.unlock('first_ship');
           if (get().apps.filter(a => a.live).length >= 3) s.unlock('portfolio');
         }
@@ -224,12 +344,23 @@ export const useGame = create<GameState & Actions>()(
         const s = get();
         const item = SHOP.find(i => i.id === id);
         if (!item || s.upgrades[id] || s.cash < item.cost) return;
+        const applied = item.apply(s);
         set({
           cash: s.cash - item.cost,
           upgrades: { ...s.upgrades, [id]: true },
-          ...item.apply(s),
+          ...applied,
         });
         s.pushNotif(`${item.name} acquired.`, 'store');
+        if (id === 'claude') {
+          const rate = typeof applied.autoCode === 'number' ? applied.autoCode : s.autoCode;
+          get().pushChirp(`${rate} LOC/sec. You have been promoted to code reviewer.`, {
+            author: BETA_TESTER,
+            kind: 'purchase',
+            subjectId: s.project?.id,
+            subject: s.project?.name,
+            event: 'AUTOMATION PURCHASED',
+          });
+        }
       },
 
       quitJob: () => {
@@ -253,7 +384,12 @@ export const useGame = create<GameState & Actions>()(
 
       slowTick: () => {
         const s = get();
-        const next: Partial<GameState> = { cash: s.cash + s.mrr / 120, dayTick: s.dayTick + 1 };
+        const next: Partial<GameState> = {
+          cash: s.cash + s.mrr / 120,
+          dayTick: s.dayTick + 1,
+          storyActiveSeconds: s.storyActiveSeconds + 5,
+          homeReactionSecondsLeft: Math.max(0, s.homeReactionSecondsLeft - 5),
+        };
         if (s.dayTick + 1 >= 6) {
           next.dayTick = 0;
           next.day = s.day + 1;
@@ -265,6 +401,36 @@ export const useGame = create<GameState & Actions>()(
         set(next);
         if (s.mrr >= 100) s.unlock('mrr_100');
         if (s.mrr >= 1000) s.unlock('mrr_1000');
+
+        const current = get();
+        const pending = current.pendingStoryBeats.filter(beat => !beat.projectId || beat.projectId === current.project?.id);
+        const beforeFirstShip = !current.apps.some(app => app.live);
+        const canDeliverAmbient =
+          current.storyActiveSeconds - current.lastAmbientStoryAt >= 20 &&
+          (!beforeFirstShip || current.preShipAmbientCount < 3);
+        let beat = canDeliverAmbient ? pending.shift() : undefined;
+        let milestones = current.storyMilestones;
+        if (!beat && canDeliverAmbient) {
+          const claude = SHOP.find(item => item.id === 'claude');
+          const affordableKey = 'upgrade:claude-affordable';
+          if (claude && current.cash >= claude.cost && !current.upgrades.claude && !milestones[affordableKey]) {
+            milestones = { ...milestones, [affordableKey]: true };
+            beat = {
+              text: `${claude.name} is within budget — ${claude.desc.toLowerCase()}.`,
+              options: { author: BETA_TESTER, kind: 'ambient', event: 'UPGRADE WITHIN BUDGET' },
+              priority: 1,
+            };
+          }
+        }
+        set({
+          pendingStoryBeats: pending,
+          storyMilestones: milestones,
+          ...(beat ? {
+            lastAmbientStoryAt: current.storyActiveSeconds,
+            preShipAmbientCount: current.preShipAmbientCount + (beforeFirstShip ? 1 : 0),
+          } : {}),
+        });
+        if (beat) get().pushChirp(beat.text, beat.options);
       },
 
       maybeEvent: () => {
@@ -274,9 +440,17 @@ export const useGame = create<GameState & Actions>()(
         const totalDark = s.apps.filter(a => a.live).reduce((n, a) => n + (a.dark ?? 0), 0);
         const useDark = totalDark >= 3 && Math.random() < 0.35;
         const ev = useDark ? pick(DARK_EVENTS) : pick(EVENTS);
-        set(ev.apply(s));
+        const applied = ev.apply(s);
+        const deltas = financialDeltas(s, applied);
+        set(applied);
         s.pushNotif(ev.text, ev.icon);
-        if (Math.random() < 0.4) s.pushChirp(ev.chirpText ?? ev.text);
+        if (deltas.length > 0 || Math.random() < 0.4) {
+          s.pushChirp(ev.chirpText ?? ev.text, {
+            kind: 'event',
+            event: 'LIVE EVENT',
+            deltas,
+          });
+        }
       },
 
 
@@ -298,31 +472,35 @@ export const useGame = create<GameState & Actions>()(
         const s = get();
         const app = s.apps.find(a => a.id === appId);
         if (!app) return;
-        let mult = 1;
-        let dark = 0;
-        for (const axis of PAYWALL_AXES) {
-          const choice = axis.choices.find(c => c.id === picks[axis.id]);
-          if (choice) {
-            mult *= choice.mult;
-            dark += choice.dark;
-          }
-        }
-        mult = Math.round(mult * 100) / 100;
-        const oldContribution = app.baseMrr * (app.mult ?? 1) * s.mrrMult;
-        const newContribution = app.baseMrr * mult * s.mrrMult;
+        const transaction = calculatePaywallTransaction({
+          totalMrr: s.mrr,
+          mrrMult: s.mrrMult,
+          baseMrr: app.baseMrr,
+          previousMult: app.mult ?? 1,
+          picks,
+          axes: PAYWALL_AXES,
+        });
+        const { mult, dark } = transaction;
         set({
           apps: s.apps.map(a => (a.id === appId ? { ...a, mult, dark, hasPaywall: true } : a)),
-          mrr: Math.max(0, s.mrr - oldContribution + newContribution),
+          mrr: transaction.afterMrr,
           overlay: { type: 'paywallResult', appId, mult, dark },
         });
         s.unlock('paywall_first');
         if (dark >= 5) {
           s.unlock('dark_side');
-          s.pushChirp(`just saw the new ${app.name} paywall... the X appears AFTER FIVE SECONDS?? screenshot saved.`);
         } else if (dark === 0) {
           s.unlock('saint');
-          s.pushChirp(`shoutout to ${app.name} for the most ethical paywall i've ever closed without paying`);
         }
+        get().pushChirp(paywallReaction(app.name, transaction, picks), {
+          author: BETA_TESTER,
+          kind: 'paywall',
+          subjectId: app.id,
+          subject: app.name,
+          event: `PAYWALL SHIPPED · HEAT ${dark}`,
+          deltas: [transaction.delta],
+          heat: dark,
+        });
       },
 
       unlock: id => {
@@ -351,14 +529,22 @@ export const useGame = create<GameState & Actions>()(
     }),
     {
       name: 'ramen-profitable-v1',
-      version: 2,
+      version: 3,
       migrate: (persisted: any) => {
         const migrated = selectPersistedState(persisted);
         if (migrated?.apps) {
           migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
         migrated.achievements = migrated.achievements ?? {};
+        migrated.storyMilestones = migrated.storyMilestones ?? {};
         migrated.goIndieActive = migrated.goIndieActive ?? false;
+        if (migrated.project) {
+          migrated.project = {
+            ...migrated.project,
+            id: migrated.project.id ?? uid(),
+            manualTaps: migrated.project.manualTaps ?? 0,
+          };
+        }
         return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
@@ -366,10 +552,7 @@ export const useGame = create<GameState & Actions>()(
         ...current,
         ...selectPersistedState(persisted),
       }),
-      partialize: s => {
-        const { notifs, overlay, goIndieResolved, ...rest } = s as GameState;
-        return rest;
-      },
+      partialize: s => selectPersistedState(s),
     }
   )
 );

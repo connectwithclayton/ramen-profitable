@@ -22,6 +22,7 @@ import {
 } from '../components/ui';
 import { C, R } from '../theme';
 import { AbTestIcon, DrawnIcon, EnergyIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
+import { selectHomeReaction } from '../state/experience';
 
 /** One shipped app: monogram, what it is, what it earns, what you can do to it. */
 function AppRow({
@@ -96,13 +97,18 @@ function AppRow({
   );
 }
 
-export default function HomeScreen() {
+const receiptMoney = (value: number) =>
+  `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: () => void; onOpenChirp: () => void }) {
   const s = useGame();
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
   const live = s.apps.filter(a => a.live).length;
   const unlocked = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
   const free = !s.hasJob;
   const canQuit = s.hasJob && s.mrr >= MRR_GOAL;
+  const reaction = selectHomeReaction(s.chirps, s.homeReactionId, s.homeReactionSecondsLeft);
+  const projectDone = Boolean(s.project && s.project.loc >= s.project.need);
 
   return (
     <Screen>
@@ -148,6 +154,35 @@ export default function HomeScreen() {
         )}
       </Hero>
 
+      {reaction && (
+        <Section>
+          <SectionHeader title="From Chirp" meta={reaction.event} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={'Open Chirp. ' + reaction.who + ' says: ' + reaction.text}
+            onPress={onOpenChirp}
+            style={({ pressed }) => [pressed && { opacity: 0.65 }]}
+          >
+            <Unit style={st.reaction} tone={reaction.kind === 'paywall' ? C.pink : C.gold}>
+              <View style={st.reactionByline}>
+                <Text style={st.reactionWho}>{reaction.who}</Text>
+                <MonoText style={st.reactionHandle}>{reaction.handle}</MonoText>
+              </View>
+              <Text style={st.reactionText}>{reaction.text}</Text>
+              {reaction.deltas?.map(delta => {
+                const change = delta.after - delta.before;
+                return (
+                  <MonoText key={delta.metric} style={[st.receipt, { color: change >= 0 ? C.mint : C.pink }]}>
+                    {delta.metric.toUpperCase()} {receiptMoney(delta.before)} → {receiptMoney(delta.after)} ({change >= 0 ? '+' : '−'}{receiptMoney(Math.abs(change))}{delta.metric === 'mrr' ? '/mo' : ''})
+                  </MonoText>
+                );
+              })}
+              <MonoText style={st.openChirp}>OPEN CHIRP →</MonoText>
+            </Unit>
+          </Pressable>
+        </Section>
+      )}
+
       <Section style={st.statusRow}>
         <Unit style={st.statUnit}>
           <View style={st.statTitle}>
@@ -189,9 +224,45 @@ export default function HomeScreen() {
           title="Your apps"
           meta={s.apps.length ? `${live} OF ${s.apps.length} LIVE` : undefined}
         />
-        {s.apps.length === 0 ? (
-          <Text style={st.empty}>Nothing shipped yet. The Code tab awaits. Everyone starts at zero.</Text>
+        {s.project ? (
+          <Unit style={st.projectUnit} tone={projectDone ? C.mint : C.gold}>
+            <View style={st.projectTop}>
+              <View style={st.projectCopy}>
+                <Text style={st.projectName} numberOfLines={1}>{s.project.name}</Text>
+                <Text style={st.projectIdea} numberOfLines={2}>{s.project.idea}</Text>
+              </View>
+              <MonoText style={[st.projectState, projectDone && { color: C.mint }]}>
+                {projectDone ? 'READY' : Math.floor(s.project.loc) + ' / ' + s.project.need + ' LOC'}
+              </MonoText>
+            </View>
+            <Rail
+              pct={(s.project.loc / s.project.need) * 100}
+              tone={projectDone ? C.mint : C.gold}
+              height={5}
+              accessibilityLabel={'Build progress for ' + s.project.name}
+              accessibilityValue={{ now: Math.min(100, Math.round((s.project.loc / s.project.need) * 100)), min: 0, max: 100 }}
+            />
+            {s.autoCode > 0 && (
+              <MonoText style={st.automation}>AUTO {s.autoCode} LOC/S · PROGRESS RUNS WHILE OPEN</MonoText>
+            )}
+            <Btn small label={projectDone ? 'Submit for review' : 'Continue coding'} onPress={onOpenCode} style={st.projectButton} />
+          </Unit>
         ) : (
+          <Unit style={st.projectUnit}>
+            <Text style={st.empty}>
+              {s.apps.length === 0
+                ? 'Nothing shipped yet. Everyone starts at zero.'
+                : 'The last launch is out in the world. The next idea is waiting.'}
+            </Text>
+            <Btn
+              small
+              label={s.apps.length === 0 ? 'Start your first app' : 'Start another app'}
+              onPress={onOpenCode}
+              style={st.projectCta}
+            />
+          </Unit>
+        )}
+        {s.apps.length > 0 && (
           <View style={st.appList}>
             {s.apps.map((a, i) => (
               <View key={a.id}>
@@ -250,6 +321,14 @@ const st = StyleSheet.create({
   freeLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   freeText: { fontSize: 11, color: C.mint, letterSpacing: 1 },
 
+  reaction: { paddingVertical: 13 },
+  reactionByline: { flexDirection: 'row', alignItems: 'baseline', gap: 7 },
+  reactionWho: { color: C.ink, fontSize: 13, fontWeight: '700' },
+  reactionHandle: { color: C.dim, fontSize: 10 },
+  reactionText: { color: C.ink, fontSize: 14, lineHeight: 20, marginTop: 7 },
+  receipt: { fontSize: 10.5, marginTop: 8, letterSpacing: 0.25 },
+  openChirp: { color: C.gold, fontSize: 9.5, letterSpacing: 1, marginTop: 10 },
+
   statusRow: { flexDirection: 'row', gap: S_GAP },
   statUnit: { flex: 1, justifyContent: 'flex-start' },
   statTitle: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -260,8 +339,17 @@ const st = StyleSheet.create({
   indie: { paddingVertical: 9, alignItems: 'center' },
   indieText: { color: C.mint, fontSize: 10, letterSpacing: 1.2, fontWeight: '600' },
 
-  empty: { color: C.mut, fontSize: 13, lineHeight: 19, marginTop: 10 },
-  appList: { marginTop: 4 },
+  projectUnit: { marginTop: 10 },
+  projectTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
+  projectCopy: { flex: 1 },
+  projectName: { color: C.ink, fontWeight: '700', fontSize: 15 },
+  projectIdea: { color: C.mut, fontSize: 11.5, lineHeight: 16, marginTop: 3 },
+  projectState: { color: C.gold, fontSize: 10, letterSpacing: 0.4 },
+  automation: { color: C.mint, fontSize: 9.5, letterSpacing: 0.5, marginTop: 9 },
+  projectButton: { marginTop: 12 },
+  projectCta: { marginTop: 12 },
+  empty: { color: C.mut, fontSize: 13, lineHeight: 19 },
+  appList: { marginTop: 8 },
   appRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   appInfo: { flex: 1 },
   appName: { color: C.ink, fontWeight: '700', fontSize: 15 },
