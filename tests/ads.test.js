@@ -492,7 +492,7 @@ test('an active restore preserves the paid offline earnings interval', async t =
   assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 });
 
-test('a stale restore cannot revoke a newer confirmed purchase', async () => {
+test('a stale restore listener cannot revoke a newer confirmed purchase', async () => {
   customer = { promise: Promise.resolve(info(false)) };
   await purchases.initPurchases();
   listener(info(false));
@@ -507,11 +507,22 @@ test('a stale restore cannot revoke a newer confirmed purchase', async () => {
   assert.equal(await purchase, true);
   assert.equal(useGame.getState().goIndieActive, true);
 
-  restored.resolve(info(false));
+  const staleRestoreInfo = info(false);
+  listener(staleRestoreInfo);
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+
+  restored.resolve(staleRestoreInfo);
   assert.equal(await restore, true);
   assert.equal(useGame.getState().goIndieActive, true);
   assert.equal(useGame.getState().goIndieResolved, true);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+
+  listener(info(false));
+  assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), true);
 });
 
 test('a stalled purchase refresh cannot discard confirmed restore ownership', async () => {

@@ -84,6 +84,7 @@ let mockMode = true;
 let nextCustomerInfoRevision = 0;
 let appliedCustomerInfoRevision = 0;
 let ignoreNegativeCustomerInfoThroughRevision = 0;
+let customerInfoOperationsInFlight = 0;
 let postPurchaseConfirmationPending = false;
 let initializationPromise: Promise<boolean | null> | null = null;
 
@@ -117,8 +118,13 @@ function isGoIndieActive(customerInfo: any): boolean {
   return customerInfo?.entitlements?.active?.[GO_INDIE_ENTITLEMENT] !== undefined;
 }
 
-function issueCustomerInfoRevision(): number {
+function beginCustomerInfoOperation(): number {
+  customerInfoOperationsInFlight += 1;
   return ++nextCustomerInfoRevision;
+}
+
+function finishCustomerInfoOperation(): void {
+  customerInfoOperationsInFlight -= 1;
 }
 
 function confirmedGoIndieOwnership(): boolean | null {
@@ -140,15 +146,42 @@ function applyCustomerInfo(customerInfo: any, revision: number): boolean | null 
   return active;
 }
 
+function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
+  const active = isGoIndieActive(customerInfo);
+  if (active) {
+    ignoreNegativeCustomerInfoThroughRevision = Math.max(
+      ignoreNegativeCustomerInfoThroughRevision,
+      nextCustomerInfoRevision,
+    );
+    useGame.getState().setGoIndieActive(true);
+    return true;
+  }
+
+  const ownership = useGame.getState();
+  if (
+    postPurchaseConfirmationPending ||
+    (ownership.goIndieResolved &&
+      ownership.goIndieActive &&
+      customerInfoOperationsInFlight > 0)
+  ) {
+    return confirmedGoIndieOwnership();
+  }
+
+  ownership.setGoIndieActive(false);
+  return false;
+}
+
 async function refreshGoIndieEntitlement(): Promise<boolean | null> {
   if (mockMode || !Purchases) return null;
+  const revision = beginCustomerInfoOperation();
   try {
-    const revision = issueCustomerInfoRevision();
     const info = await Purchases.getCustomerInfo();
     return applyCustomerInfo(info, revision);
   } catch (e) {
     console.warn('[purchases] Could not refresh CustomerInfo.', e);
     return null;
+  } finally {
+    finishCustomerInfoOperation();
   }
 }
 
@@ -173,7 +206,7 @@ async function configurePurchases(): Promise<boolean | null> {
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
     Purchases.addCustomerInfoUpdateListener((info: any) => {
-      applyCustomerInfo(info, issueCustomerInfoRevision());
+      applyCustomerInfoUpdate(info);
     });
     mockMode = false;
     console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
@@ -247,13 +280,15 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
 export async function restoreGoIndiePurchases(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
+  const revision = beginCustomerInfoOperation();
   try {
-    const revision = issueCustomerInfoRevision();
     const customerInfo = await Purchases.restorePurchases();
     return applyCustomerInfo(customerInfo, revision);
   } catch (e) {
     console.warn('[purchases] restore failed', e);
     return null;
+  } finally {
+    finishCustomerInfoOperation();
   }
 }
 
