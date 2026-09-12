@@ -41,7 +41,12 @@ module.exports = (config, ids) => {
     const name = 'Reject AdMob test identifiers in Release';
     const appId = shellQuote(ids.ios.appId);
     const bannerId = shellQuote(ids.ios.bannerId);
-    const script = `if [ "$CONFIGURATION" = "Release" ]; then\n  /bin/bash "$SRCROOT/../scripts/with-original-xcode-configuration.sh" "$SRCROOT/../node_modules/expo-constants/scripts/with-node.sh" "$SRCROOT/../scripts/check-admob-release.js" ${appId} ${bannerId} "$CONFIGURATION"\nfi`;
+    const localEasMessage = shellQuote(
+      'AdMob RELEASE BLOCKED: this local EAS iOS Release intentionally uses Google sample identifiers. ' +
+        'Live AdMob inventory in a developer-machine, non-store binary risks invalid traffic and AdMob account suspension. ' +
+        'EAS cloud builds with EAS_BUILD_RUNNER=eas-build are this app\'s supported release path; rerun without --local.',
+    );
+    const script = `if [ "$CONFIGURATION" = "Release" ]; then\n  if [ "$EAS_BUILD" = "true" ] && [ "$EAS_BUILD_RUNNER" = "local-build-plugin" ]; then\n    printf '%s\\n' ${localEasMessage} >&2\n    exit 1\n  fi\n  /bin/bash "$SRCROOT/../scripts/with-original-xcode-configuration.sh" "$SRCROOT/../node_modules/expo-constants/scripts/with-node.sh" "$SRCROOT/../scripts/check-admob-release.js" ${appId} ${bannerId} "$CONFIGURATION"\nfi`;
     const phases = project.hash.project.objects.PBXShellScriptBuildPhase || {};
     const existing = Object.values(phases).find(p => p.name === `"${name}"`);
     if (existing) {

@@ -103,6 +103,12 @@ function isAdMobReleaseBuild(args) {
     return cliConfiguration === 'Release';
   }
   if (
+    process.env.EAS_BUILD === 'true' &&
+    process.env.EAS_BUILD_RUNNER !== 'eas-build'
+  ) {
+    return false;
+  }
+  if (
     Object.prototype.hasOwnProperty.call(
       process.env,
       ORIGINAL_XCODE_CONFIGURATION,
@@ -115,6 +121,7 @@ function isAdMobReleaseBuild(args) {
   }
   return (
     process.env.EAS_BUILD === 'true' &&
+    process.env.EAS_BUILD_RUNNER === 'eas-build' &&
     process.env.EAS_BUILD_PLATFORM === 'ios' &&
     ADMOB_IOS_RELEASE_PROFILES.has(process.env.EAS_BUILD_PROFILE)
   );

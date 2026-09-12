@@ -49,6 +49,7 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
     EXPO_NO_DOTENV: '1',
     REVENUECAT_BUILD_MODE: '',
     EAS_BUILD: '',
+    EAS_BUILD_RUNNER: '',
     EAS_BUILD_PROFILE: '',
     EAS_BUILD_PLATFORM: '',
     CONFIGURATION: '',
@@ -205,6 +206,7 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
     assert.deepEqual(
       evaluate([], {
         EAS_BUILD: 'true',
+        EAS_BUILD_RUNNER: 'eas-build',
         EAS_BUILD_PROFILE: profile,
         EAS_BUILD_PLATFORM: 'ios',
         CONFIGURATION: '',
@@ -216,9 +218,25 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
     assert.deepEqual(
       evaluate([], {
         EAS_BUILD: 'true',
+        EAS_BUILD_RUNNER: 'eas-build',
         EAS_BUILD_PROFILE: profile,
         EAS_BUILD_PLATFORM: 'android',
         CONFIGURATION: '',
+        NODE_ENV: 'production',
+        REVENUECAT_BUILD_MODE: 'release',
+      }),
+      { admob: TEST_IDS, revenueCat: productionRevenueCat },
+    );
+  }
+  for (const runner of ['', 'local-build-plugin', 'unknown-runner']) {
+    assert.deepEqual(
+      evaluate([], {
+        EAS_BUILD: 'true',
+        EAS_BUILD_RUNNER: runner,
+        EAS_BUILD_PROFILE: 'production',
+        EAS_BUILD_PLATFORM: 'ios',
+        CONFIGURATION: 'Release',
+        RP_ORIGINAL_XCODE_CONFIGURATION: 'Release',
         NODE_ENV: 'production',
         REVENUECAT_BUILD_MODE: 'release',
       }),
@@ -257,6 +275,7 @@ test('RevenueCat mode reaches the later Expo Constants consumer', () => {
     ...process.env,
     EXPO_NO_DOTENV: '1',
     EAS_BUILD: '',
+    EAS_BUILD_RUNNER: '',
     EAS_BUILD_PROFILE: '',
     EAS_BUILD_PLATFORM: '',
     CONFIGURATION: '',

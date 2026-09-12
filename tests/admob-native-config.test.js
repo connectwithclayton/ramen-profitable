@@ -26,6 +26,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     fs.symlinkSync(path.join(root, 'node_modules'), path.join(fixture, 'node_modules'), 'dir');
     const clearedVariables = [
       'EAS_BUILD',
+      'EAS_BUILD_RUNNER',
       'EAS_BUILD_PROFILE',
       'EAS_BUILD_PLATFORM',
       'NODE_ENV',
@@ -160,8 +161,57 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~2222222222',
       ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/3333333333',
     };
+    const easLocalProduction = prebuild({
+      EAS_BUILD: 'true',
+      EAS_BUILD_RUNNER: 'local-build-plugin',
+      EAS_BUILD_PLATFORM: 'ios',
+      NODE_ENV: 'production',
+      EAS_BUILD_PROFILE: 'production',
+      REVENUECAT_BUILD_MODE: 'release',
+      ...productionIds,
+    });
+    assert.equal(
+      easLocalProduction.status,
+      0,
+      easLocalProduction.stdout + easLocalProduction.stderr,
+    );
+    const easLocalProductionInfo = plist.parse(
+      fs.readFileSync(
+        path.join(fixture, 'ios/RamenProfitable/Info.plist'),
+        'utf8',
+      ),
+    );
+    assert.equal(
+      easLocalProductionInfo.GADApplicationIdentifier,
+      TEST_IDS.ios.appId,
+    );
+    const refusedLocalEasRelease = runPhase('Release', {
+      EAS_BUILD: 'true',
+      EAS_BUILD_RUNNER: 'local-build-plugin',
+      EAS_BUILD_PLATFORM: 'ios',
+      EAS_BUILD_PROFILE: 'production',
+      ...productionIds,
+    });
+    assert.equal(
+      refusedLocalEasRelease.status,
+      1,
+      refusedLocalEasRelease.stdout + refusedLocalEasRelease.stderr,
+    );
+    assert.match(
+      refusedLocalEasRelease.stderr,
+      /local EAS iOS Release intentionally uses Google sample identifiers/,
+    );
+    assert.match(
+      refusedLocalEasRelease.stderr,
+      /non-store binary risks invalid traffic and AdMob account suspension/,
+    );
+    assert.match(
+      refusedLocalEasRelease.stderr,
+      /EAS cloud builds .* supported release path/,
+    );
     const easProduction = prebuild({
       EAS_BUILD: 'true',
+      EAS_BUILD_RUNNER: 'eas-build',
       EAS_BUILD_PLATFORM: 'ios',
       NODE_ENV: 'production',
       EAS_BUILD_PROFILE: 'production',
