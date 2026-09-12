@@ -56,7 +56,8 @@ function HydratedGame() {
   const [tab, setTab] = useState<Tab>('home');
   const [dockOcclusion, setDockOcclusion] = useState<number>();
   const [iosStoreMounted, setIosStoreMounted] = useState(false);
-  const [storeViewportBottom, setStoreViewportBottom] = useState<number | undefined>();
+  const [screenHostTop, setScreenHostTop] = useState<number | undefined>();
+  const [dockTop, setDockTop] = useState<number | undefined>();
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
@@ -81,12 +82,23 @@ function HydratedGame() {
 
   const storeActive = tab === 'store';
   const retainStore = Platform.OS === 'ios';
+  const storeViewportBottom =
+    screenHostTop === undefined || dockTop === undefined
+      ? undefined
+      : Math.max(0, dockTop - screenHostTop);
 
   return (
     <SafeAreaView style={st.root}>
       <StatusBar style="light" />
 
-      <View style={{ flex: 1 }}>
+      <View
+        testID="screen-host"
+        style={{ flex: 1 }}
+        onLayout={event => {
+          const next = event.nativeEvent.layout.y;
+          setScreenHostTop(current => current === next ? current : next);
+        }}
+      >
         {tab === 'home' && (
           <HomeScreen
             bottomOcclusion={dockOcclusion}
@@ -124,7 +136,7 @@ function HydratedGame() {
         onLayout={event => {
           setDockOcclusion(event.nativeEvent.layout.height + DOCK_BOTTOM);
           const next = event.nativeEvent.layout.y;
-          setStoreViewportBottom(current => current === next ? current : next);
+          setDockTop(current => current === next ? current : next);
         }}
       >
         {TABS.map(t => {

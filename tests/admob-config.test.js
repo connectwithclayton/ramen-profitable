@@ -79,6 +79,8 @@ test('Expo 57 local run modes override inherited NODE_ENV safely', () => {
     revenueCat: { testStoreApiKey: 'test_local_value' },
   };
   for (const args of [
+    ['start'],
+    ['start', '--dev-client'],
     ['run:ios'],
     ['run:ios', '--binary', 'Ramen.app'],
     ['run:ios', '--configuration', 'Debug'],
@@ -97,6 +99,8 @@ test('Expo 57 local run modes override inherited NODE_ENV safely', () => {
       androidApiKey: 'goog_local_value',
     },
   };
+  assert.deepEqual(evaluate(['start', '--no-dev'], 'production'), release);
+  assert.deepEqual(evaluate(['start', '--no-dev'], 'development'), release);
   assert.deepEqual(evaluate(['run:ios', '--configuration', 'Release'], 'development'), release);
   assert.deepEqual(evaluate(['run:android', '--variant', 'release'], 'production'), release);
   assert.deepEqual(evaluate([], 'production'), release);

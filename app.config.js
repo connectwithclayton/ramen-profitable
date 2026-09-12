@@ -9,7 +9,10 @@ function cliOption(args, name) {
   return args.find(argument => argument.startsWith(prefix))?.slice(prefix.length);
 }
 
-function localIosRunMode(args = process.argv.slice(2)) {
+function localExpoMode(args = process.argv.slice(2)) {
+  if (args[0] === 'start') {
+    return args.includes('--no-dev') ? 'release' : 'development';
+  }
   if (args[0] !== 'run:ios') return undefined;
   const configuration = cliOption(args, '--configuration');
   return configuration === undefined || configuration === 'Debug'
@@ -31,8 +34,8 @@ function buildMode() {
       : process.env.CONFIGURATION === 'Release'
         ? 'release'
         : undefined;
-  const runMode = localIosRunMode();
-  const inferredMode = profileMode ?? xcodeMode ?? runMode;
+  const cliMode = localExpoMode();
+  const inferredMode = profileMode ?? xcodeMode ?? cliMode;
   const nodeMode =
     process.env.NODE_ENV === 'development'
       ? 'development'
@@ -52,8 +55,8 @@ function buildMode() {
         ? `EAS_BUILD_PROFILE="${profile}"`
         : xcodeMode
           ? `CONFIGURATION="${process.env.CONFIGURATION}"`
-          : runMode
-            ? 'the local Expo iOS configuration'
+          : cliMode
+            ? 'the local Expo command'
             : `NODE_ENV="${process.env.NODE_ENV}"`;
       throw new Error(
         `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +

@@ -82,9 +82,10 @@ export default function StoreScreen({
     const top = viewport.offsetY + viewport.insetTop;
     const bottom = viewport.offsetY + Math.min(
       viewport.height - viewport.insetBottom,
-      viewportBottom ?? Number.POSITIVE_INFINITY,
+      viewportBottom ?? 0,
     );
     const visible = Boolean(
+      viewportBottom !== undefined &&
       frame &&
       frame.height > 0 &&
       viewport.height > 0 &&

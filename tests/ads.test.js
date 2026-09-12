@@ -158,7 +158,7 @@ const loadFreshApp = () => {
 };
 const mountStore = async Store => {
   let tree;
-  await act(async () => { tree = create(React.createElement(Store)); });
+  await act(async () => { tree = create(React.createElement(Store, { viewportBottom: 800 })); });
   return tree;
 };
 const setStoreBillboardViewport = async (tree, {
@@ -203,6 +203,7 @@ const setBillboardProbeWidth = async (tree, width) => {
   await flush();
 };
 const setBillboardWidth = async (tree, width) => {
+  await setDefaultAppViewport(tree);
   await setStoreBillboardViewport(tree);
   await setBillboardProbeWidth(tree, width);
 };
@@ -211,6 +212,24 @@ const setDockTop = async (tree, y) => {
   assert.ok(dock?.props.onLayout, 'App must expose the measured dock boundary');
   await act(async () => {
     dock.props.onLayout({ nativeEvent: { layout: { x: 12, y, width: 366, height: 54 } } });
+  });
+  await flush();
+};
+const setScreenHostTop = async (tree, y, height = 800) => {
+  const host = tree.root.findAllByProps({ testID: 'screen-host' })[0];
+  assert.ok(host?.props.onLayout, 'App must expose the measured screen origin');
+  await act(async () => {
+    host.props.onLayout({ nativeEvent: { layout: { x: 0, y, width: 390, height } } });
+  });
+  await flush();
+};
+const setDefaultAppViewport = async tree => {
+  if (tree.root.findAllByProps({ testID: 'screen-host' }).length === 0) return;
+  await act(async () => {
+    const host = tree.root.findAllByProps({ testID: 'screen-host' })[0];
+    const dock = tree.root.findAllByProps({ accessibilityRole: 'tablist' })[0];
+    host.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 800 } } });
+    dock.props.onLayout({ nativeEvent: { layout: { x: 12, y: 800, width: 366, height: 54 } } });
   });
   await flush();
 };
@@ -264,7 +283,7 @@ test('app launch refreshes paid-user privacy state without requesting an ad', as
 test('Store billboard waits for ownership and consent, honors purchases, and handles privacy changes', async () => {
   useGame.setState({ goIndieActive: true, goIndieResolved: false, overlay: null, notifs: [] });
   let tree;
-  await act(async () => { tree = create(React.createElement(StoreScreen)); });
+  await act(async () => { tree = create(React.createElement(StoreScreen, { viewportBottom: 800 })); });
   const banners = () => tree.root.findAllByType('NativeBanner');
   await setBillboardWidth(tree, 340);
   const visibleText = tree.root.findAllByType('Text').map(node => node.props.children);
@@ -292,7 +311,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   await act(async () => { restore = purchases.restoreGoIndiePurchases(); });
   await act(async () => { restored.resolve(info(true)); assert.equal(await restore, true); });
   assert.equal(banners().length, 0, 'restored lifetime entitlement must remain ad free');
-  await act(async () => { tree.unmount(); tree = create(React.createElement(StoreScreen)); });
+  await act(async () => { tree.unmount(); tree = create(React.createElement(StoreScreen, { viewportBottom: 800 })); });
   await setBillboardWidth(tree, 340);
   assert.equal(banners().length, 0, 'remount cannot resurrect a restored purchaser ad');
 
@@ -315,7 +334,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
 
   // A fresh install starts unknown, even if a persisted flag says not purchased.
   useGame.setState({ goIndieActive: false, goIndieResolved: false });
-  await act(async () => { tree = create(React.createElement(StoreScreen)); });
+  await act(async () => { tree = create(React.createElement(StoreScreen, { viewportBottom: 800 })); });
   await setBillboardWidth(tree, 340);
   const before = requests.length;
   restored = deferred();
@@ -529,23 +548,31 @@ test('the measured dock boundary prevents requests for a fully covered billboard
   let tree;
   try {
     await act(async () => { tree = create(React.createElement(FreshApp)); });
-    await setDockTop(tree, 530);
+    await setDockTop(tree, 768);
     const storeTab = tree.root.findAllByType('Pressable')
       .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
     await act(async () => { storeTab.props.onPress(); });
 
     const frame = {
-      viewportHeight: 600,
-      sectionY: 460,
-      phoneY: 30,
-      billboardY: 50,
+      viewportHeight: 763,
+      sectionY: 650,
+      phoneY: 60,
+      billboardY: 20,
       billboardHeight: 50,
     };
     await setStoreBillboardViewport(tree, { ...frame, scrollY: 0 });
     assert.equal(
       tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
       0,
-      'a billboard entirely behind the measured dock must not activate ad measurement',
+      'a dock measurement without the screen origin must fail closed',
+    );
+    assert.equal(requests.length, 0);
+
+    await setScreenHostTop(tree, 47, 763);
+    assert.equal(
+      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
+      0,
+      'a billboard entirely behind the normalized dock boundary must not activate ad measurement',
     );
     assert.equal(requests.length, 0);
 
@@ -886,6 +913,7 @@ test('scroll intersection returns replace one expired creative without timers', 
 
   const FreshApp = loadFreshApp();
   await act(async () => { tree = create(React.createElement(FreshApp)); });
+  await setDefaultAppViewport(tree);
   const tab = label => tree.root.findAllByType('Pressable')
     .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
   const banners = () => tree.root.findAllByType('NativeBanner');
