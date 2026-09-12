@@ -143,8 +143,14 @@ for (const ext of ['.ts', '.tsx']) Module._extensions[ext] = (module, filename) 
 };
 const { useGame } = require('../src/state/gameStore.ts');
 const purchases = require('../src/monetization/purchases.ts');
+const { useGameLoop } = require('../src/systems/useGameLoop.ts');
 const App = require('../App.tsx').default;
 const StoreScreen = require('../src/screens/StoreScreen.tsx').default;
+const LaunchHarness = () => {
+  useGameLoop();
+  React.useEffect(() => { void purchases.initPurchases(); }, []);
+  return null;
+};
 const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
 const loadFreshStoreScreen = () => {
   for (const path of [
@@ -457,74 +463,212 @@ test('late hydration preserves the post-entitlement earnings clock', async t => 
   assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
 });
 
-test('a confirmed returning owner keeps full earnings across hydration order', async t => {
+test('returning owner launch pays exactly once across hydration order', async t => {
   const originalNow = Date.now;
   const previousStorageRead = storageRead;
   const previousState = useGame.getState();
-  const now = 1_000_000;
-  const persistedLastSeen = now - 61_000;
+  let now = 1_000_000;
+  let tree;
   Date.now = () => now;
-  t.after(() => {
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
     Date.now = originalNow;
     storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
     useGame.setState({
       cash: previousState.cash,
       mrr: previousState.mrr,
       lastSeen: previousState.lastSeen,
       goIndieActive: previousState.goIndieActive,
       goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingOwnerLaunchInterval: previousState.pendingOwnerLaunchInterval,
     });
   });
 
   customer = { promise: Promise.resolve(info(false)) };
   await purchases.initPurchases();
-  const persistedOwner = JSON.stringify({
-    version: 2,
-    state: { cash: 0, mrr: 120, lastSeen: persistedLastSeen, goIndieActive: true },
-  });
-
   useGame.setState({
     cash: 0,
-    mrr: 120,
+    mrr: 0,
     lastSeen: now,
     goIndieActive: false,
     goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingOwnerLaunchInterval: undefined,
+  });
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 12.2);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 24.4);
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 24.4);
+  await act(async () => { tree.unmount(); });
+  tree = null;
+
+  now = 2_000_000;
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingOwnerLaunchInterval: undefined,
   });
   const lateDisk = deferred();
   storageRead = () => lateDisk.promise;
   const lateHydration = useGame.persist.rehydrate();
-  listener(info(true));
-  assert.equal(useGame.getState().goIndieActive, true);
-  assert.equal(useGame.getState().goIndieResolved, true);
-  assert.equal(useGame.getState().lastSeen, now);
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 0);
 
-  lateDisk.resolve(persistedOwner);
-  await lateHydration;
-  assert.equal(useGame.getState().lastSeen, persistedLastSeen);
-  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+  await act(async () => { listener(info(true)); });
+  now += 30_000;
+  await act(async () => {
+    lateDisk.resolve(JSON.stringify({
+      version: 2,
+      state: { cash: 0, mrr: 120, lastSeen: 2_000_000 - 61_000, goIndieActive: true },
+    }));
+    await lateHydration;
+  });
   assert.equal(useGame.getState().cash, 24.4);
+  assert.equal(useGame.getState().lastSeen, 2_000_000);
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 24.4);
+});
 
+test('returning owner launch requires persisted and confirmed ownership', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  let now = 3_000_000;
+  let tree;
+  Date.now = () => now;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingOwnerLaunchInterval: previousState.pendingOwnerLaunchInterval,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
   useGame.setState({
     cash: 0,
-    mrr: 120,
+    mrr: 0,
     lastSeen: now,
     goIndieActive: false,
     goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingOwnerLaunchInterval: undefined,
   });
-  const earlyDisk = deferred();
-  storageRead = () => earlyDisk.promise;
-  const earlyHydration = useGame.persist.rehydrate();
-  earlyDisk.resolve(persistedOwner);
-  await earlyHydration;
-  assert.equal(useGame.getState().goIndieActive, true);
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 12.2);
   assert.equal(useGame.getState().goIndieResolved, false);
-  assert.equal(useGame.getState().lastSeen, persistedLastSeen);
+  await act(async () => { tree.unmount(); });
+  tree = null;
 
-  listener(info(true));
-  assert.equal(useGame.getState().goIndieResolved, true);
-  assert.equal(useGame.getState().lastSeen, persistedLastSeen);
-  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+  now = 4_000_000;
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingOwnerLaunchInterval: undefined,
+  });
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: false },
+  });
+  await useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 12.2);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 12.2);
+});
+
+test('returning owner launch preserves the lifecycle clock', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  const launchTime = 5_000_000;
+  let now = launchTime;
+  let tree;
+  Date.now = () => now;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingOwnerLaunchInterval: previousState.pendingOwnerLaunchInterval,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: launchTime,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingOwnerLaunchInterval: undefined,
+  });
+  const disk = deferred();
+  storageRead = () => disk.promise;
+  const hydration = useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  await act(async () => { listener(info(true)); });
+
+  now += 10_000;
+  await act(async () => { setAppState('background'); });
+  const backgroundedAt = now;
+  now += 20_000;
+  await act(async () => {
+    disk.resolve(JSON.stringify({
+      version: 2,
+      state: { cash: 0, mrr: 120, lastSeen: launchTime - 61_000, goIndieActive: true },
+    }));
+    await hydration;
+  });
   assert.equal(useGame.getState().cash, 24.4);
+  assert.equal(useGame.getState().lastSeen, backgroundedAt);
+
+  now = launchTime + 71_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 48.8);
+  assert.equal(useGame.getState().lastSeen, now);
 });
 
 test('an active restore preserves the paid offline earnings interval', async t => {

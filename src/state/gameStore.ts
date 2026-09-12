@@ -115,6 +115,17 @@ export type GameState = {
   homeReceiptSecondsLeft: number;
 };
 
+type PendingOwnerLaunchInterval = {
+  from: number;
+  mrr: number;
+  baseCredited: boolean;
+};
+
+type RuntimeState = GameState & {
+  launchEarningsCutoff: number | null;
+  pendingOwnerLaunchInterval: PendingOwnerLaunchInterval | null | undefined;
+};
+
 type Actions = {
   tapCode: () => boolean;
   newProject: () => void;
@@ -137,14 +148,47 @@ type Actions = {
   openPaywallDesigner: (appId: string) => void;
   applyPaywall: (appId: string, picks: Record<string, string>) => void;
   unlock: (id: string) => void;
+  applyLaunchOfflineEarnings: () => number;
   applyOfflineEarnings: () => number;
+  reconcilePendingOwnerLaunchEarnings: () => number;
   touchLastSeen: () => void;
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 
-const initial: GameState = {
+function offlineEarningsBetween(
+  mrr: number,
+  from: number,
+  until: number,
+  multiplier: number,
+): number {
+  const awayMs = until - from;
+  if (awayMs < 60_000 || mrr <= 0) return 0;
+  const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
+  return (mrr / 120) * (cappedSec / 5) * multiplier;
+}
+
+function settlePendingOwnerLaunchInterval(
+  pending: PendingOwnerLaunchInterval,
+  cutoff: number,
+  confirmedActive: boolean,
+): { earned: number; pending: PendingOwnerLaunchInterval | null } {
+  const base = offlineEarningsBetween(pending.mrr, pending.from, cutoff, 1);
+  if (confirmedActive) {
+    return {
+      earned: (pending.baseCredited ? 0 : base) + base,
+      pending: null,
+    };
+  }
+  if (pending.baseCredited) return { earned: 0, pending };
+  return {
+    earned: base,
+    pending: { ...pending, baseCredited: true },
+  };
+}
+
+const initial: RuntimeState = {
   day: 1,
   dayTick: 0,
   cash: 120,
@@ -175,9 +219,11 @@ const initial: GameState = {
   homePrioritySecondsLeft: 0,
   homeReceipt: undefined,
   homeReceiptSecondsLeft: 0,
+  launchEarningsCutoff: null,
+  pendingOwnerLaunchInterval: undefined,
 };
 
-export const useGame = create<GameState & Actions>()(
+export const useGame = create<RuntimeState & Actions>()(
   persist(
     (set, get) => ({
       ...initial,
@@ -347,6 +393,7 @@ export const useGame = create<GameState & Actions>()(
               : {}),
           };
         });
+        get().reconcilePendingOwnerLaunchEarnings();
       },
 
       buy: id => {
@@ -502,6 +549,35 @@ export const useGame = create<GameState & Actions>()(
         s.pushNotif('Achievement: ' + a.name, a.drawnIcon ? 'achievement' : undefined, a.drawnIcon ? undefined : a.icon);
       },
 
+      applyLaunchOfflineEarnings: () => {
+        const s = get();
+        if (s.launchEarningsCutoff !== null) {
+          return s.reconcilePendingOwnerLaunchEarnings();
+        }
+        const cutoff = Date.now();
+        if (s.pendingOwnerLaunchInterval) {
+          const result = settlePendingOwnerLaunchInterval(
+            s.pendingOwnerLaunchInterval,
+            cutoff,
+            s.goIndieResolved && s.goIndieActive,
+          );
+          set({
+            cash: s.cash + result.earned,
+            lastSeen: cutoff,
+            launchEarningsCutoff: cutoff,
+            pendingOwnerLaunchInterval: result.pending,
+          });
+          return result.earned;
+        }
+        const earned = offlineEarningsBetween(
+          s.mrr,
+          s.lastSeen,
+          cutoff,
+          s.goIndieResolved && s.goIndieActive ? 2 : 1,
+        );
+        set({ cash: s.cash + earned, lastSeen: cutoff, launchEarningsCutoff: cutoff });
+        return earned;
+      },
       applyOfflineEarnings: () => {
         const now = Date.now();
         let earned = 0;
@@ -522,6 +598,25 @@ export const useGame = create<GameState & Actions>()(
           };
         });
         return earned;
+      },
+      reconcilePendingOwnerLaunchEarnings: () => {
+        const s = get();
+        if (!s.pendingOwnerLaunchInterval || s.launchEarningsCutoff === null) return 0;
+        const result = settlePendingOwnerLaunchInterval(
+          s.pendingOwnerLaunchInterval,
+          s.launchEarningsCutoff,
+          s.goIndieResolved && s.goIndieActive,
+        );
+        if (
+          result.earned !== 0 ||
+          result.pending !== s.pendingOwnerLaunchInterval
+        ) {
+          set({
+            cash: s.cash + result.earned,
+            pendingOwnerLaunchInterval: result.pending,
+          });
+        }
+        return result.earned;
       },
       touchLastSeen: () => set({ lastSeen: Date.now() }),
     }),
@@ -548,18 +643,40 @@ export const useGame = create<GameState & Actions>()(
       storage: createJSONStorage(() => AsyncStorage),
       merge: (persisted, current) => {
         const persistedState = selectPersistedState(persisted, BETA_TESTER);
+        const savedOwnerInterval =
+          persistedState.goIndieActive === true &&
+          typeof persistedState.lastSeen === 'number' &&
+          Number.isFinite(persistedState.lastSeen) &&
+          typeof persistedState.mrr === 'number' &&
+          Number.isFinite(persistedState.mrr)
+            ? {
+                from: persistedState.lastSeen,
+                mrr: persistedState.mrr,
+                baseCredited: false,
+              }
+            : null;
         return {
           ...current,
           ...persistedState,
+          pendingOwnerLaunchInterval:
+            current.pendingOwnerLaunchInterval === undefined
+              ? savedOwnerInterval
+              : current.pendingOwnerLaunchInterval,
           ...(current.goIndieResolved
             ? {
                 goIndieActive: current.goIndieActive,
-                ...(current.goIndieActive && persistedState.goIndieActive !== true
-                  ? { lastSeen: current.lastSeen }
-                  : {}),
               }
             : {}),
+          ...(current.launchEarningsCutoff !== null ||
+          (current.goIndieResolved &&
+            current.goIndieActive &&
+            persistedState.goIndieActive !== true)
+            ? { lastSeen: current.lastSeen }
+            : {}),
         };
+      },
+      onRehydrateStorage: () => state => {
+        state?.reconcilePendingOwnerLaunchEarnings();
       },
       partialize: s => selectPersistedState(s, BETA_TESTER),
     }

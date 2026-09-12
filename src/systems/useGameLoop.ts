@@ -12,7 +12,7 @@ export function useGameLoop() {
     const g = useGame.getState();
 
     // Welcome-back money
-    const earned = g.applyOfflineEarnings();
+    const earned = g.applyLaunchOfflineEarnings();
     if (earned > 1) {
       g.pushNotif(`While you were gone, your apps earned $${Math.floor(earned)}. The dream, working.`, 'night');
     }
