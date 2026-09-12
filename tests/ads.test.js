@@ -482,7 +482,7 @@ test('returning owner launch pays exactly once across hydration order', async t 
       goIndieActive: previousState.goIndieActive,
       goIndieResolved: previousState.goIndieResolved,
       launchEarningsCutoff: previousState.launchEarningsCutoff,
-      pendingOwnerLaunchInterval: previousState.pendingOwnerLaunchInterval,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
     });
   });
 
@@ -495,7 +495,7 @@ test('returning owner launch pays exactly once across hydration order', async t 
     goIndieActive: false,
     goIndieResolved: false,
     launchEarningsCutoff: null,
-    pendingOwnerLaunchInterval: undefined,
+    pendingLaunchInterval: undefined,
   });
   storageRead = async () => JSON.stringify({
     version: 2,
@@ -520,7 +520,7 @@ test('returning owner launch pays exactly once across hydration order', async t 
     goIndieActive: false,
     goIndieResolved: false,
     launchEarningsCutoff: null,
-    pendingOwnerLaunchInterval: undefined,
+    pendingLaunchInterval: undefined,
   });
   const lateDisk = deferred();
   storageRead = () => lateDisk.promise;
@@ -543,6 +543,61 @@ test('returning owner launch pays exactly once across hydration order', async t 
   assert.equal(useGame.getState().cash, 24.4);
 });
 
+test('late free hydration reconciles launch earnings exactly once', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  const launchTime = 2_500_000;
+  let tree;
+  Date.now = () => launchTime;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: launchTime,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+  });
+  const disk = deferred();
+  storageRead = () => disk.promise;
+  const hydration = useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 0);
+
+  await act(async () => {
+    disk.resolve(JSON.stringify({
+      version: 2,
+      state: { cash: 0, mrr: 120, lastSeen: launchTime - 61_000, goIndieActive: false },
+    }));
+    await hydration;
+  });
+  assert.equal(useGame.getState().cash, 12.2);
+  assert.equal(useGame.getState().applyLaunchOfflineEarnings(), 0);
+  assert.equal(useGame.getState().cash, 12.2);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 12.2);
+});
+
 test('returning owner launch requires persisted and confirmed ownership', async t => {
   const originalNow = Date.now;
   const previousStorageRead = storageRead;
@@ -562,7 +617,7 @@ test('returning owner launch requires persisted and confirmed ownership', async 
       goIndieActive: previousState.goIndieActive,
       goIndieResolved: previousState.goIndieResolved,
       launchEarningsCutoff: previousState.launchEarningsCutoff,
-      pendingOwnerLaunchInterval: previousState.pendingOwnerLaunchInterval,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
     });
   });
 
@@ -575,7 +630,7 @@ test('returning owner launch requires persisted and confirmed ownership', async 
     goIndieActive: false,
     goIndieResolved: false,
     launchEarningsCutoff: null,
-    pendingOwnerLaunchInterval: undefined,
+    pendingLaunchInterval: undefined,
   });
   storageRead = async () => JSON.stringify({
     version: 2,
@@ -596,7 +651,7 @@ test('returning owner launch requires persisted and confirmed ownership', async 
     goIndieActive: false,
     goIndieResolved: false,
     launchEarningsCutoff: null,
-    pendingOwnerLaunchInterval: undefined,
+    pendingLaunchInterval: undefined,
   });
   storageRead = async () => JSON.stringify({
     version: 2,
@@ -630,7 +685,7 @@ test('returning owner launch preserves the lifecycle clock', async t => {
       goIndieActive: previousState.goIndieActive,
       goIndieResolved: previousState.goIndieResolved,
       launchEarningsCutoff: previousState.launchEarningsCutoff,
-      pendingOwnerLaunchInterval: previousState.pendingOwnerLaunchInterval,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
     });
   });
 
@@ -643,18 +698,19 @@ test('returning owner launch preserves the lifecycle clock', async t => {
     goIndieActive: false,
     goIndieResolved: false,
     launchEarningsCutoff: null,
-    pendingOwnerLaunchInterval: undefined,
+    pendingLaunchInterval: undefined,
   });
   const disk = deferred();
   storageRead = () => disk.promise;
   const hydration = useGame.persist.rehydrate();
   await act(async () => { tree = create(React.createElement(LaunchHarness)); });
-  await act(async () => { listener(info(true)); });
 
   now += 10_000;
   await act(async () => { setAppState('background'); });
   const backgroundedAt = now;
   now += 20_000;
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().lastSeen, backgroundedAt);
   await act(async () => {
     disk.resolve(JSON.stringify({
       version: 2,
@@ -1747,6 +1803,50 @@ test('returning from an ad destination rechecks creative expiry', async t => {
   assert.equal(probes().length, 1, 'destination return must create a fresh measurement boundary');
   await setBillboardProbeWidth(tree, 320);
   assert.equal(requests.length, 2, 'an expired destination return must issue one replacement');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+});
+
+test('ownership invalidation clears an open ad destination', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  await act(async () => { listener(info(false)); });
+  let tree;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+  const retiredOnAdOpened = loadedBanner.props.onAdOpened;
+
+  await act(async () => { loadedBanner.props.onAdOpened(); });
+  await flush();
+  assert.equal(probes().length, 0, 'an SDK-presented destination must suspend measurement');
+  await act(async () => { listener(info(true)); });
+  await flush();
+  assert.equal(banners().length, 0, 'confirmed ownership must retire the presenting banner');
+
+  await act(async () => { listener(info(false)); });
+  await flush();
+  assert.equal(probes().length, 1, 'a later valid downgrade must restore measurement');
+  await act(async () => { retiredOnAdOpened(); });
+  assert.equal(probes().length, 1, 'a retired banner callback must not conceal the current surface');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'restored eligibility must issue one successor request');
+  assert.equal(banners().length, 1);
   assert.notStrictEqual(banners()[0], loadedBanner);
 });
 

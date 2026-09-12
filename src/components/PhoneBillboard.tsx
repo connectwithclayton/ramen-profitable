@@ -127,6 +127,10 @@ export default function PhoneBillboard({
     creativeStateRef.current = creativeState;
   }, [creativeState]);
 
+  useLayoutEffect(() => {
+    if (!eligible) setDestinationOpen(false);
+  }, [eligible]);
+
   const reportViewportFrame = useCallback(() => {
     const sectionY = sectionYRef.current;
     const phoneY = phoneYRef.current;
