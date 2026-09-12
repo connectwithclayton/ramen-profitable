@@ -75,4 +75,6 @@ Disclosure sources: [Google SDK data disclosure](https://developers.google.com/a
 
 The local iOS Debug simulator build succeeded with Google Mobile Ads 13.5.0 and UMP 3.1.0. A native SDK rehearsal reached the banner request but returned `googleMobileAds/network-error: The network connection was lost`; actual creative rendering is **unverified**. With no local RevenueCat test key, this ignored, temporary rehearsal entry explicitly supplied non-purchaser state; it did not validate RevenueCat purchases, and was removed afterward.
 
+Replaced native banner view release is **UNMEASURED**: simulator input and viewport control prevented exercising real banner replacement cycles. This is a limitation of the measurement session, not evidence of an advertising-code failure; verify native view release during the real-device session.
+
 Signed release, actual Google fill, app-ads.txt verification, AdMob **Ready** status, region-specific production consent, physical-device purchase and restore, and App Store Connect answers remain separate release evidence. See [the validation record](ADMOB_VALIDATION.md) for exact local checks and PR handoff.
