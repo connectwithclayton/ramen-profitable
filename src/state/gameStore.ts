@@ -173,6 +173,17 @@ function offlineEarningsBetween(
   return (mrr / 120) * (cappedSec / 5) * multiplier;
 }
 
+function appendPendingOwnerBonus(
+  pendingOwnerBonus: PendingOwnerBonus,
+  amount: number,
+): PendingOwnerBonus {
+  if (amount <= 0) return pendingOwnerBonus;
+  return {
+    revision: pendingOwnerBonus.revision + 1,
+    amount: pendingOwnerBonus.amount + amount,
+  };
+}
+
 function reconcileLaunchCredits(
   pendingLaunchInterval: PendingLaunchInterval | null | undefined,
   cutoff: number | null,
@@ -199,10 +210,7 @@ function reconcileLaunchCredits(
       if (ownership === true) {
         earned += base;
       } else if (ownership === null) {
-        nextOwnerBonus = {
-          revision: nextOwnerBonus.revision + 1,
-          amount: nextOwnerBonus.amount + base,
-        };
+        nextOwnerBonus = appendPendingOwnerBonus(nextOwnerBonus, base);
       }
     }
     nextLaunchInterval = null;

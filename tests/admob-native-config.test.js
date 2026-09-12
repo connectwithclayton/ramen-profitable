@@ -62,7 +62,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
         CI: '1',
         SRCROOT: path.join(fixture, 'ios'),
         PODS_ROOT: path.join(fixture, 'ios/Pods'),
-        CONFIGURATION: configuration,
+        ...(configuration === undefined ? {} : { CONFIGURATION: configuration }),
         ...additional,
       }),
       encoding: 'utf8',
@@ -141,7 +141,18 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.equal(info.GADDelayAppMeasurementInit, true);
     assert.equal(info.NSUserTrackingUsageDescription, undefined);
     assert.equal(info.SKAdNetworkItems, undefined);
-    assert.equal(runPhase('Debug').status, 0);
+    for (const configuration of ['Debug', 'Profile', 'Staging', undefined]) {
+      const result = runPhase(configuration);
+      assert.equal(
+        result.status,
+        0,
+        `${configuration ?? 'missing'} configuration ran Release validation\n${result.stdout}${result.stderr}`,
+      );
+    }
+    assert.deepEqual(
+      constantsConfigThroughXcode({ CONFIGURATION: 'Profile' }).extra.admob,
+      TEST_IDS,
+    );
     const refused = runPhase('Release');
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /AdMob RELEASE BLOCKED/);

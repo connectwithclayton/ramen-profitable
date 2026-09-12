@@ -743,7 +743,7 @@ test('returning owner launch preserves the lifecycle clock', async t => {
   assert.equal(useGame.getState().lastSeen, now);
 });
 
-test('pending owner bonus survives relaunch and settles exactly once', async t => {
+test('pending owner bonus accumulates across foregrounds and settles exactly once', async t => {
   const originalNow = Date.now;
   const previousStorageRead = storageRead;
   const previousStorageWrite = storageWrite;
@@ -804,12 +804,21 @@ test('pending owner bonus survives relaunch and settles exactly once', async t =
   resetProcessState();
   storageRead = async () => JSON.stringify({
     version: 2,
-    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+    state: { cash: 0, mrr: 600, lastSeen: now - 61_000, goIndieActive: true },
   });
   await useGame.persist.rehydrate();
   storageWrite = captureWrite;
   await mountLaunch();
-  assert.equal(useGame.getState().cash, 12.2);
+  assert.equal(useGame.getState().cash, 61);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 61);
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 183);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 183);
   await unmountLaunch();
   const firstProcessSave = latestWrite;
   assert.equal(typeof firstProcessSave, 'string');
@@ -822,7 +831,8 @@ test('pending owner bonus survives relaunch and settles exactly once', async t =
   latestWrite = null;
   storageWrite = captureWrite;
   await mountLaunch();
-  assert.equal(useGame.getState().cash, 24.4);
+  assert.equal(useGame.getState().cash, 244);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 244);
   await unmountLaunch();
   const secondProcessSave = latestWrite;
   assert.equal(typeof secondProcessSave, 'string');
@@ -835,12 +845,13 @@ test('pending owner bonus survives relaunch and settles exactly once', async t =
   storageWrite = captureWrite;
   await mountLaunch();
   await act(async () => { listener(info(true)); });
-  assert.equal(useGame.getState().cash, 48.8);
+  assert.equal(useGame.getState().cash, 488);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
   await act(async () => { listener(info(true)); });
-  assert.equal(useGame.getState().cash, 48.8);
+  assert.equal(useGame.getState().cash, 488);
   storageRead = async () => secondProcessSave;
   await useGame.persist.rehydrate();
-  assert.equal(useGame.getState().cash, 48.8, 'stale debt hydration must not undo its settlement');
+  assert.equal(useGame.getState().cash, 488, 'stale debt hydration must not undo its settlement');
   await unmountLaunch();
   const settledProcessSave = latestWrite;
   assert.equal(typeof settledProcessSave, 'string');
@@ -852,7 +863,7 @@ test('pending owner bonus survives relaunch and settles exactly once', async t =
   storageWrite = captureWrite;
   await mountLaunch();
   await act(async () => { listener(info(true)); });
-  assert.equal(useGame.getState().cash, 48.8, 'a settled bonus must not return after another relaunch');
+  assert.equal(useGame.getState().cash, 488, 'a settled bonus must not return after another relaunch');
 });
 
 test('confirmed non-ownership durably discards a pending owner bonus', async t => {
@@ -860,7 +871,7 @@ test('confirmed non-ownership durably discards a pending owner bonus', async t =
   const previousStorageRead = storageRead;
   const previousStorageWrite = storageWrite;
   const previousState = useGame.getState();
-  const now = 7_000_000;
+  let now = 7_000_000;
   let tree;
   let latestWrite = null;
   const discardWrite = async () => {};
@@ -907,17 +918,23 @@ test('confirmed non-ownership durably discards a pending owner bonus', async t =
   resetProcessState();
   storageRead = async () => JSON.stringify({
     version: 2,
-    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+    state: { cash: 0, mrr: 600, lastSeen: now - 61_000, goIndieActive: true },
   });
   await useGame.persist.rehydrate();
   storageWrite = captureWrite;
   await act(async () => { tree = create(React.createElement(LaunchHarness)); });
   await flush();
-  assert.equal(useGame.getState().cash, 12.2);
+  assert.equal(useGame.getState().cash, 61);
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 122);
 
   await act(async () => { listener(info(false)); });
   assert.equal(useGame.getState().goIndieResolved, true);
   assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
   const discardedProcessSave = latestWrite;
   assert.equal(typeof discardedProcessSave, 'string');
   await act(async () => { tree.unmount(); });
@@ -931,7 +948,7 @@ test('confirmed non-ownership durably discards a pending owner bonus', async t =
   await act(async () => { tree = create(React.createElement(LaunchHarness)); });
   await flush();
   await act(async () => { listener(info(true)); });
-  assert.equal(useGame.getState().cash, 12.2, 'discarded owner credit must not return after relaunch');
+  assert.equal(useGame.getState().cash, 122, 'discarded owner credit must not return after relaunch');
 });
 
 test('an active restore preserves the paid offline earnings interval', async t => {
