@@ -1,0 +1,16 @@
+# Review pipeline agent for this repository only.
+#
+# The global configuration runs the pipeline on codex. This repository overrides
+# that to cursor so its validation rounds draw Cursor's core included allowance
+# instead of the codex allowance, which is the constrained one. Toolroll
+# deliberately stays on the global codex setting; its submission is imminent and
+# its review quality is not something to experiment with this week.
+#
+# Cursor runs here through no-mistakes' ACP bridge (`cursor-agent acp`), which
+# accepts no model flag, so this uses Cursor's automatic selection. That is
+# intended rather than a limitation: automatic selection draws the core usage
+# pool and leaves the pick-your-own-model allowance free for other work.
+#
+# Added 2026-09-12 on the captain's instruction, as a temporary measure while the
+# codex weekly allowance is tight. Revisit rather than assume it is permanent.
+agent: [cursor]
