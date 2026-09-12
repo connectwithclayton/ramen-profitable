@@ -68,15 +68,15 @@ test('energy countdown follows the live regeneration rate', async () => {
   assert.deepEqual(completed, { drained: true, prompt: 'SHIP IT AND FIND OUT' });
 });
 
-test('ten-tap reaction fires at the exact count and takes depletion precedence', async () => {
+test('ten-tap and depletion reactions each deliver at most their intended beat', async () => {
   const { tapReactionKind } = await loadExperience();
 
-  assert.equal(tapReactionKind(10, true), 'ten-taps');
-  assert.equal(tapReactionKind(10, false), 'ten-taps');
-  assert.equal(tapReactionKind(9, true), 'energy-depleted');
-  assert.equal(tapReactionKind(11, true), 'energy-depleted');
-  assert.equal(tapReactionKind(9, false), undefined);
-  assert.equal(tapReactionKind(11, false), undefined);
+  assert.equal(tapReactionKind(10, true, false), 'ten-taps');
+  assert.equal(tapReactionKind(10, false, false), 'ten-taps');
+  assert.equal(tapReactionKind(9, true, false), 'energy-depleted');
+  assert.equal(tapReactionKind(11, true, true), undefined);
+  assert.equal(tapReactionKind(9, false, false), undefined);
+  assert.equal(tapReactionKind(11, false, false), undefined);
 });
 
 test('Home selects intentional beta-tester reactions and ignores player verdicts', async () => {
@@ -496,29 +496,144 @@ test('Home project copy and automation telemetry follow the latest real state', 
   assert.equal(homeProjectActionLabel({ loc: 100, need: 100 }), 'Open Code to submit');
 });
 
-test('Home reaction expiry uses measured visible foreground time', async () => {
-  const { homeReactionSecondsAfterExposure, sampleHomeExposure } = await loadExperience();
-  let visibleSince;
-  let visibleSeconds = 0;
+test('Home buffers measured exposure until a boundary or expiry', async () => {
+  const { createHomeExposureBuffer, homeReactionSecondsAfterExposure } = await loadExperience();
+  const expiryWrites = [];
+  const expiry = createHomeExposureBuffer(20, 0, 1, seconds => expiryWrites.push(seconds));
 
-  const sample = (now, remainsVisible) => {
-    const exposure = sampleHomeExposure(visibleSince, now, remainsVisible);
-    visibleSince = exposure.nextStartedAt;
-    visibleSeconds += exposure.elapsedSeconds;
-  };
+  for (let second = 1; second < 20; second++) {
+    expiry.sample(second * 1000, 1);
+  }
+  assert.deepEqual(expiryWrites, []);
+  expiry.sample(20_000, 1);
+  expiry.sample(21_000, 1);
+  assert.deepEqual(expiryWrites, [20]);
 
-  sample(0, true);
-  sample(7000, false);
-  sample(67000, false);
-  sample(67000, true);
-  sample(80000, false);
+  const hiddenWrites = [];
+  const hidden = createHomeExposureBuffer(20, 0, 0.5, seconds => hiddenWrites.push(seconds));
+  hidden.sample(10_000, 0);
+  assert.deepEqual(hiddenWrites, []);
+  hidden.flush();
+  assert.deepEqual(hiddenWrites, [5]);
 
-  assert.equal(visibleSeconds, 20);
-  assert.equal(homeReactionSecondsAfterExposure(20, visibleSeconds), 0);
-  assert.deepEqual(sampleHomeExposure(1000, 2375, true), {
-    elapsedSeconds: 1.375,
-    nextStartedAt: 2375,
+  const rateChangeWrites = [];
+  const rateChanges = createHomeExposureBuffer(20, 0, 1, seconds => rateChangeWrites.push(seconds));
+  rateChanges.sample(4_000, 0.5);
+  rateChanges.sample(10_000, 0.25);
+  rateChanges.sample(18_000, 0.25);
+  assert.deepEqual(rateChangeWrites, []);
+  rateChanges.flush();
+  assert.deepEqual(rateChangeWrites, [9]);
+  assert.equal(homeReactionSecondsAfterExposure(20, rateChangeWrites[0]), 11);
+});
+
+test('offline owner bonuses remain pending until definitive entitlement settlement', async () => {
+  const {
+    emptyPendingOwnerBonus,
+    offlineEarningsTransition,
+    parsePendingOwnerBonus,
+    selectPersistedState,
+    settlePendingOwnerBonus,
+    shouldPreservePendingOwnerBonus,
+  } = await loadExperience();
+  const { BETA_TESTER } = await loadContent();
+  const empty = emptyPendingOwnerBonus();
+  const launch = offlineEarningsTransition({
+    mrr: 120,
+    from: 0,
+    until: 3_600_000,
+    ownership: null,
+    rememberedOwner: true,
+    pendingOwnerBonus: empty,
   });
+
+  assert.equal(launch.earned, 720);
+  assert.deepEqual(launch.pendingOwnerBonus, { revision: 1, amount: 720 });
+  const persisted = JSON.parse(JSON.stringify(selectPersistedState({
+    cash: launch.earned,
+    pendingOwnerBonus: launch.pendingOwnerBonus,
+  }, BETA_TESTER)));
+  assert.deepEqual(persisted.pendingOwnerBonus, launch.pendingOwnerBonus);
+
+  const settlement = settlePendingOwnerBonus(
+    parsePendingOwnerBonus(persisted.pendingOwnerBonus),
+    true,
+  );
+  assert.deepEqual(settlement, {
+    earned: 720,
+    pendingOwnerBonus: { revision: 2, amount: 0 },
+  });
+  assert.deepEqual(settlePendingOwnerBonus(settlement.pendingOwnerBonus, true), {
+    earned: 0,
+    pendingOwnerBonus: settlement.pendingOwnerBonus,
+  });
+
+  const discarded = settlePendingOwnerBonus(launch.pendingOwnerBonus, false);
+  assert.deepEqual(discarded, {
+    earned: 0,
+    pendingOwnerBonus: { revision: 2, amount: 0 },
+  });
+  assert.equal(settlePendingOwnerBonus(discarded.pendingOwnerBonus, true).earned, 0);
+  assert.equal(
+    shouldPreservePendingOwnerBonus(settlement.pendingOwnerBonus, launch.pendingOwnerBonus),
+    true,
+  );
+});
+
+test('offline earnings aggregate unresolved intervals and validate persisted debt', async () => {
+  const {
+    emptyPendingOwnerBonus,
+    offlineEarningsTransition,
+    parsePendingOwnerBonus,
+  } = await loadExperience();
+  const first = offlineEarningsTransition({
+    mrr: 120,
+    from: 0,
+    until: 61_000,
+    ownership: null,
+    rememberedOwner: true,
+    pendingOwnerBonus: emptyPendingOwnerBonus(),
+  });
+  const second = offlineEarningsTransition({
+    mrr: 120,
+    from: 61_000,
+    until: 122_000,
+    ownership: null,
+    rememberedOwner: true,
+    pendingOwnerBonus: first.pendingOwnerBonus,
+  });
+  const confirmed = offlineEarningsTransition({
+    mrr: 120,
+    from: 0,
+    until: 61_000,
+    ownership: true,
+    rememberedOwner: true,
+    pendingOwnerBonus: emptyPendingOwnerBonus(),
+  });
+  const free = offlineEarningsTransition({
+    mrr: 120,
+    from: 0,
+    until: 61_000,
+    ownership: null,
+    rememberedOwner: false,
+    pendingOwnerBonus: emptyPendingOwnerBonus(),
+  });
+
+  assert.equal(first.earned, 12.2);
+  assert.deepEqual(second.pendingOwnerBonus, { revision: 2, amount: 24.4 });
+  assert.equal(confirmed.earned, 24.4);
+  assert.deepEqual(confirmed.pendingOwnerBonus, emptyPendingOwnerBonus());
+  assert.equal(free.earned, 12.2);
+  assert.deepEqual(free.pendingOwnerBonus, emptyPendingOwnerBonus());
+  for (const malformed of [
+    undefined,
+    { revision: -1, amount: 10 },
+    { revision: 0, amount: 10 },
+    { revision: 2, amount: -1 },
+    { revision: 2, amount: Infinity },
+  ]) {
+    assert.deepEqual(parsePendingOwnerBonus(malformed), emptyPendingOwnerBonus());
+  }
 });
 
 test('semantic no-op patches are rejected before event output', async () => {

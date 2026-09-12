@@ -32,66 +32,94 @@ import { C, R } from '../theme';
 import { AbTestIcon, DrawnIcon, EnergyIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
 import {
   automationAffordabilityNudge,
+  createHomeExposureBuffer,
   formatMrrDelta,
   homeAutomationStatus,
   homeEmptyProjectCopy,
   homeProjectActionLabel,
   mrrDirection,
-  sampleHomeExposure,
   selectHomeReaction,
   verticalFrameExposureRate,
 } from '../state/experience';
 
 function useForegroundExposure(
+  reactionId: string | undefined,
+  secondsLeft: number,
   enabled: boolean,
-  record: (elapsedSeconds: number, remainsVisible: boolean) => void,
+  record: (reactionId: string, elapsedSeconds: number) => void,
   exposureRate = 1,
 ) {
+  const exposureRateRef = React.useRef(exposureRate);
+  const transitionExposureRate = React.useRef<((nextRate: number) => void) | undefined>(undefined);
+
+  React.useLayoutEffect(() => {
+    transitionExposureRate.current?.(exposureRate);
+    exposureRateRef.current = exposureRate;
+  }, [exposureRate]);
+
   React.useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !reactionId || secondsLeft <= 0) return;
 
     let appState = AppState.currentState;
     let focused = true;
-    let visibleSince = appState === 'active' ? performance.now() : undefined;
-
-    const report = (homeStillVisible: boolean) => {
-      const sample = sampleHomeExposure(visibleSince, performance.now(), homeStillVisible);
-      visibleSince = sample.nextStartedAt;
-      if (sample.elapsedSeconds > 0) {
-        record(sample.elapsedSeconds * exposureRate, homeStillVisible);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const foregroundRate = () => appState === 'active' && focused ? exposureRateRef.current : 0;
+    const buffer = createHomeExposureBuffer(
+      secondsLeft,
+      performance.now(),
+      foregroundRate(),
+      elapsedSeconds => record(reactionId, elapsedSeconds),
+    );
+    const stopSampling = () => {
+      if (interval !== undefined) {
+        clearInterval(interval);
+        interval = undefined;
       }
     };
+    const sample = (nextRate = foregroundRate()) => {
+      const closed = buffer.sample(performance.now(), nextRate);
+      if (closed) stopSampling();
+      return closed;
+    };
+    const flush = () => {
+      if (buffer.flush()) stopSampling();
+    };
+    const transition = (nextRate: number) => {
+      const visibleRate = appState === 'active' && focused ? nextRate : 0;
+      if (!sample(visibleRate) && visibleRate <= 0) flush();
+    };
+    transitionExposureRate.current = transition;
 
-    const interval = setInterval(() => {
-      if (appState === 'active' && focused) report(true);
-    }, 1000);
+    interval = setInterval(() => sample(), 1000);
     const appStateSubscription = AppState.addEventListener('change', nextState => {
-      if (appState === 'active' && focused) report(false);
       appState = nextState;
-      if (appState === 'active' && focused) visibleSince = performance.now();
+      transition(exposureRateRef.current);
     });
     const blurSubscription = Platform.OS === 'android'
       ? AppState.addEventListener('blur', () => {
-          if (appState === 'active' && focused) report(false);
           focused = false;
+          transition(exposureRateRef.current);
         })
       : undefined;
     const focusSubscription = Platform.OS === 'android'
       ? AppState.addEventListener('focus', () => {
           if (focused) return;
           focused = true;
-          if (appState === 'active') visibleSince = performance.now();
+          transition(exposureRateRef.current);
         })
       : undefined;
 
     return () => {
-      if (appState === 'active' && focused) report(false);
-      clearInterval(interval);
+      if (transitionExposureRate.current === transition) {
+        transitionExposureRate.current = undefined;
+      }
+      if (!sample(0)) flush();
+      stopSampling();
       appStateSubscription.remove();
       blurSubscription?.remove();
       focusSubscription?.remove();
     };
-  }, [enabled, exposureRate, record]);
+  }, [enabled, reactionId, record, secondsLeft]);
 }
 
 function useHomeReactionViewport(
@@ -252,21 +280,19 @@ export default function HomeScreen({
     receiptSecondsLeft: s.homeReceiptSecondsLeft,
     betaTester: BETA_TESTER,
   });
-  const timedReactionId = reaction && (
-    (s.homePrioritySecondsLeft > 0 && reaction.id === s.homePriority?.id) ||
-    (s.homeReceiptSecondsLeft > 0 && reaction.id === s.homeReceipt?.id)
-  ) ? reaction.id : undefined;
+  const timedReactionSecondsLeft = reaction
+    ? Math.max(
+        reaction.id === s.homePriority?.id ? s.homePrioritySecondsLeft : 0,
+        reaction.id === s.homeReceipt?.id ? s.homeReceiptSecondsLeft : 0,
+      )
+    : 0;
+  const timedReactionId = timedReactionSecondsLeft > 0 ? reaction?.id : undefined;
   const reactionViewport = useHomeReactionViewport(reaction?.id, bottomOcclusion);
-  const recordReactionExposure = React.useCallback((elapsedSeconds: number) => {
-    if (timedReactionId) s.recordHomeReactionExposure(timedReactionId, elapsedSeconds);
-  }, [timedReactionId, s.recordHomeReactionExposure]);
   useForegroundExposure(
-    Boolean(
-      s.overlay === null &&
-      timedReactionId &&
-      reactionViewport.exposureRate > 0
-    ),
-    recordReactionExposure,
+    timedReactionId,
+    timedReactionSecondsLeft,
+    s.overlay === null,
+    s.recordHomeReactionExposure,
     reactionViewport.exposureRate,
   );
   const projectDone = Boolean(s.project && s.project.loc >= s.project.need);

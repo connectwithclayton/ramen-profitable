@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Animated, Easing } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useGame } from '../state/gameStore';
 import { REVIEW_MSGS } from '../content/content';
@@ -81,7 +81,7 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
 
   return (
     <View style={st.backdrop}>
-      <View style={st.sheet}>
+      <View style={[st.sheet, overlay.type === 'paywallResult' && st.paywallResultSheet]}>
         {overlay.type === 'review' && <ReviewSheet appName={overlay.appName} />}
 
         {overlay.type === 'verdict' && overlay.ok && (
@@ -145,8 +145,10 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
                 setGoIndiePending(true);
                 try {
                   const active = await presentGoIndiePaywall();
+                  if (active !== null) {
+                    setGoIndieActive(active);
+                  }
                   if (active === true) {
-                    setGoIndieActive(true);
                     pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
                     dismiss();
                   }
@@ -162,7 +164,11 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
         {overlay.type === 'paywallDesigner' && <PaywallDesigner appId={overlay.appId} />}
 
         {overlay.type === 'paywallResult' && paywallResult && (
-          <>
+          <ScrollView
+            style={st.paywallResultScroll}
+            contentContainerStyle={st.paywallResultContent}
+            showsVerticalScrollIndicator
+          >
             <Eyebrow
               color={overlay.transaction.dark >= 5 || paywallResult.direction === 'down' ? C.pink : C.mint}
             >
@@ -174,7 +180,7 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
             </MonoText>
             <Text style={st.body}>{paywallResult.body}</Text>
             <Btn label="Watch the numbers" onPress={dismiss} style={{ marginTop: 16 }} />
-          </>
+          </ScrollView>
         )}
 
         {overlay.type === 'win' && (
@@ -217,6 +223,16 @@ const st = StyleSheet.create({
     borderRadius: R.sheet,
     padding: 22,
   },
+  paywallResultSheet: {
+    maxHeight: '100%',
+    flexShrink: 1,
+    padding: 0,
+  },
+  paywallResultScroll: {
+    width: '100%',
+    flexShrink: 1,
+  },
+  paywallResultContent: { padding: 22 },
   h1: {
     color: C.ink,
     fontSize: 22,

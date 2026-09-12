@@ -182,10 +182,9 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
 
     const result = await RevenueCatUI.presentPaywall({ offering });
     if (result === uiMod.PAYWALL_RESULT.PURCHASED || result === uiMod.PAYWALL_RESULT.RESTORED) {
-      await refreshGoIndieEntitlement();
-      return true;
+      return refreshGoIndieEntitlement();
     }
-    return result === uiMod.PAYWALL_RESULT.CANCELLED ? false : null;
+    return null;
   } catch (e) {
     console.warn('[purchases] purchase failed', e);
     return null;

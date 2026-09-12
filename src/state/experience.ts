@@ -12,9 +12,107 @@ export type PaywallTransaction = {
   delta: MrrDelta;
 };
 
-export function tapReactionKind(manualTaps: number, depletedEnergy: boolean) {
+export type PendingOwnerBonus = {
+  revision: number;
+  amount: number;
+};
+
+export const emptyPendingOwnerBonus = (): PendingOwnerBonus => ({ revision: 0, amount: 0 });
+
+export function parsePendingOwnerBonus(value: unknown): PendingOwnerBonus {
+  if (!value || typeof value !== 'object') return emptyPendingOwnerBonus();
+  const source = value as Record<string, unknown>;
+  if (
+    !Number.isSafeInteger(source.revision) ||
+    (source.revision as number) < 0 ||
+    typeof source.amount !== 'number' ||
+    !Number.isFinite(source.amount) ||
+    source.amount < 0 ||
+    (source.revision === 0 && source.amount !== 0)
+  ) {
+    return emptyPendingOwnerBonus();
+  }
+  return {
+    revision: source.revision as number,
+    amount: source.amount,
+  };
+}
+
+function appendPendingOwnerBonus(
+  pendingOwnerBonus: PendingOwnerBonus,
+  amount: number,
+): PendingOwnerBonus {
+  if (amount <= 0) return pendingOwnerBonus;
+  return {
+    revision: pendingOwnerBonus.revision + 1,
+    amount: pendingOwnerBonus.amount + amount,
+  };
+}
+
+export function offlineEarningsBetween(mrr: number, from: number, until: number) {
+  if (![mrr, from, until].every(Number.isFinite)) return 0;
+  const awayMs = until - from;
+  if (awayMs < 60_000 || mrr <= 0) return 0;
+  const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
+  return (mrr / 120) * (cappedSec / 5);
+}
+
+export function offlineEarningsTransition({
+  mrr,
+  from,
+  until,
+  ownership,
+  rememberedOwner,
+  pendingOwnerBonus,
+}: {
+  mrr: number;
+  from: number;
+  until: number;
+  ownership: boolean | null;
+  rememberedOwner: boolean;
+  pendingOwnerBonus: PendingOwnerBonus;
+}) {
+  const base = offlineEarningsBetween(mrr, from, until);
+  return {
+    earned: ownership === true ? base * 2 : base,
+    pendingOwnerBonus:
+      ownership === null && rememberedOwner
+        ? appendPendingOwnerBonus(pendingOwnerBonus, base)
+        : pendingOwnerBonus,
+  };
+}
+
+export function settlePendingOwnerBonus(
+  pendingOwnerBonus: PendingOwnerBonus,
+  active: boolean,
+) {
+  if (pendingOwnerBonus.amount <= 0) {
+    return { earned: 0, pendingOwnerBonus };
+  }
+  return {
+    earned: active ? pendingOwnerBonus.amount : 0,
+    pendingOwnerBonus: {
+      revision: pendingOwnerBonus.revision + 1,
+      amount: 0,
+    },
+  };
+}
+
+export function shouldPreservePendingOwnerBonus(
+  current: PendingOwnerBonus,
+  persisted: PendingOwnerBonus,
+) {
+  return current.revision > persisted.revision ||
+    (current.revision === persisted.revision && current.revision > 0);
+}
+
+export function tapReactionKind(
+  manualTaps: number,
+  depletedEnergy: boolean,
+  depletionReactionDelivered: boolean,
+) {
   if (manualTaps === 10) return 'ten-taps' as const;
-  if (depletedEnergy) return 'energy-depleted' as const;
+  if (depletedEnergy && !depletionReactionDelivered) return 'energy-depleted' as const;
   return undefined;
 }
 
@@ -93,15 +191,37 @@ export function automationAffordabilityNudge(
   };
 }
 
-export function sampleHomeExposure(
-  startedAt: number | undefined,
-  now: number,
-  remainsVisible: boolean,
+export function createHomeExposureBuffer(
+  secondsLeft: number,
+  startedAt: number,
+  exposureRate: number,
+  record: (elapsedSeconds: number) => void,
 ) {
-  return {
-    elapsedSeconds: startedAt === undefined ? 0 : Math.max(0, now - startedAt) / 1000,
-    nextStartedAt: remainsVisible ? now : undefined,
+  const budget = Math.max(0, secondsLeft);
+  let sampledAt = startedAt;
+  let rate = Math.min(1, Math.max(0, exposureRate));
+  let accumulatedSeconds = 0;
+  let closed = budget === 0;
+
+  const flush = () => {
+    if (closed || accumulatedSeconds <= 0) return false;
+    const elapsedSeconds = Math.min(budget, accumulatedSeconds);
+    accumulatedSeconds = 0;
+    closed = true;
+    record(elapsedSeconds);
+    return true;
   };
+
+  const sample = (now: number, nextExposureRate = rate) => {
+    if (closed) return true;
+    accumulatedSeconds += Math.max(0, now - sampledAt) / 1000 * rate;
+    sampledAt = now;
+    rate = Math.min(1, Math.max(0, nextExposureRate));
+    if (accumulatedSeconds >= budget) flush();
+    return closed;
+  };
+
+  return { sample, flush };
 }
 
 export function homeReactionSecondsAfterExposure(secondsLeft: number, elapsedSeconds: number) {
@@ -208,7 +328,7 @@ const persistedStateKeys = [
   'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
   'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
   'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
-  'homeReceipt', 'homeReceiptSecondsLeft',
+  'pendingOwnerBonus', 'homeReceipt', 'homeReceiptSecondsLeft',
 ] as const satisfies readonly (keyof GameState)[];
 
 export function selectPersistedState(
@@ -222,6 +342,7 @@ export function selectPersistedState(
       .filter(key => key in source)
       .map(key => [key, source[key]]),
   ) as Partial<GameState>;
+  selected.pendingOwnerBonus = parsePendingOwnerBonus(selected.pendingOwnerBonus);
   const receiptState = homeReceiptStateForPersistence(
     selected.homeReceipt,
     selected.homeReceiptSecondsLeft ?? 0,

@@ -19,20 +19,33 @@ import { pickAppIdea } from './projectIdeas';
 import {
   advanceHomeReactionExposure,
   calculatePaywallTransaction,
+  emptyPendingOwnerBonus,
+  offlineEarningsTransition,
   paywallReaction,
+  parsePendingOwnerBonus,
   priorityHomeReactionState,
   resolveGameEvent,
   selectPersistedState,
+  settlePendingOwnerBonus,
+  shouldPreservePendingOwnerBonus,
   tapReactionKind,
 } from './experience';
 import type {
   DurableHomeReceiptKind,
   MrrDelta,
+  PendingOwnerBonus,
   PaywallTransaction,
   PriorityHomeReactionKind,
 } from './experience';
 
-export type Project = { name: string; idea: string; loc: number; need: number; manualTaps: number };
+export type Project = {
+  name: string;
+  idea: string;
+  loc: number;
+  need: number;
+  manualTaps: number;
+  depletionReactionDelivered: boolean;
+};
 export type ShippedApp = {
   id: string;
   name: string;
@@ -96,6 +109,7 @@ export type GameState = {
   won: boolean;
   achievements: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
+  pendingOwnerBonus: PendingOwnerBonus;
   homePriority?: HomePriority;
   homePrioritySecondsLeft: number;
   homeReceipt?: HomeReceipt;
@@ -157,6 +171,7 @@ const initial: GameState = {
   won: false,
   achievements: {},
   lastSeen: Date.now(),
+  pendingOwnerBonus: emptyPendingOwnerBonus(),
   homePriority: undefined,
   homePrioritySecondsLeft: 0,
   homeReceipt: undefined,
@@ -207,7 +222,14 @@ export const useGame = create<GameState & Actions>()(
           ...(s.project ? [s.project.name] : []),
         ]);
         const [name, idea] = pickAppIdea(APP_IDEAS, usedNames);
-        const project: Project = { name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250), manualTaps: 0 };
+        const project: Project = {
+          name,
+          idea,
+          loc: 0,
+          need: 250 + Math.floor(Math.random() * 250),
+          manualTaps: 0,
+          depletionReactionDelivered: false,
+        };
         set({ project });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
           author: PLAYER,
@@ -229,13 +251,21 @@ export const useGame = create<GameState & Actions>()(
         const nextLoc = s.project.loc + s.tapPower;
         const nextEnergy = s.energy - 1;
         const manualTaps = (s.project.manualTaps ?? 0) + 1;
+        const depletionReactionDelivered = s.project.depletionReactionDelivered ?? false;
         const reactionKind = tapReactionKind(
           manualTaps,
           nextEnergy < 1 && nextLoc < s.project.need && s.autoCode <= 0,
+          depletionReactionDelivered,
         );
         set({
           energy: nextEnergy,
-          project: { ...s.project, loc: nextLoc, manualTaps },
+          project: {
+            ...s.project,
+            loc: nextLoc,
+            manualTaps,
+            depletionReactionDelivered:
+              depletionReactionDelivered || reactionKind === 'energy-depleted',
+          },
         });
         if (reactionKind === 'ten-taps') {
           get().pushChirp(`${Math.floor(nextLoc)} lines in and the launch thread is already longer than the app.`, {
@@ -306,8 +336,15 @@ export const useGame = create<GameState & Actions>()(
       openGoIndiePaywall: () => set({ overlay: { type: 'paywall' } }),
 
       setGoIndieActive: active => {
-        if (active) set({ lastSeen: Date.now() });
-        set({ goIndieActive: active, goIndieResolved: true });
+        set(state => {
+          const settlement = settlePendingOwnerBonus(state.pendingOwnerBonus, active);
+          return {
+            cash: state.cash + settlement.earned,
+            goIndieActive: active,
+            goIndieResolved: true,
+            pendingOwnerBonus: settlement.pendingOwnerBonus,
+          };
+        });
       },
 
       buy: id => {
@@ -464,23 +501,31 @@ export const useGame = create<GameState & Actions>()(
       },
 
       applyOfflineEarnings: () => {
-        const s = get();
-        const awayMs = Date.now() - s.lastSeen;
-        if (awayMs < 60_000 || s.mrr <= 0) {
-          set({ lastSeen: Date.now() });
-          return 0;
-        }
-        // Earn cash at the live rate, capped at 8 hours away
-        const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
-        const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieResolved && s.goIndieActive ? 2 : 1);
-        set({ cash: s.cash + earned, lastSeen: Date.now() });
+        const now = Date.now();
+        let earned = 0;
+        set(s => {
+          const transition = offlineEarningsTransition({
+            mrr: s.mrr,
+            from: s.lastSeen,
+            until: now,
+            ownership: s.goIndieResolved ? s.goIndieActive : null,
+            rememberedOwner: s.goIndieActive,
+            pendingOwnerBonus: s.pendingOwnerBonus,
+          });
+          earned = transition.earned;
+          return {
+            cash: s.cash + earned,
+            lastSeen: now,
+            pendingOwnerBonus: transition.pendingOwnerBonus,
+          };
+        });
         return earned;
       },
       touchLastSeen: () => set({ lastSeen: Date.now() }),
     }),
     {
       name: 'ramen-profitable-v1',
-      version: 4,
+      version: 5,
       migrate: (persisted: any) => {
         const migrated = selectPersistedState(persisted, BETA_TESTER);
         if (migrated?.apps) {
@@ -488,19 +533,33 @@ export const useGame = create<GameState & Actions>()(
         }
         migrated.achievements = migrated.achievements ?? {};
         migrated.goIndieActive = migrated.goIndieActive ?? false;
+        migrated.pendingOwnerBonus = parsePendingOwnerBonus(migrated.pendingOwnerBonus);
         if (migrated.project) {
           migrated.project = {
             ...migrated.project,
             manualTaps: migrated.project.manualTaps ?? 0,
+            depletionReactionDelivered: migrated.project.depletionReactionDelivered ?? false,
           };
         }
         return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
-      merge: (persisted, current) => ({
-        ...current,
-        ...selectPersistedState(persisted, BETA_TESTER),
-      }),
+      merge: (persisted, current) => {
+        const persistedState = selectPersistedState(persisted, BETA_TESTER);
+        const persistedOwnerBonus = parsePendingOwnerBonus(persistedState.pendingOwnerBonus);
+        const currentOwnerBonus = parsePendingOwnerBonus(current.pendingOwnerBonus);
+        const preserveCurrentOwnerBonus = shouldPreservePendingOwnerBonus(
+          currentOwnerBonus,
+          persistedOwnerBonus,
+        );
+        return {
+          ...current,
+          ...persistedState,
+          ...(preserveCurrentOwnerBonus
+            ? { cash: current.cash, pendingOwnerBonus: currentOwnerBonus }
+            : { pendingOwnerBonus: persistedOwnerBonus }),
+        };
+      },
       partialize: s => selectPersistedState(s, BETA_TESTER),
     }
   )
