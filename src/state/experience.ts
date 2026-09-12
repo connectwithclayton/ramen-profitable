@@ -190,13 +190,13 @@ export function priorityHomeReactionState<T extends HomeReaction>(
   betaTester: StoryAuthor,
 ) {
   if (!isPriorityHomeReaction(chirp, betaTester)) return undefined;
-  const receipt = isDurableHomeReceipt(chirp, betaTester) ? chirp : undefined;
-  return {
+  const priority = {
     homePriority: chirp,
     homePrioritySecondsLeft: 20,
-    homeReceipt: receipt,
-    homeReceiptSecondsLeft: receipt ? 20 : 0,
   };
+  return isDurableHomeReceipt(chirp, betaTester)
+    ? { ...priority, homeReceipt: chirp, homeReceiptSecondsLeft: 20 }
+    : priority;
 }
 
 export function selectHomeReaction<T extends HomeReaction>({

@@ -133,7 +133,7 @@ test('Home selects intentional beta-tester reactions and ignores player verdicts
   })?.id, 'purchase');
 });
 
-test('Home priority ignores ambience and drops replaced earned responses', async () => {
+test('Home priority ignores ambience and keeps receipt persistence independent', async () => {
   const { priorityHomeReactionState } = await loadExperience();
   const { BETA_TESTER } = await loadContent();
   const earned = {
@@ -154,28 +154,92 @@ test('Home priority ignores ambience and drops replaced earned responses', async
     handle: BETA_TESTER[1],
     kind: 'paywall',
   };
-  const current = {
+  const earnedPriority = {
     homePriority: earned,
     homePrioritySecondsLeft: 20,
-    homeReceipt: undefined,
-    homeReceiptSecondsLeft: 0,
   };
-
-  assert.deepEqual(
-    { ...current, ...(priorityHomeReactionState(ambient, BETA_TESTER) ?? {}) },
-    current,
-  );
-  assert.deepEqual(priorityHomeReactionState(earned, BETA_TESTER), current);
-  assert.deepEqual(priorityHomeReactionState(receipt, BETA_TESTER), {
+  const receiptPriority = {
     homePriority: receipt,
     homePrioritySecondsLeft: 20,
     homeReceipt: receipt,
     homeReceiptSecondsLeft: 20,
-  });
+  };
+
+  assert.deepEqual(
+    { ...earnedPriority, ...(priorityHomeReactionState(ambient, BETA_TESTER) ?? {}) },
+    earnedPriority,
+  );
+  assert.deepEqual(priorityHomeReactionState(earned, BETA_TESTER), earnedPriority);
+  assert.deepEqual(priorityHomeReactionState(receipt, BETA_TESTER), receiptPriority);
   assert.deepEqual({
-    ...priorityHomeReactionState(receipt, BETA_TESTER),
+    ...receiptPriority,
     ...priorityHomeReactionState(earned, BETA_TESTER),
-  }, current);
+  }, {
+    ...earnedPriority,
+    homeReceipt: receipt,
+    homeReceiptSecondsLeft: 20,
+  });
+});
+
+test('stored receipt resumes after transient milestone exposure', async () => {
+  const {
+    advanceHomeReactionExposure,
+    priorityHomeReactionState,
+    selectHomeReaction,
+  } = await loadExperience();
+  const { BETA_TESTER } = await loadContent();
+  const receipt = {
+    id: 'paywall-receipt',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'paywall',
+  };
+  const milestone = {
+    id: 'first-beta-reply',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'milestone',
+  };
+  const receiptState = {
+    ...priorityHomeReactionState(receipt, BETA_TESTER),
+    homeReceiptSecondsLeft: 15,
+  };
+  const state = {
+    ...receiptState,
+    ...priorityHomeReactionState(milestone, BETA_TESTER),
+  };
+
+  assert.equal(selectHomeReaction({
+    chirps: [],
+    priority: state.homePriority,
+    prioritySecondsLeft: state.homePrioritySecondsLeft,
+    receipt: state.homeReceipt,
+    receiptSecondsLeft: state.homeReceiptSecondsLeft,
+    betaTester: BETA_TESTER,
+  })?.id, milestone.id);
+
+  const exposed = advanceHomeReactionExposure({
+    priority: state.homePriority,
+    prioritySecondsLeft: state.homePrioritySecondsLeft,
+    receipt: state.homeReceipt,
+    receiptSecondsLeft: state.homeReceiptSecondsLeft,
+    displayedReactionId: milestone.id,
+    elapsedSeconds: 20,
+  });
+  assert.deepEqual(exposed, {
+    homePriority: undefined,
+    homePrioritySecondsLeft: 0,
+    homeReceipt: receipt,
+    homeReceiptSecondsLeft: 15,
+  });
+  assert.equal(selectHomeReaction({
+    chirps: [],
+    priority: exposed.homePriority,
+    prioritySecondsLeft: exposed.homePrioritySecondsLeft,
+    receipt: exposed.homeReceipt,
+    receiptSecondsLeft: exposed.homeReceiptSecondsLeft,
+    betaTester: BETA_TESTER,
+  })?.id, receipt.id);
 });
 
 test('Home keeps a durable receipt independent of bounded Chirp history', async () => {
