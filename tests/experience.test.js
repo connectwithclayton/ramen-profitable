@@ -96,8 +96,8 @@ test('Home selects intentional beta-tester reactions and ignores player verdicts
   const { BETA_TESTER, PLAYER } = await loadContent();
   const chirps = [
     { id: 'ambient', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'ambient' },
-    { id: 'player-verdict', who: PLAYER[0], handle: PLAYER[1], kind: 'verdict' },
-    { id: 'random-event', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'event' },
+    { id: 'player-verdict', who: PLAYER[0], handle: PLAYER[1] },
+    { id: 'random-event', who: BETA_TESTER[0], handle: BETA_TESTER[1] },
     { id: 'purchase', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'purchase' },
     { id: 'verdict', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'verdict' },
     { id: 'ten-taps', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'milestone' },
@@ -125,27 +125,53 @@ test('Home project copy and automation telemetry follow the latest real state', 
 });
 
 test('ambient delivery respects its active-time gap and pre-ship cap', async () => {
-  const { canDeliverAmbientStory } = await loadExperience();
+  const { advanceHomeStoryClock, canDeliverAmbientStory } = await loadExperience();
+
+  let coveredClock = { storyActiveSeconds: 20, homeReactionSecondsLeft: 20 };
+  for (let tick = 0; tick < 4; tick++) {
+    coveredClock = advanceHomeStoryClock({
+      homeCovered: true,
+      ...coveredClock,
+      elapsedSeconds: 5,
+    });
+  }
+  assert.deepEqual(coveredClock, { storyActiveSeconds: 20, homeReactionSecondsLeft: 20 });
+  assert.deepEqual(advanceHomeStoryClock({
+    homeCovered: false,
+    ...coveredClock,
+    elapsedSeconds: 5,
+  }), { storyActiveSeconds: 25, homeReactionSecondsLeft: 15 });
 
   assert.equal(canDeliverAmbientStory({
+    homeCovered: true,
+    activeSeconds: 20,
+    lastDeliveredAt: 0,
+    beforeFirstShip: false,
+    preShipCount: 0,
+  }), false);
+  assert.equal(canDeliverAmbientStory({
+    homeCovered: false,
     activeSeconds: 19,
     lastDeliveredAt: 0,
     beforeFirstShip: false,
     preShipCount: 0,
   }), false);
   assert.equal(canDeliverAmbientStory({
+    homeCovered: false,
     activeSeconds: 20,
     lastDeliveredAt: 0,
     beforeFirstShip: false,
     preShipCount: 0,
   }), true);
   assert.equal(canDeliverAmbientStory({
+    homeCovered: false,
     activeSeconds: 20,
     lastDeliveredAt: 0,
     beforeFirstShip: true,
     preShipCount: 3,
   }), false);
   assert.equal(canDeliverAmbientStory({
+    homeCovered: false,
     activeSeconds: 20,
     lastDeliveredAt: 0,
     beforeFirstShip: false,

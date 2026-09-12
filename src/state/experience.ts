@@ -89,18 +89,38 @@ export function homeProjectActionLabel(done: boolean) {
   return done ? 'Open Code to submit' : 'Continue coding';
 }
 
+export function advanceHomeStoryClock({
+  homeCovered,
+  storyActiveSeconds,
+  homeReactionSecondsLeft,
+  elapsedSeconds,
+}: {
+  homeCovered: boolean;
+  storyActiveSeconds: number;
+  homeReactionSecondsLeft: number;
+  elapsedSeconds: number;
+}) {
+  if (homeCovered) return { storyActiveSeconds, homeReactionSecondsLeft };
+  return {
+    storyActiveSeconds: storyActiveSeconds + elapsedSeconds,
+    homeReactionSecondsLeft: Math.max(0, homeReactionSecondsLeft - elapsedSeconds),
+  };
+}
+
 export function canDeliverAmbientStory({
+  homeCovered,
   activeSeconds,
   lastDeliveredAt,
   beforeFirstShip,
   preShipCount,
 }: {
+  homeCovered: boolean;
   activeSeconds: number;
   lastDeliveredAt: number;
   beforeFirstShip: boolean;
   preShipCount: number;
 }) {
-  return activeSeconds - lastDeliveredAt >= 20 && (!beforeFirstShip || preShipCount < 3);
+  return !homeCovered && activeSeconds - lastDeliveredAt >= 20 && (!beforeFirstShip || preShipCount < 3);
 }
 
 type HomeReaction = { id: string; who: string; handle: string; kind?: string };

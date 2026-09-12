@@ -17,6 +17,7 @@ import {
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
 import {
+  advanceHomeStoryClock,
   canDeliverAmbientStory,
   calculatePaywallTransaction,
   isEligibleHomeReaction,
@@ -39,7 +40,7 @@ export type ShippedApp = {
   dark: number; // dark-pattern heat
   hasPaywall: boolean;
 };
-export type StoryKind = 'ambient' | 'milestone' | 'purchase' | 'verdict' | 'paywall' | 'event';
+export type StoryKind = 'ambient' | 'milestone' | 'purchase' | 'verdict' | 'paywall';
 export type Chirp = {
   id: string;
   who: string;
@@ -228,8 +229,6 @@ export const useGame = create<GameState & Actions>()(
         });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
           author: PLAYER,
-          kind: 'milestone',
-          event: 'PROJECT STARTED',
         });
         get().pushChirp(`does ${name} have dark mode? haven't opened it yet.`, {
           author: BETA_TESTER,
@@ -298,8 +297,6 @@ export const useGame = create<GameState & Actions>()(
           });
           s.pushChirp(`App Review rejected ${p.name}. ${rule}. i'm fine. this is fine.`, {
             author: PLAYER,
-            kind: 'verdict',
-            event: 'APP REVIEW · REJECTED',
           });
           s.unlock('first_reject');
         } else {
@@ -314,8 +311,6 @@ export const useGame = create<GameState & Actions>()(
           });
           s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`, {
             author: PLAYER,
-            kind: 'verdict',
-            event: 'APP REVIEW · APPROVED',
           });
           get().pushChirp(`${p.name} is live. congratulations. feature request: dark mode.`, {
             author: BETA_TESTER,
@@ -379,11 +374,16 @@ export const useGame = create<GameState & Actions>()(
 
       slowTick: () => {
         const s = get();
+        const storyClock = advanceHomeStoryClock({
+          homeCovered: s.overlay !== null,
+          storyActiveSeconds: s.storyActiveSeconds,
+          homeReactionSecondsLeft: s.homeReactionSecondsLeft,
+          elapsedSeconds: 5,
+        });
         const next: Partial<GameState> = {
           cash: s.cash + s.mrr / 120,
           dayTick: s.dayTick + 1,
-          storyActiveSeconds: s.storyActiveSeconds + 5,
-          homeReactionSecondsLeft: Math.max(0, s.homeReactionSecondsLeft - 5),
+          ...storyClock,
         };
         if (s.dayTick + 1 >= 6) {
           next.dayTick = 0;
@@ -400,6 +400,7 @@ export const useGame = create<GameState & Actions>()(
         const current = get();
         const beforeFirstShip = !current.apps.some(app => app.live);
         const canDeliverAmbient = canDeliverAmbientStory({
+          homeCovered: current.overlay !== null,
           activeSeconds: current.storyActiveSeconds,
           lastDeliveredAt: current.lastAmbientStoryAt,
           beforeFirstShip,
@@ -435,10 +436,7 @@ export const useGame = create<GameState & Actions>()(
         set(outcome.patch);
         s.pushNotif(outcome.text, ev.icon);
         if (Math.random() < 0.4) {
-          s.pushChirp(outcome.chirpText, {
-            kind: 'event',
-            event: 'LIVE EVENT',
-          });
+          s.pushChirp(outcome.chirpText);
         }
       },
 
