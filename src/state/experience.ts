@@ -85,6 +85,24 @@ export function homeAutomationStatus(
     : undefined;
 }
 
+export function homeProjectActionLabel(done: boolean) {
+  return done ? 'Open Code to submit' : 'Continue coding';
+}
+
+export function canDeliverAmbientStory({
+  activeSeconds,
+  lastDeliveredAt,
+  beforeFirstShip,
+  preShipCount,
+}: {
+  activeSeconds: number;
+  lastDeliveredAt: number;
+  beforeFirstShip: boolean;
+  preShipCount: number;
+}) {
+  return activeSeconds - lastDeliveredAt >= 20 && (!beforeFirstShip || preShipCount < 3);
+}
+
 type HomeReaction = { id: string; who: string; handle: string; kind?: string };
 type StoryAuthor = readonly [string, string];
 

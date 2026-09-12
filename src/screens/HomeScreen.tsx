@@ -26,6 +26,7 @@ import {
   formatMrrDelta,
   homeAutomationStatus,
   homeEmptyProjectCopy,
+  homeProjectActionLabel,
   homeReactionAccessibilityLabel,
   selectHomeReaction,
 } from '../state/experience';
@@ -249,7 +250,7 @@ export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: ()
             {automationStatus && (
               <MonoText style={st.automation}>{automationStatus}</MonoText>
             )}
-            <Btn small label={projectDone ? 'Submit for review' : 'Continue coding'} onPress={onOpenCode} style={st.projectButton} />
+            <Btn small label={homeProjectActionLabel(projectDone)} onPress={onOpenCode} style={st.projectButton} />
           </Unit>
         ) : (
           <Unit style={st.projectUnit}>

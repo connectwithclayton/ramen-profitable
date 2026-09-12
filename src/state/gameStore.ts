@@ -17,6 +17,7 @@ import {
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
 import {
+  canDeliverAmbientStory,
   calculatePaywallTransaction,
   isEligibleHomeReaction,
   milestonesForProject,
@@ -53,7 +54,6 @@ export type Chirp = {
 type ChirpOptions = Omit<Partial<Chirp>, 'id' | 'who' | 'handle' | 'text' | 'likes' | 'liked'> & {
   author?: readonly [string, string];
 };
-type StoryBeat = { text: string; options: ChirpOptions; priority: number; projectId?: string };
 export type Notif = { id: string; text: string; icon?: IconName; emoji?: string };
 export type Overlay =
   | { type: 'review'; appName: string }
@@ -91,8 +91,6 @@ export type GameState = {
   achievements: Record<string, boolean>;
   storyMilestones: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
-  // Session-only delivery state. Persisted receipts live in chirps; timers and queues do not.
-  pendingStoryBeats: StoryBeat[];
   storyActiveSeconds: number;
   lastAmbientStoryAt: number;
   preShipAmbientCount: number;
@@ -172,7 +170,6 @@ const initial: GameState = {
   achievements: {},
   storyMilestones: {},
   lastSeen: Date.now(),
-  pendingStoryBeats: [],
   storyActiveSeconds: 0,
   lastAmbientStoryAt: -20,
   preShipAmbientCount: 0,
@@ -228,7 +225,6 @@ export const useGame = create<GameState & Actions>()(
         set({
           project,
           storyMilestones: milestonesForProject(s.storyMilestones, project.id),
-          pendingStoryBeats: s.pendingStoryBeats.filter(item => !item.projectId || item.projectId === project.id),
         });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
           author: PLAYER,
@@ -299,7 +295,6 @@ export const useGame = create<GameState & Actions>()(
             apps: [...s.apps, { id: uid(), name: p.name, idea: p.idea, live: false, baseMrr: 0, mult: 1, dark: 0, hasPaywall: false }],
             project: null,
             overlay: { type: 'verdict', ok: false, appName: p.name, rule, flavor },
-            pendingStoryBeats: s.pendingStoryBeats.filter(beat => beat.projectId !== p.id),
           });
           s.pushChirp(`App Review rejected ${p.name}. ${rule}. i'm fine. this is fine.`, {
             author: PLAYER,
@@ -316,7 +311,6 @@ export const useGame = create<GameState & Actions>()(
             mrr: s.mrr + gain,
             project: null,
             overlay: { type: 'verdict', ok: true, appName: p.name, gain },
-            pendingStoryBeats: s.pendingStoryBeats.filter(beat => beat.projectId !== p.id),
           });
           s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`, {
             author: PLAYER,
@@ -404,36 +398,29 @@ export const useGame = create<GameState & Actions>()(
         if (s.mrr >= 1000) s.unlock('mrr_1000');
 
         const current = get();
-        const pending = current.pendingStoryBeats
-          .filter(beat => !beat.projectId || beat.projectId === current.project?.id)
-          .sort((a, b) => b.priority - a.priority);
         const beforeFirstShip = !current.apps.some(app => app.live);
-        const canDeliverAmbient =
-          current.storyActiveSeconds - current.lastAmbientStoryAt >= 20 &&
-          (!beforeFirstShip || current.preShipAmbientCount < 3);
-        let beat = canDeliverAmbient ? pending.shift() : undefined;
-        let milestones = current.storyMilestones;
-        if (!beat && canDeliverAmbient) {
+        const canDeliverAmbient = canDeliverAmbientStory({
+          activeSeconds: current.storyActiveSeconds,
+          lastDeliveredAt: current.lastAmbientStoryAt,
+          beforeFirstShip,
+          preShipCount: current.preShipAmbientCount,
+        });
+        if (canDeliverAmbient) {
           const claude = SHOP.find(item => item.id === 'claude');
           const affordableKey = 'upgrade:claude-affordable';
-          if (claude && current.cash >= claude.cost && !current.upgrades.claude && !milestones[affordableKey]) {
-            milestones = { ...milestones, [affordableKey]: true };
-            beat = {
-              text: `${claude.name} is within budget — ${claude.desc.toLowerCase()}.`,
-              options: { author: BETA_TESTER, kind: 'ambient', event: 'UPGRADE WITHIN BUDGET' },
-              priority: 1,
-            };
+          if (claude && current.cash >= claude.cost && !current.upgrades.claude && !current.storyMilestones[affordableKey]) {
+            set({
+              storyMilestones: { ...current.storyMilestones, [affordableKey]: true },
+              lastAmbientStoryAt: current.storyActiveSeconds,
+              preShipAmbientCount: current.preShipAmbientCount + (beforeFirstShip ? 1 : 0),
+            });
+            get().pushChirp(`${claude.name} is within budget — ${claude.desc.toLowerCase()}.`, {
+              author: BETA_TESTER,
+              kind: 'ambient',
+              event: 'UPGRADE WITHIN BUDGET',
+            });
           }
         }
-        set({
-          pendingStoryBeats: pending,
-          storyMilestones: milestones,
-          ...(beat ? {
-            lastAmbientStoryAt: current.storyActiveSeconds,
-            preShipAmbientCount: current.preShipAmbientCount + (beforeFirstShip ? 1 : 0),
-          } : {}),
-        });
-        if (beat) get().pushChirp(beat.text, beat.options);
       },
 
       maybeEvent: () => {

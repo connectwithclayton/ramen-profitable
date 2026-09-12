@@ -95,19 +95,24 @@ test('Home selects intentional beta-tester reactions and ignores player verdicts
   const { selectHomeReaction } = await loadExperience();
   const { BETA_TESTER, PLAYER } = await loadContent();
   const chirps = [
+    { id: 'ambient', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'ambient' },
     { id: 'player-verdict', who: PLAYER[0], handle: PLAYER[1], kind: 'verdict' },
     { id: 'random-event', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'event' },
+    { id: 'purchase', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'purchase' },
+    { id: 'verdict', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'verdict' },
     { id: 'ten-taps', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'milestone' },
     { id: 'paywall-receipt', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'paywall' },
   ];
 
   assert.equal(selectHomeReaction(chirps, 'paywall-receipt', 10, BETA_TESTER)?.id, 'paywall-receipt');
-  assert.equal(selectHomeReaction(chirps, 'player-verdict', 10, BETA_TESTER)?.id, 'ten-taps');
-  assert.equal(selectHomeReaction(chirps, 'paywall-receipt', 0, BETA_TESTER)?.id, 'ten-taps');
+  assert.equal(selectHomeReaction(chirps, 'verdict', 10, BETA_TESTER)?.id, 'verdict');
+  assert.equal(selectHomeReaction(chirps, 'purchase', 10, BETA_TESTER)?.id, 'purchase');
+  assert.equal(selectHomeReaction(chirps, 'player-verdict', 10, BETA_TESTER)?.id, 'ambient');
+  assert.equal(selectHomeReaction(chirps, 'paywall-receipt', 0, BETA_TESTER)?.id, 'ambient');
 });
 
 test('Home project copy and automation telemetry follow the latest real state', async () => {
-  const { homeAutomationStatus, homeEmptyProjectCopy } = await loadExperience();
+  const { homeAutomationStatus, homeEmptyProjectCopy, homeProjectActionLabel } = await loadExperience();
 
   assert.equal(homeEmptyProjectCopy([]), 'Nothing shipped yet. Everyone starts at zero.');
   assert.equal(homeEmptyProjectCopy([{ live: true }]), 'The last launch is out in the world. The next idea is waiting.');
@@ -115,6 +120,37 @@ test('Home project copy and automation telemetry follow the latest real state', 
   assert.equal(homeAutomationStatus(6, { loc: 10, need: 100 }), 'AUTO 6 LOC/S · PROGRESS RUNS WHILE OPEN');
   assert.equal(homeAutomationStatus(6, { loc: 100, need: 100 }), undefined);
   assert.equal(homeAutomationStatus(6, null), undefined);
+  assert.equal(homeProjectActionLabel(false), 'Continue coding');
+  assert.equal(homeProjectActionLabel(true), 'Open Code to submit');
+});
+
+test('ambient delivery respects its active-time gap and pre-ship cap', async () => {
+  const { canDeliverAmbientStory } = await loadExperience();
+
+  assert.equal(canDeliverAmbientStory({
+    activeSeconds: 19,
+    lastDeliveredAt: 0,
+    beforeFirstShip: false,
+    preShipCount: 0,
+  }), false);
+  assert.equal(canDeliverAmbientStory({
+    activeSeconds: 20,
+    lastDeliveredAt: 0,
+    beforeFirstShip: false,
+    preShipCount: 0,
+  }), true);
+  assert.equal(canDeliverAmbientStory({
+    activeSeconds: 20,
+    lastDeliveredAt: 0,
+    beforeFirstShip: true,
+    preShipCount: 3,
+  }), false);
+  assert.equal(canDeliverAmbientStory({
+    activeSeconds: 20,
+    lastDeliveredAt: 0,
+    beforeFirstShip: false,
+    preShipCount: 3,
+  }), true);
 });
 
 test('semantic no-op patches are rejected before event output', async () => {
