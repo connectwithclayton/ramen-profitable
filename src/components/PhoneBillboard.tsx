@@ -326,7 +326,9 @@ export default function PhoneBillboard({
                   onAdOpened={() => setDestinationOpen(true)}
                   onAdClosed={() => setDestinationOpen(false)}
                   onAdLoaded={() => {
-                    lastLoadedAtRef.current = Date.now();
+                    const loadedAt = Date.now();
+                    lastLoadedAtRef.current = loadedAt;
+                    lastRequestAtRef.current = loadedAt;
                     const latestWidth = widthRef.current;
                     if (requestable && latestWidth > 0 && latestWidth !== bannerWidth) {
                       setCreativeState(state => state === 'loaded' ? 'pending' : state);

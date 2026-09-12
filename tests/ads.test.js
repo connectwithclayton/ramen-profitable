@@ -412,6 +412,68 @@ test('a stalled purchase refresh cannot discard confirmed restore ownership', as
   assert.equal(await purchase, true);
 });
 
+test('successful payment suppresses ads while confirmation stalls after overlay dismissal', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  listener(info(false));
+
+  const FreshApp = loadFreshApp();
+  let tree;
+  await act(async () => { tree = create(React.createElement(FreshApp)); });
+  const tab = tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const button = label => tree.root.findAllByType('Pressable')
+    .filter(node => node.findAllByType('Text').some(text => text.props.children === label))
+    .at(-1);
+
+  await act(async () => { tab.props.onPress(); });
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(banners().length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+
+  const refreshInfo = deferred();
+  const refreshStarted = deferred();
+  customer = {
+    get promise() {
+      refreshStarted.resolve();
+      return refreshInfo.promise;
+    },
+  };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  await act(async () => {
+    paywall.resolve('PURCHASED');
+    await refreshStarted.promise;
+  });
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+  assert.equal(banners().length, 0, 'pending purchase confirmation must unmount the advert');
+
+  await act(async () => { button('Remain humble').props.onPress(); });
+  await flush();
+  await setBillboardWidth(tree, 320);
+  assert.equal(useGame.getState().overlay, null);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+  assert.equal(banners().length, 0, 'overlay dismissal must not reveal an advert after payment');
+  assert.equal(requests.length, 1, 'overlay dismissal must not issue another native request');
+
+  await act(async () => {
+    refreshInfo.resolve(info(true));
+    assert.equal(await purchase, true);
+  });
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  await act(async () => { tree.unmount(); });
+});
+
 test('a paywall success without a confirmed go_indie entitlement fails closed', async () => {
   listener(info(false));
   paywall = deferred();
@@ -690,6 +752,8 @@ test('App retains loaded banners and reloads only after due foregrounds', async 
   assert.equal(bannerConcealed(), false);
   assert.equal(hasNoFillCopy(), false);
 
+  await act(async () => { resizedBanner.props.onAdLoaded({ width: 284, height: 50 }); });
+
   await act(async () => { setAppState('background'); });
   await flush();
   assert.strictEqual(banners()[0], resizedBanner, 'suspension must retain the loaded native banner');
@@ -698,6 +762,17 @@ test('App retains loaded banners and reloads only after due foregrounds', async 
   await flush();
   assert.strictEqual(banners()[0], resizedBanner, 'foreground recovery must await fresh geometry');
   assert.equal(requests.length, 2, 'foregrounding must not request before layout completes');
+  await setBillboardWidth(tree, 284);
+  assert.strictEqual(banners()[0], resizedBanner, 'a fresh automatic load must renew the foreground cooldown');
+  assert.equal(requests.length, 2, 'a brief suspension must retain the automatically refreshed advert');
+
+  now += 60_000;
+  await act(async () => { setAppState('background'); });
+  await flush();
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.strictEqual(banners()[0], resizedBanner, 'due foreground recovery must await fresh geometry');
+  assert.equal(requests.length, 2, 'due foregrounding must not request before layout completes');
   await setBillboardWidth(tree, 284);
   assert.equal(requests.length, 3, 'the first post-cooldown foreground must issue one reload');
   assert.notStrictEqual(banners()[0], resizedBanner, 'foreground recovery must replace the suspended native banner');

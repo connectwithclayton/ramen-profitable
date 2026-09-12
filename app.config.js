@@ -49,18 +49,21 @@ function buildMode() {
         'REVENUECAT_BUILD_MODE must be either "development" or "release".',
       );
     }
-    if (inferredMode && explicitMode !== inferredMode) {
+    const requiredMode = inferredMode ?? nodeMode;
+    if (requiredMode && explicitMode !== requiredMode) {
       const source = profileMode
         ? `EAS_BUILD_PROFILE="${profile}"`
         : xcodeMode
           ? `CONFIGURATION="${process.env.CONFIGURATION}"`
-          : 'the local Expo iOS configuration';
+          : runMode
+            ? 'the local Expo iOS configuration'
+            : `NODE_ENV="${process.env.NODE_ENV}"`;
       throw new Error(
         `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
-          `this configuration requires "${inferredMode}" mode.`,
+          `this configuration requires "${requiredMode}" mode.`,
       );
     }
-    return inferredMode ?? explicitMode;
+    return requiredMode ?? explicitMode;
   }
 
   return inferredMode ?? nodeMode ?? 'release';

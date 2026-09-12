@@ -202,8 +202,16 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
     const result = await RevenueCatUI.presentPaywall({ offering });
     if (result === uiMod.PAYWALL_RESULT.PURCHASED || result === uiMod.PAYWALL_RESULT.RESTORED) {
       // The UI result alone is not the go_indie entitlement. Fail closed if confirmation is missing.
+      const ownership = useGame.getState();
+      if (!ownership.goIndieResolved || !ownership.goIndieActive) {
+        useGame.setState({ goIndieResolved: false });
+      }
       const active = await refreshGoIndieEntitlement();
       if (active !== true) {
+        const currentOwnership = useGame.getState();
+        if (currentOwnership.goIndieResolved && currentOwnership.goIndieActive) {
+          return true;
+        }
         useGame.setState({ goIndieResolved: false });
         return null;
       }
