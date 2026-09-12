@@ -2,6 +2,24 @@ const { resolveAdMob } = require('./config/admob');
 const DEVELOPMENT_PROFILES = new Set(['development', 'ios-simulator']);
 const RELEASE_PROFILES = new Set(['preview', 'production']);
 
+function cliOption(args, name) {
+  const index = args.indexOf(name);
+  if (index >= 0) return args[index + 1];
+  const prefix = `${name}=`;
+  return args.find(argument => argument.startsWith(prefix))?.slice(prefix.length);
+}
+
+function localIosRunMode(args = process.argv.slice(2)) {
+  if (args[0] !== 'run:ios') return undefined;
+  const configuration = cliOption(args, '--configuration');
+  const externalBinary = args.includes('--binary') ||
+    args.some(argument => argument.startsWith('--binary='));
+  if (configuration === undefined && externalBinary) return 'release';
+  return configuration === undefined || configuration === 'Debug'
+    ? 'development'
+    : 'release';
+}
+
 function buildMode() {
   const profile = process.env.EAS_BUILD_PROFILE;
   const profileMode =
@@ -16,7 +34,14 @@ function buildMode() {
       : process.env.CONFIGURATION === 'Release'
         ? 'release'
         : undefined;
-  const inferredMode = profileMode ?? xcodeMode;
+  const runMode = localIosRunMode();
+  const inferredMode = profileMode ?? xcodeMode ?? runMode;
+  const nodeMode =
+    process.env.NODE_ENV === 'development'
+      ? 'development'
+      : process.env.NODE_ENV === 'production'
+        ? 'release'
+        : undefined;
   const explicitMode = process.env.REVENUECAT_BUILD_MODE;
   if (explicitMode) {
     if (explicitMode !== 'development' && explicitMode !== 'release') {
@@ -27,7 +52,9 @@ function buildMode() {
     if (inferredMode && explicitMode !== inferredMode) {
       const source = profileMode
         ? `EAS_BUILD_PROFILE="${profile}"`
-        : `CONFIGURATION="${process.env.CONFIGURATION}"`;
+        : xcodeMode
+          ? `CONFIGURATION="${process.env.CONFIGURATION}"`
+          : 'the local Expo iOS configuration';
       throw new Error(
         `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
           `this configuration requires "${inferredMode}" mode.`,
@@ -36,7 +63,7 @@ function buildMode() {
     return inferredMode ?? explicitMode;
   }
 
-  return inferredMode ?? 'development';
+  return inferredMode ?? nodeMode ?? 'release';
 }
 
 function cleanKey(value) {

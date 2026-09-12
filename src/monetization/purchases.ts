@@ -81,7 +81,8 @@ export function selectRevenueCatApiKey(
 let Purchases: any = null;
 let RevenueCatUI: any = null;
 let mockMode = true;
-let customerInfoRevision = 0;
+let nextCustomerInfoRevision = 0;
+let appliedCustomerInfoRevision = 0;
 let initializationPromise: Promise<boolean | null> | null = null;
 
 const GO_INDIE_ENTITLEMENT = 'go_indie';
@@ -114,12 +115,13 @@ function isGoIndieActive(customerInfo: any): boolean {
   return customerInfo?.entitlements?.active?.[GO_INDIE_ENTITLEMENT] !== undefined;
 }
 
-function beginCustomerInfoRequest(): number {
-  return ++customerInfoRevision;
+function issueCustomerInfoRevision(): number {
+  return ++nextCustomerInfoRevision;
 }
 
 function applyCustomerInfo(customerInfo: any, revision: number): boolean {
-  if (revision !== customerInfoRevision) return useGame.getState().goIndieActive;
+  if (revision <= appliedCustomerInfoRevision) return useGame.getState().goIndieActive;
+  appliedCustomerInfoRevision = revision;
   const active = isGoIndieActive(customerInfo);
   useGame.getState().setGoIndieActive(active);
   return active;
@@ -128,7 +130,7 @@ function applyCustomerInfo(customerInfo: any, revision: number): boolean {
 async function refreshGoIndieEntitlement(): Promise<boolean | null> {
   if (mockMode || !Purchases) return null;
   try {
-    const revision = beginCustomerInfoRequest();
+    const revision = issueCustomerInfoRevision();
     const info = await Purchases.getCustomerInfo();
     return applyCustomerInfo(info, revision);
   } catch (e) {
@@ -158,7 +160,7 @@ async function configurePurchases(): Promise<boolean | null> {
     await Purchases.setLogLevel(logLevel);
     Purchases.configure({ apiKey: selection.apiKey });
     Purchases.addCustomerInfoUpdateListener((info: any) => {
-      applyCustomerInfo(info, beginCustomerInfoRequest());
+      applyCustomerInfo(info, issueCustomerInfoRevision());
     });
     mockMode = false;
     console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
@@ -218,7 +220,7 @@ export async function restoreGoIndiePurchases(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
   try {
-    const revision = beginCustomerInfoRequest();
+    const revision = issueCustomerInfoRevision();
     const customerInfo = await Purchases.restorePurchases();
     return applyCustomerInfo(customerInfo, revision);
   } catch (e) {

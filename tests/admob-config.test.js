@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 const { TEST_IDS, resolveAdMob } = require('../config/admob');
 const production = { appId: 'ca-app-pub-1111111111111111~2222222222', bannerId: 'ca-app-pub-1111111111111111/3333333333' };
 const adaptiveSample = {
@@ -49,26 +50,53 @@ test('Expo config consumer permits release evaluation without iOS IDs', () => {
     });
   }
 });
-test('Expo 57 development manifest uses sample inventory despite inherited NODE_ENV', () => {
-  const result = spawnSync(
-    process.execPath,
-    [require.resolve('expo/bin/cli'), 'config', '--type', 'public', '--json'],
-    {
+test('Expo 57 local run modes override inherited NODE_ENV safely', () => {
+  const root = path.resolve(__dirname, '..');
+  const environment = {
+    ...process.env,
+    EXPO_NO_DOTENV: '1',
+    REVENUECAT_BUILD_MODE: '',
+    EAS_BUILD_PROFILE: '',
+    CONFIGURATION: '',
+    REVENUECAT_TEST_STORE_API_KEY: 'test_local_value',
+    REVENUECAT_IOS_API_KEY: 'appl_local_value',
+    REVENUECAT_ANDROID_API_KEY: 'goog_local_value',
+    ADMOB_IOS_APP_ID: production.appId,
+    ADMOB_IOS_BANNER_ID: production.bannerId,
+  };
+  const evaluate = (args, nodeEnv) => {
+    const script = "process.argv.splice(1, 0, require.resolve('expo/bin/cli')); const { getConfig } = require('expo/config'); const extra = getConfig(process.cwd(), { skipSDKVersionRequirement: true, isPublicConfig: true }).exp.extra; process.stdout.write(JSON.stringify({ admob: extra.admob, revenueCat: extra.revenueCat }));";
+    const result = spawnSync(process.execPath, ['-e', script, '--', ...args], {
+      cwd: root,
       encoding: 'utf8',
-      env: {
-        ...process.env,
-        EXPO_NO_DOTENV: '1',
-        REVENUECAT_BUILD_MODE: '',
-        EAS_BUILD_PROFILE: '',
-        CONFIGURATION: '',
-        NODE_ENV: 'production',
-        ADMOB_IOS_APP_ID: production.appId,
-        ADMOB_IOS_BANNER_ID: production.bannerId,
-      },
+      env: { ...environment, NODE_ENV: nodeEnv },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const development = {
+    admob: TEST_IDS,
+    revenueCat: { testStoreApiKey: 'test_local_value' },
+  };
+  for (const args of [
+    ['run:ios'],
+    ['run:ios', '--configuration', 'Debug'],
+    ['run:ios', '--configuration=Debug'],
+  ]) {
+    assert.deepEqual(evaluate(args, 'production'), development);
+  }
+  const release = {
+    admob: { ios: production },
+    revenueCat: {
+      iosApiKey: 'appl_local_value',
+      androidApiKey: 'goog_local_value',
     },
-  );
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout).extra.admob, TEST_IDS);
+  };
+  assert.deepEqual(evaluate(['run:ios', '--configuration', 'Release'], 'development'), release);
+  assert.deepEqual(evaluate(['run:ios', '--binary', 'Ramen.app'], ''), release);
+  assert.deepEqual(evaluate(['run:android', '--variant', 'release'], 'production'), release);
+  assert.deepEqual(evaluate([], 'production'), release);
+  assert.deepEqual(evaluate([], ''), release);
 });
 test('declared development profiles use sample inventory regardless of NODE_ENV', () => {
   const result = spawnSync(process.execPath, ['-e', "process.stdout.write(JSON.stringify(require('./app.config')({config:{}}).extra.admob))"], { encoding: 'utf8', env: { ...process.env, REVENUECAT_BUILD_MODE: '', EAS_BUILD_PROFILE: 'development', NODE_ENV: 'production', ADMOB_IOS_APP_ID: '', ADMOB_IOS_BANNER_ID: '' } });
