@@ -1,12 +1,12 @@
 # AdMob implementation validation — 2026-09-10
 
-The full-suite and native-build evidence below was recorded before the subsequent review-fix round. The outer validation pipeline owns renewed full-suite, typecheck, and native-build evidence for the resulting head.
+All recorded pass counts and native-build evidence below are historical branch-head observations. Later review-fix commits require renewed full-suite, typecheck, and native-build evidence from the outer validation pipeline.
 
-## Direct review-fix evidence — 2026-09-11
+## Historical direct review-fix evidence — 2026-09-11 (`33ba934`)
 
-- `npm test`: 34 passing tests on the completed review-fix head; `npx tsc --noEmit`: passed.
-- The native-config test now exercises exact Debug selection despite a production `NODE_ENV`, rejects cross-publisher ID pairs, and runs the emitted Release phase through Expo Constants' own Xcode Node wrapper so login-shell-only identifier drift fails the archive.
-- Mounted application tests prove a rejected launch consent refresh cannot retry merely because ownership resolves free while the billboard stays continuously visible; the next shared measured visibility return authorizes one retry. They also prove the measured dock boundary blocks a fully covered billboard request and that returning from an SDK-presented ad destination reuses a current creative but replaces an expired one.
+- At `33ba934`, `npm test`: 34 passing tests; `npx tsc --noEmit`: passed.
+- At that head, the native-config test exercised exact Debug selection despite a production `NODE_ENV`, rejected cross-publisher ID pairs, and ran the emitted Release phase through Expo Constants' own Xcode Node wrapper so login-shell-only identifier drift failed the archive.
+- At that head, mounted application tests proved a rejected launch consent refresh could not retry merely because ownership resolved free while the billboard stayed continuously visible; the next shared measured visibility return authorized one retry. They also proved the measured dock boundary blocked a fully covered billboard request and that returning from an SDK-presented ad destination reused a current creative but replaced an expired one.
 
 ## Local evidence
 
@@ -21,7 +21,7 @@ The full-suite and native-build evidence below was recorded before the subsequen
 
 ## PR handoff
 
-The Store now requests a real inline adaptive AdMob banner at the fictional phone billboard's measured width, using Google's official sample app/banner IDs in Debug builds. Go Indie ownership suppresses the native view immediately; unresolved ownership suppresses all banner requests. RevenueCat's CustomerInfo is the entitlement authority, including restore and later updates.
+The Store now requests a real inline adaptive AdMob banner at the fictional phone billboard's measured width, using Google's official sample app/banner IDs in Debug builds. Go Indie ownership suppresses the native view immediately; unresolved ownership suppresses all banner requests. RevenueCat CustomerInfo is the entitlement authority; [`ADMOB_SETUP.md`](./ADMOB_SETUP.md#entitlements-and-consent) owns the current ordering, visibility, and retention contracts.
 
 **Test IDs cannot silently ship on iOS:** the native Xcode release guard rejects missing, malformed, sample, cross-publisher, or archive-drifted IDs captured at prebuild, so archiving a development prebuild fails; release JavaScript validates embedded IDs at startup. The guard uses Expo Constants' pinned Xcode Node wrapper so both consumers share the login-shell and `.xcode.env` layers. Platform-neutral Expo config does not gate non-iOS releases on iOS identifiers. Valid production IDs pass. There is no test-release bypass. The captain supplies `ADMOB_IOS_APP_ID` and `ADMOB_IOS_BANNER_ID` through the single `config/admob.js` identifier configuration. Catvertising is not linked into Android builds.
 

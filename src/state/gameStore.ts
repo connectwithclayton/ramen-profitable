@@ -549,7 +549,8 @@ export const useGame = create<GameState & Actions>()(
       merge: (persisted, current) => ({
         ...current,
         ...selectPersistedState(persisted, BETA_TESTER),
-        // A late disk read must not overwrite fresh RevenueCat ownership.
+        // A late disk read must not overwrite fresh RevenueCat ownership or
+        // restore the pre-entitlement offline-earnings clock.
         ...(current.goIndieResolved
           ? {
               goIndieActive: current.goIndieActive,

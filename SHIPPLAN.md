@@ -57,6 +57,5 @@
 
 ## Scope-cut order (if slipping)
 1. Cut: hiring/acquisition endgame content
-2. Cut: AdMob diegetic ads (lose Catvertising shot, keep HAMM)
-3. Cut: Paywall Designer minigame → simple static paywall (weakens HAMM, still viable)
-4. NEVER cut: core loop polish, App Review moment, real RevenueCat paywall, store submission date
+2. Cut: Paywall Designer minigame → simple static paywall (weakens HAMM, still viable)
+3. NEVER cut: core loop polish, App Review moment, real RevenueCat paywall, the Catvertising AdMob banner, store submission date

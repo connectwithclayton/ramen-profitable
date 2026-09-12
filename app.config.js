@@ -73,6 +73,8 @@ function revenueCatBuildMode(args) {
   }
 
   const mode = contextualMode ?? explicitMode ?? defaultMode;
+  // Expo Constants re-evaluates app config in a later child process. Carry the
+  // resolved cross-platform RevenueCat mode without coupling it to iOS AdMob.
   process.env.REVENUECAT_BUILD_MODE = mode;
   return mode;
 }

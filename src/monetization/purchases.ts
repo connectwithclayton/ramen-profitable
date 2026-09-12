@@ -1,7 +1,8 @@
 /**
  * RevenueCat integration — the HAMM Award centerpiece.
  *
- * "Go Indie" is a non-consumable unlock that upgrades your in-game character.
+ * "Go Indie" is a non-consumable unlock that doubles offline earnings and,
+ * on iOS, removes the Catvertising banner.
  *
  * react-native-purchases requires a development build for real purchases.
  * When the native module or the appropriate environment key is unavailable,
@@ -146,6 +147,12 @@ function applyCustomerInfo(customerInfo: any, revision: number): boolean | null 
   return active;
 }
 
+/**
+ * RevenueCat listener callbacks carry no operation identity. Upgrades apply
+ * immediately; downgrades are discarded, not deferred, while purchase
+ * confirmation is pending or a confirmed owner has an operation in flight.
+ * A later negative callback received after operations quiesce still applies.
+ */
 function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
   const active = isGoIndieActive(customerInfo);
   if (active) {
