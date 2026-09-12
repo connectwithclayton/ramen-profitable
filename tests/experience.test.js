@@ -103,12 +103,118 @@ test('Home selects intentional beta-tester reactions and ignores player verdicts
     { id: 'ten-taps', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'milestone' },
     { id: 'paywall-receipt', who: BETA_TESTER[0], handle: BETA_TESTER[1], kind: 'paywall' },
   ];
+  const receipt = chirps.find(chirp => chirp.id === 'paywall-receipt');
 
-  assert.equal(selectHomeReaction(chirps, 'paywall-receipt', 10, BETA_TESTER)?.id, 'paywall-receipt');
-  assert.equal(selectHomeReaction(chirps, 'verdict', 10, BETA_TESTER)?.id, 'verdict');
-  assert.equal(selectHomeReaction(chirps, 'purchase', 10, BETA_TESTER)?.id, 'purchase');
-  assert.equal(selectHomeReaction(chirps, 'player-verdict', 10, BETA_TESTER)?.id, 'ambient');
-  assert.equal(selectHomeReaction(chirps, 'paywall-receipt', 0, BETA_TESTER)?.id, 'ambient');
+  assert.equal(selectHomeReaction(chirps, receipt, 10, BETA_TESTER)?.id, 'paywall-receipt');
+  assert.equal(selectHomeReaction(chirps, chirps[1], 10, BETA_TESTER)?.id, 'ambient');
+  assert.equal(selectHomeReaction(chirps, receipt, 0, BETA_TESTER)?.id, 'ambient');
+});
+
+test('Home keeps a durable receipt independent of bounded Chirp history', async () => {
+  const { selectHomeReaction, selectPersistedState } = await loadExperience();
+  const { BETA_TESTER } = await loadContent();
+  const receipt = {
+    id: 'paywall-receipt',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'paywall',
+    text: 'This paywall has a point of view.',
+    likes: 42,
+    event: 'PAYWALL SHIPPED · HEAT 3',
+    delta: { before: 120, after: 156 },
+  };
+  const boundedFeed = Array.from({ length: 30 }, (_, index) => ({
+    id: `newer-${index}`,
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'ambient',
+  }));
+  const restored = JSON.parse(JSON.stringify(selectPersistedState({
+    cash: 500,
+    chirps: boundedFeed,
+    homeReceipt: receipt,
+    homeReceiptSecondsLeft: 20,
+    notifs: [{ id: 'transient' }],
+    overlay: { type: 'paywallResult' },
+  }, BETA_TESTER)));
+
+  assert.equal(restored.cash, 500);
+  assert.equal('notifs' in restored, false);
+  assert.equal('overlay' in restored, false);
+  assert.deepEqual(restored.homeReceipt, receipt);
+  assert.equal(restored.homeReceiptSecondsLeft, 20);
+  assert.equal(
+    selectHomeReaction(restored.chirps, restored.homeReceipt, restored.homeReceiptSecondsLeft, BETA_TESTER)?.id,
+    receipt.id,
+  );
+  assert.equal(selectHomeReaction(restored.chirps, restored.homeReceipt, 0, BETA_TESTER)?.id, 'newer-0');
+
+  const oldPin = selectPersistedState(
+    { homeReactionId: 'old', homeReactionSecondsLeft: 20 },
+    BETA_TESTER,
+  );
+  assert.equal(oldPin.homeReceipt, undefined);
+  assert.equal(oldPin.homeReceiptSecondsLeft, 0);
+  assert.equal('homeReactionId' in oldPin, false);
+});
+
+test('only real receipts survive persistence and their own exposure', async () => {
+  const {
+    advanceHomeReceiptExposure,
+    homeReceiptStateForPersistence,
+  } = await loadExperience();
+  const { BETA_TESTER } = await loadContent();
+  const receipt = {
+    id: 'receipt-b',
+    who: BETA_TESTER[0],
+    handle: BETA_TESTER[1],
+    kind: 'verdict',
+    text: 'The app is live.',
+  };
+
+  for (const kind of ['verdict', 'purchase', 'paywall']) {
+    const durable = { ...receipt, kind };
+    assert.deepEqual(
+      homeReceiptStateForPersistence(durable, 20, BETA_TESTER),
+      { homeReceipt: durable, homeReceiptSecondsLeft: 20 },
+    );
+  }
+  assert.deepEqual(
+    homeReceiptStateForPersistence({ ...receipt, kind: 'milestone' }, 20, BETA_TESTER),
+    { homeReceipt: undefined, homeReceiptSecondsLeft: 0 },
+  );
+  assert.deepEqual(
+    homeReceiptStateForPersistence({ ...receipt, kind: 'ambient' }, 20, BETA_TESTER),
+    { homeReceipt: undefined, homeReceiptSecondsLeft: 0 },
+  );
+
+  assert.deepEqual(
+    advanceHomeReceiptExposure(receipt, 20, 'receipt-a', 7),
+    { homeReceipt: receipt, homeReceiptSecondsLeft: 20 },
+  );
+  assert.deepEqual(
+    advanceHomeReceiptExposure(receipt, 20, receipt.id, 7),
+    { homeReceipt: receipt, homeReceiptSecondsLeft: 13 },
+  );
+  assert.deepEqual(
+    advanceHomeReceiptExposure(receipt, 13, receipt.id, 13),
+    { homeReceipt: undefined, homeReceiptSecondsLeft: 0 },
+  );
+});
+
+test('Home receipt exposure requires the full card in the viewport', async () => {
+  const { isVerticalFrameFullyVisible } = await loadExperience();
+  const viewport = { y: 100, height: 400 };
+
+  assert.equal(isVerticalFrameFullyVisible(undefined, viewport), false);
+  assert.equal(isVerticalFrameFullyVisible({ y: 180, height: 160 }, viewport), true);
+  assert.equal(isVerticalFrameFullyVisible({ y: 40, height: 59 }, viewport), false);
+  assert.equal(isVerticalFrameFullyVisible({ y: 80, height: 160 }, viewport), false);
+  assert.equal(isVerticalFrameFullyVisible({ y: 450, height: 80 }, viewport), false);
+  assert.equal(isVerticalFrameFullyVisible({ y: 100, height: 0 }, viewport), false);
+  assert.equal(isVerticalFrameFullyVisible({ y: 0, height: 160 }, { y: -20, height: 400 }), true);
+  assert.equal(isVerticalFrameFullyVisible({ y: 430, height: 60 }, viewport, 80), false);
+  assert.equal(isVerticalFrameFullyVisible({ y: 430, height: 60 }, viewport, 0), true);
 });
 
 test('Home project copy and automation telemetry follow the latest real state', async () => {

@@ -17,16 +17,17 @@ import {
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
 import {
+  advanceHomeReceiptExposure,
   calculatePaywallTransaction,
-  homeReactionSecondsAfterExposure,
-  isEligibleHomeReaction,
+  isDurableHomeReceipt,
   milestonesForProject,
   paywallReaction,
   projectMilestoneId,
   resolveGameEvent,
+  selectPersistedState,
   tapReactionKind,
 } from './experience';
-import type { MrrDelta, PaywallTransaction } from './experience';
+import type { DurableHomeReceiptKind, MrrDelta, PaywallTransaction } from './experience';
 
 export type Project = { id: string; name: string; idea: string; loc: number; need: number; manualTaps: number };
 export type ShippedApp = {
@@ -51,6 +52,7 @@ export type Chirp = {
   event?: string;
   delta?: MrrDelta;
 };
+export type HomeReceipt = Chirp & { kind: DurableHomeReceiptKind };
 type ChirpOptions = Omit<Partial<Chirp>, 'id' | 'who' | 'handle' | 'text' | 'likes' | 'liked'> & {
   author?: readonly [string, string];
 };
@@ -91,8 +93,8 @@ export type GameState = {
   achievements: Record<string, boolean>;
   storyMilestones: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
-  homeReactionId?: string;
-  homeReactionSecondsLeft: number;
+  homeReceipt?: HomeReceipt;
+  homeReceiptSecondsLeft: number;
 };
 
 type Actions = {
@@ -108,6 +110,7 @@ type Actions = {
   fastTick: () => void;
   slowTick: () => void;
   recordHomeExposure: (elapsedSeconds: number, homeStillVisible: boolean) => void;
+  recordHomeReceiptExposure: (receiptId: string, elapsedSeconds: number) => void;
   maybeEvent: () => void;
   pushNotif: (text: string, icon?: IconName, emoji?: string) => void;
   expireNotif: (id: string) => void;
@@ -123,23 +126,6 @@ type Actions = {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-
-const persistedStateKeys = [
-  'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
-  'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
-  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
-  'storyMilestones',
-] as const satisfies readonly (keyof GameState)[];
-
-function selectPersistedState(value: unknown): Partial<GameState> {
-  if (!value || typeof value !== 'object') return {};
-  const source = value as Record<string, unknown>;
-  return Object.fromEntries(
-    persistedStateKeys
-      .filter(key => key in source)
-      .map(key => [key, source[key]]),
-  ) as Partial<GameState>;
-}
 
 const initial: GameState = {
   day: 1,
@@ -168,8 +154,8 @@ const initial: GameState = {
   achievements: {},
   storyMilestones: {},
   lastSeen: Date.now(),
-  homeReactionId: undefined,
-  homeReactionSecondsLeft: 0,
+  homeReceipt: undefined,
+  homeReceiptSecondsLeft: 0,
 };
 
 export const useGame = create<GameState & Actions>()(
@@ -194,11 +180,11 @@ export const useGame = create<GameState & Actions>()(
           likes: Math.floor(Math.random() * 900) + 12,
           ...metadata,
         };
-        const pinsHome = isEligibleHomeReaction(c, BETA_TESTER) && c.kind !== 'ambient';
+        const homeReceipt = isDurableHomeReceipt(c, BETA_TESTER) ? c : undefined;
         set(s => ({
           chirps: [c, ...s.chirps].slice(0, 30),
           unreadChirps: true,
-          ...(pinsHome ? { homeReactionId: c.id, homeReactionSecondsLeft: 20 } : {}),
+          ...(homeReceipt ? { homeReceipt, homeReceiptSecondsLeft: 20 } : {}),
         }));
       },
       markChirpsRead: () => set({ unreadChirps: false }),
@@ -387,16 +373,6 @@ export const useGame = create<GameState & Actions>()(
 
       recordHomeExposure: (elapsedSeconds, homeStillVisible) => {
         if (elapsedSeconds <= 0) return;
-        const s = get();
-        if (s.homeReactionSecondsLeft > 0) {
-          set({
-            homeReactionSecondsLeft: homeReactionSecondsAfterExposure(
-              s.homeReactionSecondsLeft,
-              elapsedSeconds,
-            ),
-          });
-        }
-
         const current = get();
         if (!homeStillVisible || current.overlay !== null) return;
         const claude = SHOP.find(item => item.id === 'claude');
@@ -411,6 +387,21 @@ export const useGame = create<GameState & Actions>()(
             event: 'UPGRADE WITHIN BUDGET',
           });
         }
+      },
+
+      recordHomeReceiptExposure: (receiptId, elapsedSeconds) => {
+        const s = get();
+        const next = advanceHomeReceiptExposure(
+          s.homeReceipt,
+          s.homeReceiptSecondsLeft,
+          receiptId,
+          elapsedSeconds,
+        );
+        if (
+          next.homeReceipt === s.homeReceipt &&
+          next.homeReceiptSecondsLeft === s.homeReceiptSecondsLeft
+        ) return;
+        set(next);
       },
 
       maybeEvent: () => {
@@ -502,9 +493,9 @@ export const useGame = create<GameState & Actions>()(
     }),
     {
       name: 'ramen-profitable-v1',
-      version: 3,
+      version: 4,
       migrate: (persisted: any) => {
-        const migrated = selectPersistedState(persisted);
+        const migrated = selectPersistedState(persisted, BETA_TESTER);
         if (migrated?.apps) {
           migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
@@ -523,9 +514,9 @@ export const useGame = create<GameState & Actions>()(
       storage: createJSONStorage(() => AsyncStorage),
       merge: (persisted, current) => ({
         ...current,
-        ...selectPersistedState(persisted),
+        ...selectPersistedState(persisted, BETA_TESTER),
       }),
-      partialize: s => selectPersistedState(s),
+      partialize: s => selectPersistedState(s, BETA_TESTER),
     }
   )
 );

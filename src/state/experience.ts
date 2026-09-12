@@ -1,4 +1,5 @@
 import type { PaywallAxis, PaywallChoice } from '../content/content';
+import type { GameState } from './gameStore';
 
 export type MrrDelta = {
   before: number;
@@ -104,6 +105,21 @@ export function homeReactionSecondsAfterExposure(secondsLeft: number, elapsedSec
   return Math.max(0, secondsLeft - elapsedSeconds);
 }
 
+export type VerticalFrame = { y: number; height: number };
+
+export function isVerticalFrameFullyVisible(
+  frame: VerticalFrame | undefined,
+  viewport: VerticalFrame,
+  bottomOcclusion = 0,
+) {
+  const visibleHeight = Math.max(0, viewport.height - bottomOcclusion);
+  if (!frame || frame.height <= 0 || visibleHeight <= 0) return false;
+  const epsilon = 1;
+  return frame.y >= viewport.y - epsilon &&
+    frame.y + frame.height <= viewport.y + visibleHeight + epsilon;
+}
+
+export type DurableHomeReceiptKind = 'purchase' | 'verdict' | 'paywall';
 type HomeReaction = { id: string; who: string; handle: string; kind?: string };
 type StoryAuthor = readonly [string, string];
 
@@ -117,14 +133,78 @@ export function isEligibleHomeReaction(chirp: HomeReaction, betaTester: StoryAut
   return chirp.who === betaTester[0] && chirp.handle === betaTester[1] && intentionalKind;
 }
 
+export function isDurableHomeReceipt<T extends HomeReaction>(
+  chirp: T | undefined,
+  betaTester: StoryAuthor,
+): chirp is T & { kind: DurableHomeReceiptKind } {
+  return Boolean(
+    chirp &&
+    isEligibleHomeReaction(chirp, betaTester) &&
+    (chirp.kind === 'purchase' || chirp.kind === 'verdict' || chirp.kind === 'paywall'),
+  );
+}
+
 export function selectHomeReaction<T extends HomeReaction>(
-  chirps: T[],
-  pinnedId: string | undefined,
+  chirps: readonly T[],
+  pinnedReceipt: T | undefined,
   secondsLeft: number,
   betaTester: StoryAuthor,
 ) {
   const eligible = chirps.filter(chirp => isEligibleHomeReaction(chirp, betaTester));
-  return (secondsLeft > 0 && eligible.find(chirp => chirp.id === pinnedId)) || eligible[0];
+  return (secondsLeft > 0 && isDurableHomeReceipt(pinnedReceipt, betaTester) && pinnedReceipt) || eligible[0];
+}
+
+export function homeReceiptStateForPersistence<T extends HomeReaction>(
+  receipt: T | undefined,
+  secondsLeft: number,
+  betaTester: StoryAuthor,
+) {
+  return secondsLeft > 0 && isDurableHomeReceipt(receipt, betaTester)
+    ? { homeReceipt: receipt, homeReceiptSecondsLeft: secondsLeft }
+    : { homeReceipt: undefined, homeReceiptSecondsLeft: 0 };
+}
+
+const persistedStateKeys = [
+  'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
+  'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
+  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
+  'storyMilestones', 'homeReceipt', 'homeReceiptSecondsLeft',
+] as const satisfies readonly (keyof GameState)[];
+
+export function selectPersistedState(
+  value: unknown,
+  betaTester: StoryAuthor,
+): Partial<GameState> {
+  if (!value || typeof value !== 'object') return {};
+  const source = value as Record<string, unknown>;
+  const selected = Object.fromEntries(
+    persistedStateKeys
+      .filter(key => key in source)
+      .map(key => [key, source[key]]),
+  ) as Partial<GameState>;
+  const receiptState = homeReceiptStateForPersistence(
+    selected.homeReceipt,
+    selected.homeReceiptSecondsLeft ?? 0,
+    betaTester,
+  );
+  selected.homeReceipt = receiptState.homeReceipt;
+  selected.homeReceiptSecondsLeft = receiptState.homeReceiptSecondsLeft;
+  return selected;
+}
+
+export function advanceHomeReceiptExposure<T extends HomeReaction>(
+  receipt: T | undefined,
+  secondsLeft: number,
+  displayedReceiptId: string,
+  elapsedSeconds: number,
+) {
+  if (!receipt || receipt.id !== displayedReceiptId || secondsLeft <= 0 || elapsedSeconds <= 0) {
+    return { homeReceipt: receipt, homeReceiptSecondsLeft: secondsLeft };
+  }
+  const nextSecondsLeft = homeReactionSecondsAfterExposure(secondsLeft, elapsedSeconds);
+  return nextSecondsLeft > 0
+    ? { homeReceipt: receipt, homeReceiptSecondsLeft: nextSecondsLeft }
+    : { homeReceipt: undefined, homeReceiptSecondsLeft: 0 };
 }
 
 export function calculatePaywallTransaction({

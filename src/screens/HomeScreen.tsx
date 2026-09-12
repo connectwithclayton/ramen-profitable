@@ -1,5 +1,13 @@
 import React from 'react';
-import { AppState, Platform, View, Text, Pressable, StyleSheet } from 'react-native';
+import {
+  AppState,
+  Platform,
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+} from 'react-native';
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useGame, MRR_GOAL } from '../state/gameStore';
 import { ACHIEVEMENTS, BETA_TESTER } from '../content/content';
 import {
@@ -28,16 +36,17 @@ import {
   homeEmptyProjectCopy,
   homeProjectActionLabel,
   homeReactionAccessibilityLabel,
+  isVerticalFrameFullyVisible,
   sampleHomeExposure,
   selectHomeReaction,
 } from '../state/experience';
 
-function useHomeExposureReporter(
-  covered: boolean,
-  record: (elapsedSeconds: number, homeStillVisible: boolean) => void,
+function useForegroundExposure(
+  enabled: boolean,
+  record: (elapsedSeconds: number, remainsVisible: boolean) => void,
 ) {
   React.useEffect(() => {
-    if (covered) return;
+    if (!enabled) return;
 
     let appState = AppState.currentState;
     let focused = true;
@@ -80,7 +89,71 @@ function useHomeExposureReporter(
       blurSubscription?.remove();
       focusSubscription?.remove();
     };
-  }, [covered, record]);
+  }, [enabled, record]);
+}
+
+function useHomeReactionViewport(
+  reactionId: string | undefined,
+  bottomOcclusion: number | undefined,
+) {
+  const viewport = React.useRef<{ y: number; height: number }>({ y: 0, height: 0 });
+  const sectionY = React.useRef<number | undefined>(undefined);
+  const card = React.useRef<{ y: number; height: number } | undefined>(undefined);
+  const currentReactionId = React.useRef(reactionId);
+  const [visible, setVisible] = React.useState(false);
+
+  const updateVisibility = React.useCallback(() => {
+    const cardFrame = sectionY.current === undefined || !card.current
+      ? undefined
+      : { y: sectionY.current + card.current.y, height: card.current.height };
+    const nextVisible = isVerticalFrameFullyVisible(
+      cardFrame,
+      viewport.current,
+      bottomOcclusion ?? viewport.current.height,
+    );
+    setVisible(current => current === nextVisible ? current : nextVisible);
+  }, [bottomOcclusion]);
+
+  React.useLayoutEffect(() => {
+    currentReactionId.current = reactionId;
+    sectionY.current = undefined;
+    card.current = undefined;
+    setVisible(false);
+  }, [reactionId]);
+
+  React.useLayoutEffect(() => {
+    updateVisibility();
+  }, [updateVisibility]);
+
+  const onViewportLayout = React.useCallback((event: LayoutChangeEvent) => {
+    viewport.current = { ...viewport.current, height: event.nativeEvent.layout.height };
+    updateVisibility();
+  }, [updateVisibility]);
+
+  const onViewportScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    viewport.current = {
+      y: event.nativeEvent.contentOffset.y,
+      height: event.nativeEvent.layoutMeasurement.height,
+    };
+    updateVisibility();
+  }, [updateVisibility]);
+
+  const onSectionLayout = React.useCallback((event: LayoutChangeEvent) => {
+    if (currentReactionId.current !== reactionId) return;
+    sectionY.current = event.nativeEvent.layout.y;
+    updateVisibility();
+  }, [reactionId, updateVisibility]);
+
+  const onCardLayout = React.useCallback((event: LayoutChangeEvent) => {
+    if (currentReactionId.current !== reactionId) return;
+    card.current = {
+      y: event.nativeEvent.layout.y,
+      height: event.nativeEvent.layout.height,
+    };
+    updateVisibility();
+  }, [reactionId, updateVisibility]);
+
+  return { visible, onViewportLayout, onViewportScroll, onSectionLayout, onCardLayout };
 }
 
 /** One shipped app: monogram, what it is, what it earns, what you can do to it. */
@@ -156,21 +229,47 @@ function AppRow({
   );
 }
 
-export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: () => void; onOpenChirp: () => void }) {
+export default function HomeScreen({
+  bottomOcclusion,
+  onOpenCode,
+  onOpenChirp,
+}: {
+  bottomOcclusion: number | undefined;
+  onOpenCode: () => void;
+  onOpenChirp: () => void;
+}) {
   const s = useGame();
-  useHomeExposureReporter(s.overlay !== null, s.recordHomeExposure);
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
   const live = s.apps.filter(a => a.live).length;
   const unlocked = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
   const free = !s.hasJob;
   const canQuit = s.hasJob && s.mrr >= MRR_GOAL;
-  const reaction = selectHomeReaction(s.chirps, s.homeReactionId, s.homeReactionSecondsLeft, BETA_TESTER);
+  const reaction = selectHomeReaction(s.chirps, s.homeReceipt, s.homeReceiptSecondsLeft, BETA_TESTER);
+  const receiptId = s.homeReceiptSecondsLeft > 0 ? s.homeReceipt?.id : undefined;
+  const reactionViewport = useHomeReactionViewport(reaction?.id, bottomOcclusion);
+  const recordReceiptExposure = React.useCallback((elapsedSeconds: number) => {
+    if (receiptId) s.recordHomeReceiptExposure(receiptId, elapsedSeconds);
+  }, [receiptId, s.recordHomeReceiptExposure]);
+  useForegroundExposure(s.overlay === null, s.recordHomeExposure);
+  useForegroundExposure(
+    Boolean(
+      s.overlay === null &&
+      receiptId &&
+      reaction?.id === receiptId &&
+      reactionViewport.visible
+    ),
+    recordReceiptExposure,
+  );
   const projectDone = Boolean(s.project && s.project.loc >= s.project.need);
   const automationStatus = homeAutomationStatus(s.autoCode, s.project);
   const emptyProjectCopy = homeEmptyProjectCopy(s.apps);
 
   return (
-    <Screen>
+    <Screen
+      onLayout={reactionViewport.onViewportLayout}
+      onScroll={reactionViewport.onViewportScroll}
+      scrollEventThrottle={16}
+    >
       <ScreenTop
         day={s.day}
         right={`${money(s.cash)} CASH`}
@@ -214,11 +313,12 @@ export default function HomeScreen({ onOpenCode, onOpenChirp }: { onOpenCode: ()
       </Hero>
 
       {reaction && (
-        <Section>
+        <Section key={reaction.id} onLayout={reactionViewport.onSectionLayout}>
           <SectionHeader title="From Chirp" meta={reaction.event} />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={homeReactionAccessibilityLabel(reaction)}
+            onLayout={reactionViewport.onCardLayout}
             onPress={onOpenChirp}
             style={({ pressed }) => [pressed && { opacity: 0.65 }]}
           >
