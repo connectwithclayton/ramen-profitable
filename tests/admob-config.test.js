@@ -58,6 +58,7 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
     ADMOB_IOS_APP_ID: production.appId,
     ADMOB_IOS_BANNER_ID: production.bannerId,
   };
+  delete environment.RP_ORIGINAL_XCODE_CONFIGURATION;
   const script = "process.argv.splice(1, 0, require.resolve('expo/bin/cli')); const { getConfig } = require('expo/config'); const extra = getConfig(process.cwd(), { skipSDKVersionRequirement: true, isPublicConfig: true }).exp.extra; process.stdout.write(JSON.stringify({ admob: extra.admob, revenueCat: extra.revenueCat }));";
   const evaluate = (args, overrides = {}) => {
     const result = spawnSync(process.execPath, ['-e', script, '--', ...args], {
@@ -267,6 +268,7 @@ test('RevenueCat mode reaches the later Expo Constants consumer', () => {
     ADMOB_IOS_APP_ID: production.appId,
     ADMOB_IOS_BANNER_ID: production.bannerId,
   };
+  delete environment.RP_ORIGINAL_XCODE_CONFIGURATION;
 
   try {
     for (const [index, args] of [

@@ -38,6 +38,7 @@ test('RevenueCat release mode does not select production AdMob inventory', () =>
       EAS_BUILD_PROFILE: 'production',
       EAS_BUILD_PLATFORM: undefined,
       CONFIGURATION: undefined,
+      RP_ORIGINAL_XCODE_CONFIGURATION: undefined,
       NODE_ENV: 'production',
       REVENUECAT_BUILD_MODE: 'release',
       REVENUECAT_TEST_STORE_API_KEY: 'test_safe_value',
@@ -60,6 +61,7 @@ test('exact Xcode Release selects production AdMob independently', () => {
     {
       EAS_BUILD_PROFILE: undefined,
       CONFIGURATION: 'Release',
+      RP_ORIGINAL_XCODE_CONFIGURATION: undefined,
       NODE_ENV: 'development',
       REVENUECAT_BUILD_MODE: undefined,
       REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
@@ -85,6 +87,7 @@ test('exact Release option selects production AdMob independently', () => {
     {
       EAS_BUILD_PROFILE: undefined,
       CONFIGURATION: 'Debug',
+      RP_ORIGINAL_XCODE_CONFIGURATION: undefined,
       NODE_ENV: 'development',
       REVENUECAT_BUILD_MODE: undefined,
       REVENUECAT_TEST_STORE_API_KEY: 'test_not_for_release',
@@ -115,6 +118,7 @@ test('explicit iOS Debug overrides a stale Release environment', () => {
       EAS_BUILD_PROFILE: undefined,
       EAS_BUILD_PLATFORM: undefined,
       CONFIGURATION: 'Release',
+      RP_ORIGINAL_XCODE_CONFIGURATION: undefined,
       NODE_ENV: 'development',
       REVENUECAT_BUILD_MODE: undefined,
       REVENUECAT_TEST_STORE_API_KEY: 'test_safe_value',

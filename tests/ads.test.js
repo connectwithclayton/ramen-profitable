@@ -2425,30 +2425,47 @@ test('SDK preparation failure retries without a loop', async () => {
   }
 });
 
-test('hidden Store ignores unrelated game ticks', async () => {
+test('hidden Store ignores slow ticks and renders current cash on return', async () => {
   resetAdLifecycleState();
   const FreshStoreScreen = loadFreshStoreScreen();
+  const FreshPhoneBillboard = require('../src/components/PhoneBillboard.tsx').default;
   const before = useGame.getState();
   let commits = 0;
   let tree;
   try {
+    useGame.setState({ cash: 100.75, mrr: 60, day: 3, dayTick: 5, hasJob: false });
+    const renderedStore = active => React.createElement(
+      React.Profiler,
+      { id: 'Store', onRender: () => { commits++; } },
+      React.createElement(FreshStoreScreen, { active }),
+    );
     await act(async () => {
-      tree = create(
-        React.createElement(
-          React.Profiler,
-          { id: 'Store', onRender: () => { commits++; } },
-          React.createElement(FreshStoreScreen, { active: false }),
-        ),
-      );
+      tree = create(renderedStore(true));
     });
-    const initialCommits = commits;
-    await act(async () => { useGame.setState({ energy: before.energy + 1 }); });
-    assert.equal(commits, initialCommits, 'an unrelated energy tick must not rerender hidden Store');
-    await act(async () => { useGame.setState({ cash: before.cash + 1 }); });
-    assert.ok(commits > initialCommits, 'a Store-visible balance change must still rerender Store');
+    const retainedBillboard = tree.root.findByType(FreshPhoneBillboard);
+    await act(async () => { tree.update(renderedStore(false)); });
+    const hiddenCommits = commits;
+    await act(async () => { useGame.getState().slowTick(); });
+    assert.equal(useGame.getState().cash, 101.25);
+    assert.equal(useGame.getState().day, 4);
+    assert.equal(commits, hiddenCommits, 'a slow tick must not rerender the hidden Store subtree');
+    assert.strictEqual(tree.root.findByType(FreshPhoneBillboard), retainedBillboard);
+
+    await act(async () => { tree.update(renderedStore(true)); });
+    assert.strictEqual(tree.root.findByType(FreshPhoneBillboard), retainedBillboard);
+    assert.ok(
+      tree.root.findAllByType('Text').some(node => node.props.children === '$101'),
+      'the first visible Store render must read current cash',
+    );
   } finally {
     if (tree) await act(async () => { tree.unmount(); });
-    useGame.setState({ energy: before.energy, cash: before.cash });
+    useGame.setState({
+      cash: before.cash,
+      mrr: before.mrr,
+      day: before.day,
+      dayTick: before.dayTick,
+      hasJob: before.hasJob,
+    });
   }
 });
 

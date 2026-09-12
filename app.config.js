@@ -5,6 +5,19 @@ const REVENUECAT_DEVELOPMENT_PROFILES = new Set([
 ]);
 const REVENUECAT_RELEASE_PROFILES = new Set(['preview', 'production']);
 const ADMOB_IOS_RELEASE_PROFILES = new Set(['preview', 'production']);
+const ORIGINAL_XCODE_CONFIGURATION = 'RP_ORIGINAL_XCODE_CONFIGURATION';
+
+function xcodeConfiguration() {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      process.env,
+      ORIGINAL_XCODE_CONFIGURATION,
+    )
+  ) {
+    return process.env[ORIGINAL_XCODE_CONFIGURATION];
+  }
+  return process.env.CONFIGURATION;
+}
 
 function commandOption(args, command, name) {
   if (args[0] !== command) return undefined;
@@ -34,8 +47,9 @@ function revenueCatCommandMode(args) {
 }
 
 function revenueCatXcodeMode() {
-  if (process.env.CONFIGURATION === 'Debug') return 'development';
-  if (process.env.CONFIGURATION === 'Release') return 'release';
+  const configuration = xcodeConfiguration();
+  if (configuration === 'Debug') return 'development';
+  if (configuration === 'Release') return 'release';
   return undefined;
 }
 
@@ -63,7 +77,7 @@ function revenueCatBuildMode(args) {
       const source = commandMode
         ? 'the explicit local Expo build command'
         : xcodeMode
-          ? `CONFIGURATION="${process.env.CONFIGURATION}"`
+          ? `CONFIGURATION="${xcodeConfiguration()}"`
           : `EAS_BUILD_PROFILE="${profile}"`;
       throw new Error(
         `REVENUECAT_BUILD_MODE="${explicitMode}" conflicts with ${source}; ` +
@@ -87,6 +101,14 @@ function isAdMobReleaseBuild(args) {
   );
   if (cliConfiguration !== undefined) {
     return cliConfiguration === 'Release';
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(
+      process.env,
+      ORIGINAL_XCODE_CONFIGURATION,
+    )
+  ) {
+    return process.env[ORIGINAL_XCODE_CONFIGURATION] === 'Release';
   }
   if (process.env.CONFIGURATION) {
     return process.env.CONFIGURATION === 'Release';

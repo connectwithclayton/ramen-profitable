@@ -42,6 +42,7 @@ const AISLES: { title: string; ids: string[] }[] = [
 
 /** Anything a future SHOP entry adds lands here rather than silently disappearing. */
 const AISLED = new Set(AISLES.flatMap(a => a.ids));
+const HIDDEN_UPGRADES: Record<string, boolean> = {};
 
 export default function StoreScreen({
   active = true,
@@ -51,11 +52,11 @@ export default function StoreScreen({
   viewportBottom?: number;
 }) {
   const s = useGame(useShallow(state => ({
-    day: state.day,
-    cash: state.cash,
-    mrr: state.mrr,
-    upgrades: state.upgrades,
-    indie: state.goIndieResolved && state.goIndieActive,
+    day: active ? state.day : 0,
+    cash: active ? state.cash : 0,
+    mrr: active ? state.mrr : 0,
+    upgrades: active ? state.upgrades : HIDDEN_UPGRADES,
+    indie: active && state.goIndieResolved && state.goIndieActive,
     buy: state.buy,
     pushNotif: state.pushNotif,
     openGoIndiePaywall: state.openGoIndiePaywall,

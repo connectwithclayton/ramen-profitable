@@ -31,6 +31,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       'NODE_ENV',
       'REVENUECAT_BUILD_MODE',
       'CONFIGURATION',
+      'RP_ORIGINAL_XCODE_CONFIGURATION',
       'REVENUECAT_TEST_STORE_API_KEY',
       'REVENUECAT_IOS_API_KEY',
       'REVENUECAT_ANDROID_API_KEY',
@@ -76,21 +77,50 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       assert.equal(result.status, 0, result.stdout + result.stderr);
       return JSON.parse(fs.readFileSync(path.join(fixture, 'ios/app.config'), 'utf8'));
     };
+    let constantsPhaseScript;
+    const constantsPhase = () => {
+      if (constantsPhaseScript) return constantsPhaseScript;
+      const podfile = fs.readFileSync(path.join(fixture, 'ios/Podfile'), 'utf8').split('\n');
+      const start = podfile.findIndex(line => line.startsWith('# @generated begin preserve-original-xcode-configuration - '));
+      const end = podfile.findIndex((line, index) => (
+        index > start && line === '# @generated end preserve-original-xcode-configuration'
+      ));
+      assert.ok(start >= 0 && end > start, 'prebuild must emit its owned Constants configuration hook');
+      const harness = path.join(fixture, 'ios/constants-configuration-hook.rb');
+      fs.writeFileSync(harness, [
+        'phase = Struct.new(:name, :shell_script).new(\'[CP-User] Generate app.config for prebuilt Constants.manifest\', ARGV.fetch(0))',
+        'target = Struct.new(:name, :shell_script_build_phases).new(\'EXConstants\', [phase])',
+        'project = Struct.new(:targets).new([target])',
+        'installer = Struct.new(:pods_project).new(project)',
+        ...podfile.slice(start + 1, end),
+        'STDOUT.write(phase.shell_script)',
+      ].join('\n'));
+      const originalPhase = `bash -l -c '"$PODS_ROOT/../../node_modules/expo-constants/scripts/get-app-config-ios.sh"'`;
+      const configured = spawnSync('ruby', [harness, originalPhase], {
+        cwd: path.join(fixture, 'ios'),
+        encoding: 'utf8',
+      });
+      assert.equal(configured.status, 0, configured.stdout + configured.stderr);
+      constantsPhaseScript = configured.stdout;
+      return constantsPhaseScript;
+    };
     const constantsConfigThroughXcode = additional => {
       const podsRoot = path.join(fixture, 'ios/Pods');
+      const constantsBuild = path.join(fixture, 'ios/constants-build');
       fs.mkdirSync(podsRoot, { recursive: true });
+      fs.mkdirSync(path.join(constantsBuild, 'EXConstants.bundle'), { recursive: true });
       const result = spawnSync(
-        '/bin/bash',
-        [
-          path.join(fixture, 'node_modules/expo-constants/scripts/with-node.sh'),
-          path.join(fixture, 'node_modules/expo-constants/scripts/getAppConfig.js'),
-          fixture,
-          path.join(fixture, 'ios'),
-        ],
+        '/bin/sh',
+        ['-c', constantsPhase()],
         {
           cwd: fixture,
           env: cleanEnvironment({
+            BUNDLE_FORMAT: 'shallow',
             CI: '1',
+            CONFIGURATION_BUILD_DIR: constantsBuild,
+            NODE_ENV: 'development',
+            PROJECT_DIR: podsRoot,
+            PROJECT_ROOT: fixture,
             PODS_ROOT: podsRoot,
             ...additional,
           }),
@@ -98,7 +128,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
         },
       );
       assert.equal(result.status, 0, result.stdout + result.stderr);
-      return JSON.parse(fs.readFileSync(path.join(fixture, 'ios/app.config'), 'utf8'));
+      return JSON.parse(fs.readFileSync(path.join(constantsBuild, 'EXConstants.bundle/app.config'), 'utf8'));
     };
     const development = prebuild({
       CONFIGURATION: 'Debug',
@@ -227,17 +257,26 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       assert.match(divergentXcodeEnvironment.stderr, /do not match the identifiers captured during prebuild/);
       fs.writeFileSync(
         xcodeLocalEnvironment,
+        `export CONFIGURATION='Release'\nexport ADMOB_IOS_APP_ID='${xcodeLocalIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${xcodeLocalIds.ADMOB_IOS_BANNER_ID}'\n`,
+      );
+      const originalDebugRuntime = constantsConfigThroughXcode({ CONFIGURATION: 'Debug' });
+      assert.deepEqual(originalDebugRuntime.extra.admob, TEST_IDS);
+      fs.writeFileSync(
+        xcodeLocalEnvironment,
         `export CONFIGURATION='Debug'\nexport ADMOB_IOS_APP_ID='${xcodeLocalIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${xcodeLocalIds.ADMOB_IOS_BANNER_ID}'\n`,
       );
-      const xcodeDebugRuntime = constantsConfigThroughXcode({ CONFIGURATION: 'Release' });
-      assert.deepEqual(xcodeDebugRuntime.extra.admob, TEST_IDS);
+      const originalReleaseRuntime = constantsConfigThroughXcode({ CONFIGURATION: 'Release' });
+      assert.deepEqual(originalReleaseRuntime.extra.admob.ios, {
+        appId: xcodeLocalIds.ADMOB_IOS_APP_ID,
+        bannerId: xcodeLocalIds.ADMOB_IOS_BANNER_ID,
+      });
       const overriddenXcodeConfiguration = runPhase('Release');
       assert.equal(
         overriddenXcodeConfiguration.status,
         1,
         `Xcode local configuration bypassed the Release guard\n${overriddenXcodeConfiguration.stdout}${overriddenXcodeConfiguration.stderr}`,
       );
-      assert.match(overriddenXcodeConfiguration.stderr, /Google TEST identifier/);
+      assert.match(overriddenXcodeConfiguration.stderr, /do not match the identifiers captured during prebuild/);
     } finally {
       fs.writeFileSync(xcodeEnvironment, originalXcodeEnvironment);
       fs.rmSync(projectLocalEnvironment, { force: true });
@@ -271,7 +310,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       1,
       `login-shell configuration bypassed the Release guard\n${overriddenLoginConfiguration.stdout}${overriddenLoginConfiguration.stderr}`,
     );
-    assert.match(overriddenLoginConfiguration.stderr, /Google TEST identifier/);
+    assert.match(overriddenLoginConfiguration.stderr, /do not match the identifiers captured during prebuild/);
     const sampleRuntime = runPhase('Release', {
       ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
       ADMOB_IOS_BANNER_ID: TEST_IDS.ios.bannerId,
