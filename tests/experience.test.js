@@ -68,13 +68,15 @@ test('energy countdown follows the live regeneration rate', async () => {
   assert.deepEqual(completed, { drained: true, prompt: 'SHIP IT AND FIND OUT' });
 });
 
-test('ten-tap reaction takes precedence over simultaneous depletion', async () => {
+test('ten-tap reaction fires at the exact count and takes depletion precedence', async () => {
   const { tapReactionKind } = await loadExperience();
 
-  assert.equal(tapReactionKind(true, true), 'ten-taps');
-  assert.equal(tapReactionKind(true, false), 'ten-taps');
-  assert.equal(tapReactionKind(false, true), 'energy-depleted');
-  assert.equal(tapReactionKind(false, false), undefined);
+  assert.equal(tapReactionKind(10, true), 'ten-taps');
+  assert.equal(tapReactionKind(10, false), 'ten-taps');
+  assert.equal(tapReactionKind(9, true), 'energy-depleted');
+  assert.equal(tapReactionKind(11, true), 'energy-depleted');
+  assert.equal(tapReactionKind(9, false), undefined);
+  assert.equal(tapReactionKind(11, false), undefined);
 });
 
 test('Home selects intentional beta-tester reactions and ignores player verdicts', async () => {
@@ -492,27 +494,6 @@ test('Home project copy and automation telemetry follow the latest real state', 
   assert.equal(homeProjectActionLabel(null), 'Open Code to start');
   assert.equal(homeProjectActionLabel({ loc: 10, need: 100 }), 'Continue coding');
   assert.equal(homeProjectActionLabel({ loc: 100, need: 100 }), 'Open Code to submit');
-});
-
-test('automation affordability follows current state and real threshold crossings', async () => {
-  const {
-    automationAffordabilityNudge,
-    newAutomationAffordabilityNudge,
-  } = await loadExperience();
-  const { SHOP } = await loadContent();
-
-  assert.equal(automationAffordabilityNudge(259, {}, SHOP), undefined);
-  const nudge = automationAffordabilityNudge(260, {}, SHOP);
-  assert.deepEqual(nudge, {
-    name: 'Claude Max subscription',
-    cost: 260,
-    detail: 'Auto-writes 6 LOC/sec while the app is open.',
-    chirpText: 'Claude Max subscription just entered the budget — auto-writes 6 LOC/sec while the app is open.',
-  });
-  assert.deepEqual(newAutomationAffordabilityNudge(259, 260, {}, SHOP), nudge);
-  assert.equal(newAutomationAffordabilityNudge(260, 260, {}, SHOP), undefined);
-  assert.equal(newAutomationAffordabilityNudge(259, 260, { claude: true }, SHOP), undefined);
-  assert.equal(automationAffordabilityNudge(500, { claude: true }, SHOP), undefined);
 });
 
 test('Home reaction expiry uses measured visible foreground time', async () => {

@@ -91,7 +91,6 @@ function HydratedGame() {
           <HomeScreen
             bottomOcclusion={dockOcclusion}
             onOpenCode={() => setTab('code')}
-            onOpenStore={() => setTab('store')}
           />
         )}
         {tab === 'code' && <CodeScreen />}

@@ -19,10 +19,8 @@ import { pickAppIdea } from './projectIdeas';
 import {
   advanceHomeReactionExposure,
   calculatePaywallTransaction,
-  newAutomationAffordabilityNudge,
   paywallReaction,
   priorityHomeReactionState,
-  projectMilestoneId,
   resolveGameEvent,
   selectPersistedState,
   tapReactionKind,
@@ -34,7 +32,7 @@ import type {
   PriorityHomeReactionKind,
 } from './experience';
 
-export type Project = { id: string; name: string; idea: string; loc: number; need: number; manualTaps: number };
+export type Project = { name: string; idea: string; loc: number; need: number; manualTaps: number };
 export type ShippedApp = {
   id: string;
   name: string;
@@ -97,7 +95,6 @@ export type GameState = {
   goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
-  storyMilestones: Record<string, boolean>;
   lastSeen: number; // epoch ms, for offline earnings
   homePriority?: HomePriority;
   homePrioritySecondsLeft: number;
@@ -159,26 +156,12 @@ const initial: GameState = {
   goIndieResolved: false,
   won: false,
   achievements: {},
-  storyMilestones: {},
   lastSeen: Date.now(),
   homePriority: undefined,
   homePrioritySecondsLeft: 0,
   homeReceipt: undefined,
   homeReceiptSecondsLeft: 0,
 };
-
-function pushNewAutomationAffordability(
-  beforeCash: number,
-  current: GameState & Actions,
-) {
-  const nudge = newAutomationAffordabilityNudge(
-    beforeCash,
-    current.cash,
-    current.upgrades,
-    SHOP,
-  );
-  if (nudge) current.pushChirp(nudge.chirpText, { author: BETA_TESTER });
-}
 
 export const useGame = create<GameState & Actions>()(
   persist(
@@ -224,11 +207,8 @@ export const useGame = create<GameState & Actions>()(
           ...(s.project ? [s.project.name] : []),
         ]);
         const [name, idea] = pickAppIdea(APP_IDEAS, usedNames);
-        const project: Project = { id: uid(), name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250), manualTaps: 0 };
-        set({
-          project,
-          storyMilestones: {},
-        });
+        const project: Project = { name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250), manualTaps: 0 };
+        set({ project });
         get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
           author: PLAYER,
         });
@@ -249,18 +229,13 @@ export const useGame = create<GameState & Actions>()(
         const nextLoc = s.project.loc + s.tapPower;
         const nextEnergy = s.energy - 1;
         const manualTaps = (s.project.manualTaps ?? 0) + 1;
-        const tenTapKey = projectMilestoneId(s.project.id, 'ten-taps');
-        const depletedKey = projectMilestoneId(s.project.id, 'energy-depleted');
-        const hitTenTaps = manualTaps >= 10 && !s.storyMilestones[tenTapKey];
-        const depletedEnergy = nextEnergy < 1 && s.autoCode <= 0 && !s.storyMilestones[depletedKey];
-        const reactionKind = tapReactionKind(hitTenTaps, depletedEnergy);
-        const storyMilestones = { ...s.storyMilestones };
-        if (hitTenTaps) storyMilestones[tenTapKey] = true;
-        if (depletedEnergy) storyMilestones[depletedKey] = true;
+        const reactionKind = tapReactionKind(
+          manualTaps,
+          nextEnergy < 1 && nextLoc < s.project.need && s.autoCode <= 0,
+        );
         set({
           energy: nextEnergy,
           project: { ...s.project, loc: nextLoc, manualTaps },
-          ...(hitTenTaps || depletedEnergy ? { storyMilestones } : {}),
         });
         if (reactionKind === 'ten-taps') {
           get().pushChirp(`${Math.floor(nextLoc)} lines in and the launch thread is already longer than the app.`, {
@@ -269,6 +244,7 @@ export const useGame = create<GameState & Actions>()(
             event: 'TEN TAPS',
           });
         }
+        // This beat lands in the real regeneration wait and yields to the required ten-tap response.
         if (reactionKind === 'energy-depleted') {
           get().pushChirp('Have you tried delegating? My cat is between roles.', {
             author: BETA_TESTER,
@@ -345,6 +321,7 @@ export const useGame = create<GameState & Actions>()(
           ...applied,
         });
         s.pushNotif(`${item.name} acquired.`, 'store');
+        // The committed-rate purchase beat carries the automation joke; progress telemetry alone does not.
         if (id === 'claude') {
           const rate = typeof applied.autoCode === 'number' ? applied.autoCode : s.autoCode;
           get().pushChirp(`${rate} LOC/sec. You have been promoted to code reviewer.`, {
@@ -391,7 +368,6 @@ export const useGame = create<GameState & Actions>()(
           }
         }
         set(next);
-        pushNewAutomationAffordability(s.cash, get());
         if (s.mrr >= 100) s.unlock('mrr_100');
         if (s.mrr >= 1000) s.unlock('mrr_1000');
       },
@@ -425,7 +401,6 @@ export const useGame = create<GameState & Actions>()(
         const outcome = resolveGameEvent(ev, s);
         if (!outcome) return;
         set(outcome.patch);
-        pushNewAutomationAffordability(s.cash, get());
         s.pushNotif(outcome.text, ev.icon);
         if (Math.random() < 0.4) {
           s.pushChirp(outcome.chirpText);
@@ -499,7 +474,6 @@ export const useGame = create<GameState & Actions>()(
         const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
         const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieResolved && s.goIndieActive ? 2 : 1);
         set({ cash: s.cash + earned, lastSeen: Date.now() });
-        pushNewAutomationAffordability(s.cash, get());
         return earned;
       },
       touchLastSeen: () => set({ lastSeen: Date.now() }),
@@ -513,12 +487,10 @@ export const useGame = create<GameState & Actions>()(
           migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
         migrated.achievements = migrated.achievements ?? {};
-        migrated.storyMilestones = migrated.storyMilestones ?? {};
         migrated.goIndieActive = migrated.goIndieActive ?? false;
         if (migrated.project) {
           migrated.project = {
             ...migrated.project,
-            id: migrated.project.id ?? uid(),
             manualTaps: migrated.project.manualTaps ?? 0,
           };
         }

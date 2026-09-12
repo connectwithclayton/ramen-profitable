@@ -12,12 +12,8 @@ export type PaywallTransaction = {
   delta: MrrDelta;
 };
 
-export function projectMilestoneId(projectId: string, milestone: string) {
-  return `project:${projectId}:${milestone}`;
-}
-
-export function tapReactionKind(hitTenTaps: boolean, depletedEnergy: boolean) {
-  if (hitTenTaps) return 'ten-taps' as const;
+export function tapReactionKind(manualTaps: number, depletedEnergy: boolean) {
+  if (manualTaps === 10) return 'ten-taps' as const;
   if (depletedEnergy) return 'energy-depleted' as const;
   return undefined;
 }
@@ -90,23 +86,11 @@ export function automationAffordabilityNudge(
 ) {
   const upgrade = shop.find(item => item.id === 'claude');
   if (!upgrade || upgrades[upgrade.id] || cash < upgrade.cost) return undefined;
-  const inlineDescription = upgrade.desc[0].toLowerCase() + upgrade.desc.slice(1);
   return {
     name: upgrade.name,
     cost: upgrade.cost,
     detail: `${upgrade.desc} while the app is open.`,
-    chirpText: `${upgrade.name} just entered the budget — ${inlineDescription} while the app is open.`,
   };
-}
-
-export function newAutomationAffordabilityNudge(
-  beforeCash: number,
-  afterCash: number,
-  upgrades: Readonly<Record<string, boolean>>,
-  shop: readonly AutomationUpgrade[],
-) {
-  const nudge = automationAffordabilityNudge(afterCash, upgrades, shop);
-  return nudge && beforeCash < nudge.cost ? nudge : undefined;
 }
 
 export function sampleHomeExposure(
@@ -143,6 +127,7 @@ export function verticalFrameExposureRate(
   return Math.min(1, visibleHeight / maximumVisibleHeight);
 }
 
+// Purchases are committed transactions, so their newest receipt persists until measured exposure.
 export type DurableHomeReceiptKind = 'purchase' | 'verdict' | 'paywall';
 export type PriorityHomeReactionKind = 'milestone' | DurableHomeReceiptKind;
 type HomeReaction = { id: string; who: string; handle: string; kind?: string };
@@ -223,7 +208,7 @@ const persistedStateKeys = [
   'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
   'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
   'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
-  'storyMilestones', 'homeReceipt', 'homeReceiptSecondsLeft',
+  'homeReceipt', 'homeReceiptSecondsLeft',
 ] as const satisfies readonly (keyof GameState)[];
 
 export function selectPersistedState(

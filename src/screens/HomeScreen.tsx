@@ -234,11 +234,9 @@ function AppRow({
 export default function HomeScreen({
   bottomOcclusion,
   onOpenCode,
-  onOpenStore,
 }: {
   bottomOcclusion: number | undefined;
   onOpenCode: () => void;
-  onOpenStore: () => void;
 }) {
   const s = useGame();
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
@@ -273,6 +271,7 @@ export default function HomeScreen({
   );
   const projectDone = Boolean(s.project && s.project.loc >= s.project.need);
   const automationStatus = homeAutomationStatus(s.autoCode, s.project);
+  // This passive line keeps automation discoverable without taking Home's action or reaction slots.
   const automationNudge = automationAffordabilityNudge(s.cash, s.upgrades, SHOP);
   const emptyProjectCopy = homeEmptyProjectCopy(s.apps);
 
@@ -377,24 +376,10 @@ export default function HomeScreen({
       </Section>
 
       {automationNudge && (
-        <Section>
-          <Unit style={st.affordability}>
-            <Eyebrow color={C.gold}>Upgrade within budget</Eyebrow>
-            <View style={st.affordabilityTop}>
-              <DrawnIcon name="store" size={18} color={C.gold} />
-              <Text style={st.affordabilityName}>{automationNudge.name}</Text>
-              <MonoText style={st.affordabilityPrice}>{fmt(automationNudge.cost)}</MonoText>
-            </View>
-            <Text style={st.affordabilityDetail}>{automationNudge.detail}</Text>
-            <Btn
-              small
-              ghost
-              label="Open Store"
-              accessibilityLabel={`Open Store for ${automationNudge.name}`}
-              onPress={onOpenStore}
-              style={st.affordabilityButton}
-            />
-          </Unit>
+        <Section style={st.affordabilityNudge}>
+          <MonoText style={st.affordabilityNudgeText}>
+            {automationNudge.name.toUpperCase()} · {fmt(automationNudge.cost)} WITHIN BUDGET · {automationNudge.detail.toUpperCase()}
+          </MonoText>
         </Section>
       )}
 
@@ -520,12 +505,8 @@ const st = StyleSheet.create({
   statValueMuted: { color: C.dim, fontSize: 14, fontWeight: '400' },
   statCaption: { color: C.mut, fontSize: 11, marginTop: 4 },
 
-  affordability: { paddingVertical: 13 },
-  affordabilityTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 7 },
-  affordabilityName: { color: C.ink, flex: 1, fontSize: 14, fontWeight: '700' },
-  affordabilityPrice: { color: C.gold, fontSize: 12, fontWeight: '600' },
-  affordabilityDetail: { color: C.mut, fontSize: 12, lineHeight: 17, marginTop: 6 },
-  affordabilityButton: { alignSelf: 'flex-start', marginTop: 11 },
+  affordabilityNudge: { marginTop: S_GAP },
+  affordabilityNudgeText: { color: C.mut, fontSize: 9.5, lineHeight: 15, letterSpacing: 0.35 },
 
   indie: { paddingVertical: 9, alignItems: 'center' },
   indieText: { color: C.mint, fontSize: 10, letterSpacing: 1.2, fontWeight: '600' },
