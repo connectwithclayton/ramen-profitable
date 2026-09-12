@@ -13,29 +13,22 @@ export type PaywallTransaction = {
 };
 
 export type PendingOwnerBonus = {
-  revision: number;
   amount: number;
 };
 
-export const emptyPendingOwnerBonus = (): PendingOwnerBonus => ({ revision: 0, amount: 0 });
+export const emptyPendingOwnerBonus = (): PendingOwnerBonus => ({ amount: 0 });
 
 export function parsePendingOwnerBonus(value: unknown): PendingOwnerBonus {
   if (!value || typeof value !== 'object') return emptyPendingOwnerBonus();
   const source = value as Record<string, unknown>;
   if (
-    !Number.isSafeInteger(source.revision) ||
-    (source.revision as number) < 0 ||
     typeof source.amount !== 'number' ||
     !Number.isFinite(source.amount) ||
-    source.amount < 0 ||
-    (source.revision === 0 && source.amount !== 0)
+    source.amount < 0
   ) {
     return emptyPendingOwnerBonus();
   }
-  return {
-    revision: source.revision as number,
-    amount: source.amount,
-  };
+  return { amount: source.amount };
 }
 
 function appendPendingOwnerBonus(
@@ -43,10 +36,7 @@ function appendPendingOwnerBonus(
   amount: number,
 ): PendingOwnerBonus {
   if (amount <= 0) return pendingOwnerBonus;
-  return {
-    revision: pendingOwnerBonus.revision + 1,
-    amount: pendingOwnerBonus.amount + amount,
-  };
+  return { amount: pendingOwnerBonus.amount + amount };
 }
 
 export function offlineEarningsBetween(mrr: number, from: number, until: number) {
@@ -91,19 +81,8 @@ export function settlePendingOwnerBonus(
   }
   return {
     earned: active ? pendingOwnerBonus.amount : 0,
-    pendingOwnerBonus: {
-      revision: pendingOwnerBonus.revision + 1,
-      amount: 0,
-    },
+    pendingOwnerBonus: emptyPendingOwnerBonus(),
   };
-}
-
-export function shouldPreservePendingOwnerBonus(
-  current: PendingOwnerBonus,
-  persisted: PendingOwnerBonus,
-) {
-  return current.revision > persisted.revision ||
-    (current.revision === persisted.revision && current.revision > 0);
 }
 
 export function tapReactionKind(
@@ -188,6 +167,18 @@ export function automationAffordabilityNudge(
     name: upgrade.name,
     cost: upgrade.cost,
     detail: `${upgrade.desc} while the app is open.`,
+  };
+}
+
+export function homeExposureMeasurement(
+  appState: string,
+  focused: boolean,
+  exposureRate: number,
+) {
+  const rate = appState === 'active' && focused ? exposureRate : 0;
+  return {
+    rate,
+    persist: rate <= 0 && !(appState === 'active' && !focused),
   };
 }
 

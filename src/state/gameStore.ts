@@ -27,7 +27,6 @@ import {
   resolveGameEvent,
   selectPersistedState,
   settlePendingOwnerBonus,
-  shouldPreservePendingOwnerBonus,
   tapReactionKind,
 } from './experience';
 import type {
@@ -544,22 +543,10 @@ export const useGame = create<GameState & Actions>()(
         return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
-      merge: (persisted, current) => {
-        const persistedState = selectPersistedState(persisted, BETA_TESTER);
-        const persistedOwnerBonus = parsePendingOwnerBonus(persistedState.pendingOwnerBonus);
-        const currentOwnerBonus = parsePendingOwnerBonus(current.pendingOwnerBonus);
-        const preserveCurrentOwnerBonus = shouldPreservePendingOwnerBonus(
-          currentOwnerBonus,
-          persistedOwnerBonus,
-        );
-        return {
-          ...current,
-          ...persistedState,
-          ...(preserveCurrentOwnerBonus
-            ? { cash: current.cash, pendingOwnerBonus: currentOwnerBonus }
-            : { pendingOwnerBonus: persistedOwnerBonus }),
-        };
-      },
+      merge: (persisted, current) => ({
+        ...current,
+        ...selectPersistedState(persisted, BETA_TESTER),
+      }),
       partialize: s => selectPersistedState(s, BETA_TESTER),
     }
   )

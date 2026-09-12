@@ -34,6 +34,7 @@ import {
   automationAffordabilityNudge,
   createHomeExposureBuffer,
   formatMrrDelta,
+  homeExposureMeasurement,
   homeAutomationStatus,
   homeEmptyProjectCopy,
   homeProjectActionLabel,
@@ -41,6 +42,8 @@ import {
   selectHomeReaction,
   verticalFrameExposureRate,
 } from '../state/experience';
+
+const HOME_CODE_ACTION_HIT_SLOP = { top: 8, bottom: 8 };
 
 function useForegroundExposure(
   reactionId: string | undefined,
@@ -51,6 +54,7 @@ function useForegroundExposure(
 ) {
   const exposureRateRef = React.useRef(exposureRate);
   const transitionExposureRate = React.useRef<((nextRate: number) => void) | undefined>(undefined);
+  const focusedRef = React.useRef(true);
 
   React.useLayoutEffect(() => {
     transitionExposureRate.current?.(exposureRate);
@@ -61,13 +65,13 @@ function useForegroundExposure(
     if (!enabled || !reactionId || secondsLeft <= 0) return;
 
     let appState = AppState.currentState;
-    let focused = true;
     let interval: ReturnType<typeof setInterval> | undefined;
-    const foregroundRate = () => appState === 'active' && focused ? exposureRateRef.current : 0;
+    const measurement = (nextRate = exposureRateRef.current) =>
+      homeExposureMeasurement(appState, focusedRef.current, nextRate);
     const buffer = createHomeExposureBuffer(
       secondsLeft,
       performance.now(),
-      foregroundRate(),
+      measurement().rate,
       elapsedSeconds => record(reactionId, elapsedSeconds),
     );
     const stopSampling = () => {
@@ -76,7 +80,7 @@ function useForegroundExposure(
         interval = undefined;
       }
     };
-    const sample = (nextRate = foregroundRate()) => {
+    const sample = (nextRate = measurement().rate) => {
       const closed = buffer.sample(performance.now(), nextRate);
       if (closed) stopSampling();
       return closed;
@@ -85,8 +89,8 @@ function useForegroundExposure(
       if (buffer.flush()) stopSampling();
     };
     const transition = (nextRate: number) => {
-      const visibleRate = appState === 'active' && focused ? nextRate : 0;
-      if (!sample(visibleRate) && visibleRate <= 0) flush();
+      const { rate, persist } = measurement(nextRate);
+      if (!sample(rate) && persist) flush();
     };
     transitionExposureRate.current = transition;
 
@@ -97,14 +101,14 @@ function useForegroundExposure(
     });
     const blurSubscription = Platform.OS === 'android'
       ? AppState.addEventListener('blur', () => {
-          focused = false;
+          focusedRef.current = false;
           transition(exposureRateRef.current);
         })
       : undefined;
     const focusSubscription = Platform.OS === 'android'
       ? AppState.addEventListener('focus', () => {
-          if (focused) return;
-          focused = true;
+          if (focusedRef.current) return;
+          focusedRef.current = true;
           transition(exposureRateRef.current);
         })
       : undefined;
@@ -443,7 +447,13 @@ export default function HomeScreen({
             {automationStatus && (
               <MonoText style={st.automation}>{automationStatus}</MonoText>
             )}
-            <Btn small label={homeProjectActionLabel(s.project)} onPress={onOpenCode} style={st.projectButton} />
+            <Btn
+              small
+              label={homeProjectActionLabel(s.project)}
+              onPress={onOpenCode}
+              hitSlop={HOME_CODE_ACTION_HIT_SLOP}
+              style={st.projectButton}
+            />
           </Unit>
         ) : (
           <Unit style={st.projectUnit}>
@@ -454,6 +464,7 @@ export default function HomeScreen({
               small
               label={homeProjectActionLabel(s.project)}
               onPress={onOpenCode}
+              hitSlop={HOME_CODE_ACTION_HIT_SLOP}
               style={st.projectCta}
             />
           </Unit>

@@ -496,6 +496,16 @@ test('Home project copy and automation telemetry follow the latest real state', 
   assert.equal(homeProjectActionLabel({ loc: 100, need: 100 }), 'Open Code to submit');
 });
 
+test('Home exposure persists at visibility boundaries, not shade coverage', async () => {
+  const { homeExposureMeasurement } = await loadExperience();
+
+  assert.deepEqual(homeExposureMeasurement('active', true, 1), { rate: 1, persist: false });
+  assert.deepEqual(homeExposureMeasurement('active', true, 0), { rate: 0, persist: true });
+  assert.deepEqual(homeExposureMeasurement('active', false, 1), { rate: 0, persist: false });
+  assert.deepEqual(homeExposureMeasurement('background', true, 1), { rate: 0, persist: true });
+  assert.deepEqual(homeExposureMeasurement('inactive', false, 0.5), { rate: 0, persist: true });
+});
+
 test('Home buffers measured exposure until a boundary or expiry', async () => {
   const { createHomeExposureBuffer, homeReactionSecondsAfterExposure } = await loadExperience();
   const expiryWrites = [];
@@ -534,7 +544,6 @@ test('offline owner bonuses remain pending until definitive entitlement settleme
     parsePendingOwnerBonus,
     selectPersistedState,
     settlePendingOwnerBonus,
-    shouldPreservePendingOwnerBonus,
   } = await loadExperience();
   const { BETA_TESTER } = await loadContent();
   const empty = emptyPendingOwnerBonus();
@@ -548,7 +557,7 @@ test('offline owner bonuses remain pending until definitive entitlement settleme
   });
 
   assert.equal(launch.earned, 720);
-  assert.deepEqual(launch.pendingOwnerBonus, { revision: 1, amount: 720 });
+  assert.deepEqual(launch.pendingOwnerBonus, { amount: 720 });
   const persisted = JSON.parse(JSON.stringify(selectPersistedState({
     cash: launch.earned,
     pendingOwnerBonus: launch.pendingOwnerBonus,
@@ -561,7 +570,7 @@ test('offline owner bonuses remain pending until definitive entitlement settleme
   );
   assert.deepEqual(settlement, {
     earned: 720,
-    pendingOwnerBonus: { revision: 2, amount: 0 },
+    pendingOwnerBonus: { amount: 0 },
   });
   assert.deepEqual(settlePendingOwnerBonus(settlement.pendingOwnerBonus, true), {
     earned: 0,
@@ -571,13 +580,9 @@ test('offline owner bonuses remain pending until definitive entitlement settleme
   const discarded = settlePendingOwnerBonus(launch.pendingOwnerBonus, false);
   assert.deepEqual(discarded, {
     earned: 0,
-    pendingOwnerBonus: { revision: 2, amount: 0 },
+    pendingOwnerBonus: { amount: 0 },
   });
   assert.equal(settlePendingOwnerBonus(discarded.pendingOwnerBonus, true).earned, 0);
-  assert.equal(
-    shouldPreservePendingOwnerBonus(settlement.pendingOwnerBonus, launch.pendingOwnerBonus),
-    true,
-  );
 });
 
 test('offline earnings aggregate unresolved intervals and validate persisted debt', async () => {
@@ -620,17 +625,17 @@ test('offline earnings aggregate unresolved intervals and validate persisted deb
   });
 
   assert.equal(first.earned, 12.2);
-  assert.deepEqual(second.pendingOwnerBonus, { revision: 2, amount: 24.4 });
+  assert.deepEqual(second.pendingOwnerBonus, { amount: 24.4 });
   assert.equal(confirmed.earned, 24.4);
   assert.deepEqual(confirmed.pendingOwnerBonus, emptyPendingOwnerBonus());
   assert.equal(free.earned, 12.2);
   assert.deepEqual(free.pendingOwnerBonus, emptyPendingOwnerBonus());
+  assert.deepEqual(parsePendingOwnerBonus({ revision: 1, amount: 720 }), { amount: 720 });
   for (const malformed of [
     undefined,
-    { revision: -1, amount: 10 },
-    { revision: 0, amount: 10 },
-    { revision: 2, amount: -1 },
-    { revision: 2, amount: Infinity },
+    { amount: -1 },
+    { amount: Infinity },
+    { amount: Number.NaN },
   ]) {
     assert.deepEqual(parsePendingOwnerBonus(malformed), emptyPendingOwnerBonus());
   }

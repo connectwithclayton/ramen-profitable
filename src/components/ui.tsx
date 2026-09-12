@@ -12,6 +12,7 @@ import {
   ViewProps,
   ViewStyle,
   TextStyle,
+  Insets,
 } from 'react-native';
 import Svg, { Defs, Rect as SvgRect, RadialGradient, Stop } from 'react-native-svg';
 import { C, R, S } from '../theme';
@@ -37,6 +38,7 @@ type BtnProps = ({ label: string; children?: never } | { label?: never; children
   ghost?: boolean;
   disabled?: boolean;
   small?: boolean;
+  hitSlop?: number | Insets;
   style?: ViewStyle;
 };
 
@@ -49,6 +51,7 @@ export function Btn({
   ghost,
   disabled,
   small,
+  hitSlop,
   style,
 }: BtnProps) {
   const textStyle = [st.btnText, ghost && { color: C.ink, fontWeight: '600' as const }, small && { fontSize: 13 }];
@@ -67,6 +70,7 @@ export function Btn({
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       disabled={disabled}
+      hitSlop={hitSlop}
       style={({ pressed }) => [
         st.btn,
         ghost && st.btnGhost,
