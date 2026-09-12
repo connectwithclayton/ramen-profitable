@@ -26,6 +26,7 @@ let consentInfoUpdate = deferred();
 let consentForm = deferred();
 let listener;
 let storageRead = async () => null;
+let storageWrite = async () => {};
 let consentAllowed = true;
 let consentStatus = 'UNKNOWN';
 let privacyRequired = false;
@@ -122,7 +123,10 @@ Module._load = function (name, parent, main) {
   if (name === 'expo-constants') return { __esModule: true, default: { expoConfig: { extra: {
     revenueCat: { testStoreApiKey: 'test_fixture' }, admob: admobConfig,
   } } } };
-  if (name === '@react-native-async-storage/async-storage') return { getItem: () => storageRead(), setItem: async () => {} };
+  if (name === '@react-native-async-storage/async-storage') return {
+    getItem: () => storageRead(),
+    setItem: (key, value) => storageWrite(key, value),
+  };
   if (name === 'expo-status-bar') return { StatusBar: 'StatusBar' };
   if (name === 'expo-haptics') return { selectionAsync: async () => {}, notificationAsync: async () => {}, NotificationFeedbackType: {} };
   if (name === 'react-native-svg') return new Proxy({ __esModule: true, default: 'Svg' }, { get: (obj, key) => obj[key] ?? String(key) });
@@ -433,6 +437,7 @@ test('late hydration preserves the post-entitlement earnings clock', async t => 
       lastSeen: previousState.lastSeen,
       goIndieActive: previousState.goIndieActive,
       goIndieResolved: previousState.goIndieResolved,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
     });
   });
 
@@ -442,6 +447,7 @@ test('late hydration preserves the post-entitlement earnings clock', async t => 
     lastSeen: 100,
     goIndieActive: false,
     goIndieResolved: false,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
   });
   const disk = deferred();
   storageRead = () => disk.promise;
@@ -483,6 +489,7 @@ test('returning owner launch pays exactly once across hydration order', async t 
       goIndieResolved: previousState.goIndieResolved,
       launchEarningsCutoff: previousState.launchEarningsCutoff,
       pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
     });
   });
 
@@ -496,6 +503,7 @@ test('returning owner launch pays exactly once across hydration order', async t 
     goIndieResolved: false,
     launchEarningsCutoff: null,
     pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
   });
   storageRead = async () => JSON.stringify({
     version: 2,
@@ -521,6 +529,7 @@ test('returning owner launch pays exactly once across hydration order', async t 
     goIndieResolved: false,
     launchEarningsCutoff: null,
     pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
   });
   const lateDisk = deferred();
   storageRead = () => lateDisk.promise;
@@ -563,6 +572,7 @@ test('late free hydration reconciles launch earnings exactly once', async t => {
       goIndieResolved: previousState.goIndieResolved,
       launchEarningsCutoff: previousState.launchEarningsCutoff,
       pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
     });
   });
 
@@ -576,6 +586,7 @@ test('late free hydration reconciles launch earnings exactly once', async t => {
     goIndieResolved: false,
     launchEarningsCutoff: null,
     pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
   });
   const disk = deferred();
   storageRead = () => disk.promise;
@@ -618,6 +629,7 @@ test('returning owner launch requires persisted and confirmed ownership', async 
       goIndieResolved: previousState.goIndieResolved,
       launchEarningsCutoff: previousState.launchEarningsCutoff,
       pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
     });
   });
 
@@ -631,6 +643,7 @@ test('returning owner launch requires persisted and confirmed ownership', async 
     goIndieResolved: false,
     launchEarningsCutoff: null,
     pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
   });
   storageRead = async () => JSON.stringify({
     version: 2,
@@ -652,6 +665,7 @@ test('returning owner launch requires persisted and confirmed ownership', async 
     goIndieResolved: false,
     launchEarningsCutoff: null,
     pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
   });
   storageRead = async () => JSON.stringify({
     version: 2,
@@ -686,6 +700,7 @@ test('returning owner launch preserves the lifecycle clock', async t => {
       goIndieResolved: previousState.goIndieResolved,
       launchEarningsCutoff: previousState.launchEarningsCutoff,
       pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
     });
   });
 
@@ -699,6 +714,7 @@ test('returning owner launch preserves the lifecycle clock', async t => {
     goIndieResolved: false,
     launchEarningsCutoff: null,
     pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
   });
   const disk = deferred();
   storageRead = () => disk.promise;
@@ -725,6 +741,197 @@ test('returning owner launch preserves the lifecycle clock', async t => {
   await act(async () => { setAppState('active'); });
   assert.equal(useGame.getState().cash, 48.8);
   assert.equal(useGame.getState().lastSeen, now);
+});
+
+test('pending owner bonus survives relaunch and settles exactly once', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousStorageWrite = storageWrite;
+  const previousState = useGame.getState();
+  let now = 6_000_000;
+  let tree;
+  let latestWrite = null;
+  const discardWrite = async () => {};
+  const captureWrite = async (_key, value) => { latestWrite = value; };
+  const resetProcessState = () => {
+    useGame.setState({
+      cash: 0,
+      mrr: 0,
+      lastSeen: now,
+      goIndieActive: false,
+      goIndieResolved: false,
+      notifs: [],
+      overlay: null,
+      launchEarningsCutoff: null,
+      pendingLaunchInterval: undefined,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    });
+  };
+  const mountLaunch = async () => {
+    await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+    await flush();
+  };
+  const unmountLaunch = async () => {
+    if (!tree) return;
+    await act(async () => { tree.unmount(); });
+    tree = null;
+  };
+  Date.now = () => now;
+  t.after(async () => {
+    await unmountLaunch();
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    storageWrite = discardWrite;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      notifs: previousState.notifs,
+      overlay: previousState.overlay,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+    storageWrite = previousStorageWrite;
+  });
+
+  storageWrite = discardWrite;
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  resetProcessState();
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 12.2);
+  await unmountLaunch();
+  const firstProcessSave = latestWrite;
+  assert.equal(typeof firstProcessSave, 'string');
+
+  now += 61_000;
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => firstProcessSave;
+  await useGame.persist.rehydrate();
+  latestWrite = null;
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 24.4);
+  await unmountLaunch();
+  const secondProcessSave = latestWrite;
+  assert.equal(typeof secondProcessSave, 'string');
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => secondProcessSave;
+  await useGame.persist.rehydrate();
+  latestWrite = null;
+  storageWrite = captureWrite;
+  await mountLaunch();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 48.8);
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 48.8);
+  storageRead = async () => secondProcessSave;
+  await useGame.persist.rehydrate();
+  assert.equal(useGame.getState().cash, 48.8, 'stale debt hydration must not undo its settlement');
+  await unmountLaunch();
+  const settledProcessSave = latestWrite;
+  assert.equal(typeof settledProcessSave, 'string');
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => settledProcessSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 48.8, 'a settled bonus must not return after another relaunch');
+});
+
+test('confirmed non-ownership durably discards a pending owner bonus', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousStorageWrite = storageWrite;
+  const previousState = useGame.getState();
+  const now = 7_000_000;
+  let tree;
+  let latestWrite = null;
+  const discardWrite = async () => {};
+  const captureWrite = async (_key, value) => { latestWrite = value; };
+  const resetProcessState = () => {
+    useGame.setState({
+      cash: 0,
+      mrr: 0,
+      lastSeen: now,
+      goIndieActive: false,
+      goIndieResolved: false,
+      notifs: [],
+      overlay: null,
+      launchEarningsCutoff: null,
+      pendingLaunchInterval: undefined,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    });
+  };
+  Date.now = () => now;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    storageWrite = discardWrite;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      notifs: previousState.notifs,
+      overlay: previousState.overlay,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+    storageWrite = previousStorageWrite;
+  });
+
+  storageWrite = discardWrite;
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  resetProcessState();
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  await flush();
+  assert.equal(useGame.getState().cash, 12.2);
+
+  await act(async () => { listener(info(false)); });
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(useGame.getState().goIndieActive, false);
+  const discardedProcessSave = latestWrite;
+  assert.equal(typeof discardedProcessSave, 'string');
+  await act(async () => { tree.unmount(); });
+  tree = null;
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => discardedProcessSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  await flush();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 12.2, 'discarded owner credit must not return after relaunch');
 });
 
 test('an active restore preserves the paid offline earnings interval', async t => {
@@ -1806,7 +2013,7 @@ test('returning from an ad destination rechecks creative expiry', async t => {
   assert.notStrictEqual(banners()[0], loadedBanner);
 });
 
-test('ownership invalidation clears an open ad destination', async t => {
+test('ownership invalidation keeps an open ad destination blocked until foreground return', async t => {
   resetAdLifecycleState();
   useGame.setState({ notifs: [] });
   customer = { promise: Promise.resolve(info(false)) };
@@ -1841,11 +2048,20 @@ test('ownership invalidation clears an open ad destination', async t => {
 
   await act(async () => { listener(info(false)); });
   await flush();
-  assert.equal(probes().length, 1, 'a later valid downgrade must restore measurement');
+  assert.equal(banners().length, 0, 'a later valid downgrade must not mount a successor behind the destination');
+  assert.equal(probes().length, 0, 'ownership changes cannot establish that the destination closed');
+  assert.equal(requests.length, 1, 'the destination barrier must block successor requests');
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.equal(probes().length, 0);
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.equal(probes().length, 1, 'a measured foreground return may clear the destination barrier');
   await act(async () => { retiredOnAdOpened(); });
   assert.equal(probes().length, 1, 'a retired banner callback must not conceal the current surface');
   await setBillboardProbeWidth(tree, 320);
-  assert.equal(requests.length, 2, 'restored eligibility must issue one successor request');
+  assert.equal(requests.length, 2, 'remeasurement after return must issue one successor request');
   assert.equal(banners().length, 1);
   assert.notStrictEqual(banners()[0], loadedBanner);
 });

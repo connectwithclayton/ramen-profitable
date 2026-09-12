@@ -116,6 +116,7 @@ export default function PhoneBillboard({
       if (state === 'background') wasBackgroundedRef.current = true;
       if (state === 'active' && wasBackgroundedRef.current) {
         wasBackgroundedRef.current = false;
+        setDestinationOpen(false);
         setLoadedForegroundReturnAt(creativeStateRef.current === 'loaded' ? Date.now() : null);
       }
       setForeground(state === 'active');
@@ -126,10 +127,6 @@ export default function PhoneBillboard({
   useLayoutEffect(() => {
     creativeStateRef.current = creativeState;
   }, [creativeState]);
-
-  useLayoutEffect(() => {
-    if (!eligible) setDestinationOpen(false);
-  }, [eligible]);
 
   const reportViewportFrame = useCallback(() => {
     const sectionY = sectionYRef.current;

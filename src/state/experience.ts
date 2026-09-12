@@ -14,10 +14,11 @@ export type PaywallTransaction = {
 
 /** Owner-bonus remainder coupled to `lastSeen`; settled once entitlement is known. */
 export type PendingOwnerBonus = {
+  revision: number;
   amount: number;
 };
 
-export const emptyPendingOwnerBonus = (): PendingOwnerBonus => ({ amount: 0 });
+export const emptyPendingOwnerBonus = (): PendingOwnerBonus => ({ revision: 0, amount: 0 });
 
 export function parsePendingOwnerBonus(value: unknown): PendingOwnerBonus {
   if (!value || typeof value !== 'object') return emptyPendingOwnerBonus();
@@ -29,7 +30,22 @@ export function parsePendingOwnerBonus(value: unknown): PendingOwnerBonus {
   ) {
     return emptyPendingOwnerBonus();
   }
-  return { amount: source.amount };
+  if (source.revision === undefined) {
+    return source.amount === 0
+      ? emptyPendingOwnerBonus()
+      : { revision: 1, amount: source.amount };
+  }
+  if (
+    !Number.isSafeInteger(source.revision) ||
+    (source.revision as number) < 0 ||
+    (source.revision === 0 && source.amount !== 0)
+  ) {
+    return emptyPendingOwnerBonus();
+  }
+  return {
+    revision: source.revision as number,
+    amount: source.amount,
+  };
 }
 
 function appendPendingOwnerBonus(
@@ -37,7 +53,10 @@ function appendPendingOwnerBonus(
   amount: number,
 ): PendingOwnerBonus {
   if (amount <= 0) return pendingOwnerBonus;
-  return { amount: pendingOwnerBonus.amount + amount };
+  return {
+    revision: pendingOwnerBonus.revision + 1,
+    amount: pendingOwnerBonus.amount + amount,
+  };
 }
 
 export function offlineEarningsBetween(mrr: number, from: number, until: number) {
@@ -82,7 +101,10 @@ export function settlePendingOwnerBonus(
   }
   return {
     earned: active ? pendingOwnerBonus.amount : 0,
-    pendingOwnerBonus: emptyPendingOwnerBonus(),
+    pendingOwnerBonus: {
+      revision: pendingOwnerBonus.revision + 1,
+      amount: 0,
+    },
   };
 }
 

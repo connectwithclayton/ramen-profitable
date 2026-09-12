@@ -26,7 +26,6 @@ import {
   priorityHomeReactionState,
   resolveGameEvent,
   selectPersistedState,
-  settlePendingOwnerBonus,
   tapReactionKind,
 } from './experience';
 import type {
@@ -82,6 +81,11 @@ export type Overlay =
   | { type: 'win' }
   | null;
 
+type PendingOwnerBonus = {
+  revision: number;
+  amount: number;
+};
+
 export type GameState = {
   day: number;
   dayTick: number;
@@ -119,7 +123,6 @@ type PendingLaunchInterval = {
   from: number;
   mrr: number;
   persistedOwner: boolean;
-  baseCredited: boolean;
 };
 
 type RuntimeState = GameState & {
@@ -170,24 +173,53 @@ function offlineEarningsBetween(
   return (mrr / 120) * (cappedSec / 5) * multiplier;
 }
 
-function settlePendingLaunchInterval(
-  pending: PendingLaunchInterval,
-  cutoff: number,
-  confirmedActive: boolean,
-): { earned: number; pending: PendingLaunchInterval | null } {
-  const base = offlineEarningsBetween(pending.mrr, pending.from, cutoff, 1);
-  const earned = pending.baseCredited ? 0 : base;
-  if (pending.persistedOwner && confirmedActive) {
-    return {
-      earned: earned + base,
-      pending: null,
+function reconcileLaunchCredits(
+  pendingLaunchInterval: PendingLaunchInterval | null | undefined,
+  cutoff: number | null,
+  pendingOwnerBonus: PendingOwnerBonus,
+  ownership: boolean | null,
+): {
+  earned: number;
+  pendingLaunchInterval: PendingLaunchInterval | null | undefined;
+  pendingOwnerBonus: PendingOwnerBonus;
+} {
+  let earned = 0;
+  let nextLaunchInterval = pendingLaunchInterval;
+  let nextOwnerBonus = pendingOwnerBonus;
+
+  if (pendingLaunchInterval && cutoff !== null) {
+    const base = offlineEarningsBetween(
+      pendingLaunchInterval.mrr,
+      pendingLaunchInterval.from,
+      cutoff,
+      1,
+    );
+    earned += base;
+    if (pendingLaunchInterval.persistedOwner && base > 0) {
+      if (ownership === true) {
+        earned += base;
+      } else if (ownership === null) {
+        nextOwnerBonus = {
+          revision: nextOwnerBonus.revision + 1,
+          amount: nextOwnerBonus.amount + base,
+        };
+      }
+    }
+    nextLaunchInterval = null;
+  }
+
+  if (ownership !== null && nextOwnerBonus.amount > 0) {
+    if (ownership) earned += nextOwnerBonus.amount;
+    nextOwnerBonus = {
+      revision: nextOwnerBonus.revision + 1,
+      amount: 0,
     };
   }
-  if (!pending.persistedOwner) return { earned, pending: null };
-  if (pending.baseCredited) return { earned, pending };
+
   return {
     earned,
-    pending: { ...pending, baseCredited: true },
+    pendingLaunchInterval: nextLaunchInterval,
+    pendingOwnerBonus: nextOwnerBonus,
   };
 }
 
@@ -385,21 +417,26 @@ export const useGame = create<RuntimeState & Actions>()(
 
       setGoIndieActive: active => {
         set(state => {
-          const settlement = settlePendingOwnerBonus(state.pendingOwnerBonus, active);
           const hasNewerLifecycleClock =
             state.launchEarningsCutoff !== null &&
             state.lastSeen > state.launchEarningsCutoff;
+          const reconciliation = reconcileLaunchCredits(
+            state.pendingLaunchInterval,
+            state.launchEarningsCutoff,
+            state.pendingOwnerBonus,
+            active,
+          );
           return {
-            cash: state.cash + settlement.earned,
+            cash: state.cash + reconciliation.earned,
             goIndieActive: active,
             goIndieResolved: true,
-            pendingOwnerBonus: settlement.pendingOwnerBonus,
+            pendingLaunchInterval: reconciliation.pendingLaunchInterval,
+            pendingOwnerBonus: reconciliation.pendingOwnerBonus,
             ...(active && !state.goIndieActive && !hasNewerLifecycleClock
               ? { lastSeen: Date.now() }
               : {}),
           };
         });
-        get().reconcilePendingLaunchEarnings();
       },
 
       buy: id => {
@@ -561,27 +598,30 @@ export const useGame = create<RuntimeState & Actions>()(
           return s.reconcilePendingLaunchEarnings();
         }
         const cutoff = Date.now();
-        if (s.pendingLaunchInterval) {
-          const result = settlePendingLaunchInterval(
-            s.pendingLaunchInterval,
-            cutoff,
-            s.goIndieResolved && s.goIndieActive,
-          );
-          set({
-            cash: s.cash + result.earned,
-            lastSeen: cutoff,
-            launchEarningsCutoff: cutoff,
-            pendingLaunchInterval: result.pending,
-          });
-          return result.earned;
-        }
-        const earned = offlineEarningsBetween(
-          s.mrr,
-          s.lastSeen,
+        const ownership = s.goIndieResolved ? s.goIndieActive : null;
+        const reconciliation = reconcileLaunchCredits(
+          s.pendingLaunchInterval,
           cutoff,
-          s.goIndieResolved && s.goIndieActive ? 2 : 1,
+          s.pendingOwnerBonus,
+          ownership,
         );
-        set({ cash: s.cash + earned, lastSeen: cutoff, launchEarningsCutoff: cutoff });
+        const earned = reconciliation.earned + (
+          s.pendingLaunchInterval
+            ? 0
+            : offlineEarningsBetween(
+                s.mrr,
+                s.lastSeen,
+                cutoff,
+                ownership === true ? 2 : 1,
+              )
+        );
+        set({
+          cash: s.cash + earned,
+          lastSeen: cutoff,
+          launchEarningsCutoff: cutoff,
+          pendingLaunchInterval: reconciliation.pendingLaunchInterval,
+          pendingOwnerBonus: reconciliation.pendingOwnerBonus,
+        });
         return earned;
       },
       applyOfflineEarnings: () => {
@@ -607,19 +647,28 @@ export const useGame = create<RuntimeState & Actions>()(
       },
       reconcilePendingLaunchEarnings: () => {
         const s = get();
-        if (!s.pendingLaunchInterval || s.launchEarningsCutoff === null) return 0;
-        const result = settlePendingLaunchInterval(
+        const ownership = s.goIndieResolved ? s.goIndieActive : null;
+        if (
+          (!s.pendingLaunchInterval || s.launchEarningsCutoff === null) &&
+          (ownership === null || s.pendingOwnerBonus.amount === 0)
+        ) {
+          return 0;
+        }
+        const result = reconcileLaunchCredits(
           s.pendingLaunchInterval,
           s.launchEarningsCutoff,
-          s.goIndieResolved && s.goIndieActive,
+          s.pendingOwnerBonus,
+          ownership,
         );
         if (
           result.earned !== 0 ||
-          result.pending !== s.pendingLaunchInterval
+          result.pendingLaunchInterval !== s.pendingLaunchInterval ||
+          result.pendingOwnerBonus !== s.pendingOwnerBonus
         ) {
           set({
             cash: s.cash + result.earned,
-            pendingLaunchInterval: result.pending,
+            pendingLaunchInterval: result.pendingLaunchInterval,
+            pendingOwnerBonus: result.pendingOwnerBonus,
           });
         }
         return result.earned;
@@ -649,6 +698,13 @@ export const useGame = create<RuntimeState & Actions>()(
       storage: createJSONStorage(() => AsyncStorage),
       merge: (persisted, current) => {
         const persistedState = selectPersistedState(persisted, BETA_TESTER);
+        const persistedOwnerBonus = parsePendingOwnerBonus(
+          persistedState.pendingOwnerBonus,
+        );
+        const preserveCurrentOwnerBonus =
+          current.pendingOwnerBonus.revision > persistedOwnerBonus.revision ||
+          (current.pendingOwnerBonus.revision === persistedOwnerBonus.revision &&
+            current.pendingOwnerBonus.revision > 0);
         const savedLaunchInterval =
           typeof persistedState.lastSeen === 'number' &&
           Number.isFinite(persistedState.lastSeen) &&
@@ -658,7 +714,6 @@ export const useGame = create<RuntimeState & Actions>()(
                 from: persistedState.lastSeen,
                 mrr: persistedState.mrr,
                 persistedOwner: persistedState.goIndieActive === true,
-                baseCredited: false,
               }
             : null;
         return {
@@ -668,6 +723,12 @@ export const useGame = create<RuntimeState & Actions>()(
             current.pendingLaunchInterval === undefined
               ? savedLaunchInterval
               : current.pendingLaunchInterval,
+          ...(preserveCurrentOwnerBonus
+            ? {
+                cash: current.cash,
+                pendingOwnerBonus: current.pendingOwnerBonus,
+              }
+            : { pendingOwnerBonus: persistedOwnerBonus }),
           ...(current.goIndieResolved
             ? {
                 goIndieActive: current.goIndieActive,
