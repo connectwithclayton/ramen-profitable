@@ -120,18 +120,40 @@ export const money = (n: number) => `$${Math.floor(n).toLocaleString()}`;
  *               deliberately has no Hero container.
  * ------------------------------------------------------------------ */
 
-type ScreenProps = Pick<ScrollViewProps, 'onLayout' | 'onScroll' | 'scrollEventThrottle'> & {
+type ScreenProps = Pick<
+  ScrollViewProps,
+  | 'onLayout'
+  | 'onScroll'
+  | 'scrollEventThrottle'
+  | 'onScrollBeginDrag'
+  | 'onScrollEndDrag'
+  | 'onMomentumScrollBegin'
+  | 'onMomentumScrollEnd'
+> & {
   children: React.ReactNode;
 };
 
-export function Screen({ children, onLayout, onScroll, scrollEventThrottle }: ScreenProps) {
+export function Screen({
+  children,
+  onLayout,
+  onScroll,
+  scrollEventThrottle,
+  onScrollBeginDrag,
+  onScrollEndDrag,
+  onMomentumScrollBegin,
+  onMomentumScrollEnd,
+}: ScreenProps) {
   return (
     <ScrollView
       contentContainerStyle={st.screen}
       showsVerticalScrollIndicator={false}
       onLayout={onLayout}
       onScroll={onScroll}
-      scrollEventThrottle={scrollEventThrottle}
+      onScrollBeginDrag={onScrollBeginDrag}
+      onScrollEndDrag={onScrollEndDrag}
+      onMomentumScrollBegin={onMomentumScrollBegin}
+      onMomentumScrollEnd={onMomentumScrollEnd}
+      scrollEventThrottle={scrollEventThrottle ?? (onScroll ? 16 : undefined)}
     >
       {children}
     </ScrollView>
@@ -217,12 +239,14 @@ export function Section({
   children,
   style,
   onLayout,
+  testID,
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
   onLayout?: ViewProps['onLayout'];
+  testID?: string;
 }) {
-  return <View style={[st.section, style]} onLayout={onLayout}>{children}</View>;
+  return <View style={[st.section, style]} onLayout={onLayout} testID={testID}>{children}</View>;
 }
 
 /** A genuine unit: something that is one thing. The only shape that still gets a border. */
@@ -231,13 +255,15 @@ export function Unit({
   style,
   tone,
   onLayout,
+  testID,
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
   tone?: string;
   onLayout?: ViewProps['onLayout'];
+  testID?: string;
 }) {
-  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]} onLayout={onLayout}>{children}</View>;
+  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]} onLayout={onLayout} testID={testID}>{children}</View>;
 }
 
 export function Divider() {

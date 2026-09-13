@@ -5,6 +5,7 @@ import Svg, { Defs, LinearGradient, Rect as SvgRect, Stop } from 'react-native-s
 import { useGame } from './src/state/gameStore';
 import { useGameLoop } from './src/systems/useGameLoop';
 import { initPurchases } from './src/monetization/purchases';
+import { refreshConsentSession } from './src/monetization/ads';
 import NotifStack from './src/components/NotifStack';
 import OverlayHost from './src/components/OverlayHost';
 import HomeScreen from './src/screens/HomeScreen';
@@ -54,20 +55,18 @@ export default function App() {
 function HydratedGame() {
   const [tab, setTab] = useState<Tab>('home');
   const [dockOcclusion, setDockOcclusion] = useState<number>();
+  const [iosStoreMounted, setIosStoreMounted] = useState(false);
+  const [screenHostTop, setScreenHostTop] = useState<number | undefined>();
+  const [dockFadeTop, setDockFadeTop] = useState<number | undefined>();
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
-  const setGoIndieActive = useGame(s => s.setGoIndieActive);
 
   useGameLoop();
 
   useEffect(() => {
-    let cancelled = false;
-    void initPurchases().then(active => {
-      if (!cancelled && active !== null) {
-        setGoIndieActive(active);
-      }
-    });
+    void initPurchases();
+    void refreshConsentSession().catch(() => {});
     const t1 = setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900);
     const t2 = setTimeout(() => {
       const s = useGame.getState();
@@ -76,17 +75,30 @@ function HydratedGame() {
       }
     }, 3000);
     return () => {
-      cancelled = true;
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [setGoIndieActive]);
+  }, []);
+
+  const storeActive = tab === 'store';
+  const retainStore = Platform.OS === 'ios';
+  const storeViewportBottom =
+    screenHostTop === undefined || dockFadeTop === undefined
+      ? undefined
+      : Math.max(0, dockFadeTop - screenHostTop);
 
   return (
     <SafeAreaView style={st.root}>
       <StatusBar style="light" />
 
-      <View style={{ flex: 1 }}>
+      <View
+        testID="screen-host"
+        style={{ flex: 1 }}
+        onLayout={event => {
+          const next = event.nativeEvent.layout.y;
+          setScreenHostTop(current => current === next ? current : next);
+        }}
+      >
         {tab === 'home' && (
           <HomeScreen
             bottomOcclusion={dockOcclusion}
@@ -94,11 +106,25 @@ function HydratedGame() {
           />
         )}
         {tab === 'code' && <CodeScreen />}
-        {tab === 'store' && <StoreScreen />}
+        {retainStore
+          ? iosStoreMounted && (
+              <View pointerEvents={storeActive ? 'auto' : 'none'} style={[st.screen, !storeActive && st.hiddenScreen]}>
+                <StoreScreen active={storeActive} viewportBottom={storeViewportBottom} />
+              </View>
+            )
+          : storeActive && <StoreScreen />}
         {tab === 'chirp' && <ChirpScreen />}
       </View>
 
-      <View pointerEvents="none" style={st.dockFade}>
+      <View
+        testID="dock-fade"
+        pointerEvents="none"
+        style={st.dockFade}
+        onLayout={event => {
+          const next = event.nativeEvent.layout.y;
+          setDockFadeTop(current => current === next ? current : next);
+        }}
+      >
         <Svg width="100%" height="100%">
           <Defs>
             <LinearGradient id="dockFade" x1="0" y1="0" x2="0" y2="1">
@@ -126,7 +152,10 @@ function HydratedGame() {
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
               accessibilityLabel={flagged ? `${t.label}, new posts` : t.label}
-              onPress={() => setTab(t.key)}
+              onPress={() => {
+                if (retainStore && t.key === 'store') setIosStoreMounted(true);
+                setTab(t.key);
+              }}
               style={({ pressed }) => [st.dockBtn, pressed && { opacity: 0.6 }]}
             >
               <DrawnIcon name={t.icon} size={20} active={active} color={C.dim} />
@@ -149,6 +178,8 @@ const st = StyleSheet.create({
     backgroundColor: C.midnight,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0,
   },
+  screen: { flex: 1 },
+  hiddenScreen: { display: 'none' },
   // Runs to the very bottom, not just to the dock's top edge: content scrolling
   // past needs to fade out *and* stop showing through the dock's translucent fill.
   dockFade: {

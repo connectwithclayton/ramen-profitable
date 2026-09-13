@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Platform,
+  View,
+  Text,
+  StyleSheet,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 import { useGame } from '../state/gameStore';
 import { SHOP } from '../content/content';
 import {
@@ -18,6 +27,7 @@ import {
   money,
 } from '../components/ui';
 import { C } from '../theme';
+import PhoneBillboard, { type BillboardViewportFrame } from '../components/PhoneBillboard';
 import { restoreGoIndiePurchases } from '../monetization/purchases';
 
 /**
@@ -32,20 +42,124 @@ const AISLES: { title: string; ids: string[] }[] = [
 
 /** Anything a future SHOP entry adds lands here rather than silently disappearing. */
 const AISLED = new Set(AISLES.flatMap(a => a.ids));
+const HIDDEN_UPGRADES: Record<string, boolean> = {};
 
-export default function StoreScreen() {
-  const s = useGame();
+function scrollContinuesAfterDrag(event: NativeSyntheticEvent<NativeScrollEvent>): boolean {
+  const { contentOffset, targetContentOffset, velocity } = event.nativeEvent;
+  if (
+    targetContentOffset &&
+    Number.isFinite(targetContentOffset.y) &&
+    Number.isFinite(contentOffset.y)
+  ) {
+    return targetContentOffset.y !== contentOffset.y;
+  }
+  if (velocity && Number.isFinite(velocity.y)) return velocity.y !== 0;
+  return true;
+}
+
+export default function StoreScreen({
+  active = true,
+  viewportBottom,
+}: {
+  active?: boolean;
+  viewportBottom?: number;
+}) {
+  const s = useGame(useShallow(state => ({
+    day: active ? state.day : 0,
+    cash: active ? state.cash : 0,
+    mrr: active ? state.mrr : 0,
+    upgrades: active ? state.upgrades : HIDDEN_UPGRADES,
+    indie: active && state.goIndieResolved && state.goIndieActive,
+    buy: state.buy,
+    pushNotif: state.pushNotif,
+    openGoIndiePaywall: state.openGoIndiePaywall,
+  })));
   const [restoring, setRestoring] = useState(false);
+  const [billboardInViewport, setBillboardInViewport] = useState(false);
+  const [viewportMeasurementCurrent, setViewportMeasurementCurrent] = useState(true);
+  const billboardInViewportRef = useRef(false);
+  const billboardFrameRef = useRef<BillboardViewportFrame | null>(null);
+  const viewportRef = useRef({ offsetY: 0, height: 0, insetTop: 0, insetBottom: 0 });
   const owned = SHOP.filter(i => s.upgrades[i.id]).length;
-  const indie = s.goIndieResolved && s.goIndieActive;
+  const indie = s.indie;
+  const catvertising = Platform.OS === 'ios';
+  const indieCopy = indie
+    ? catvertising
+      ? 'Indie operator status is active. Ads are removed. Offline earnings are doubled — capped at 8 hours, same as always.'
+      : 'Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'
+    : catvertising
+      ? 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed.'
+      : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.';
+
+  const updateBillboardVisibility = useCallback(() => {
+    const frame = billboardFrameRef.current;
+    const viewport = viewportRef.current;
+    const top = viewport.offsetY + viewport.insetTop;
+    const bottom = viewport.offsetY + Math.min(
+      viewport.height - viewport.insetBottom,
+      viewportBottom ?? 0,
+    );
+    const visible = Boolean(
+      viewportBottom !== undefined &&
+      frame &&
+      frame.height > 0 &&
+      viewport.height > 0 &&
+      frame.y >= top &&
+      frame.y + frame.height <= bottom
+    );
+    if (billboardInViewportRef.current === visible) return;
+    billboardInViewportRef.current = visible;
+    setBillboardInViewport(visible);
+  }, [viewportBottom]);
+
+  useEffect(() => {
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
+
+  const onScreenLayout = useCallback((event: LayoutChangeEvent) => {
+    viewportRef.current.height = event.nativeEvent.layout.height;
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
+
+  const onScreenScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentInset, contentOffset, layoutMeasurement } = event.nativeEvent;
+    viewportRef.current = {
+      offsetY: contentOffset.y,
+      height: layoutMeasurement.height,
+      insetTop: contentInset?.top ?? 0,
+      insetBottom: contentInset?.bottom ?? 0,
+    };
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
+
+  // Accepted limitation: UIKit can move an already-loaded banner beneath the dock fade before
+  // coalesced React Native events reach JavaScript. Keeping that banner mounted avoids scroll
+  // flicker, but JavaScript cannot close the native movement gap; a durable fix requires
+  // native-side occlusion enforcement.
+  const onScreenScrollBegin = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setViewportMeasurementCurrent(false);
+    onScreenScroll(event);
+  }, [onScreenScroll]);
+
+  const onScreenScrollEndDrag = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    onScreenScroll(event);
+    if (!scrollContinuesAfterDrag(event)) setViewportMeasurementCurrent(true);
+  }, [onScreenScroll]);
+
+  const onScreenMomentumScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    onScreenScroll(event);
+    setViewportMeasurementCurrent(true);
+  }, [onScreenScroll]);
+
+  const onBillboardFrameChange = useCallback((frame: BillboardViewportFrame) => {
+    billboardFrameRef.current = frame;
+    updateBillboardVisibility();
+  }, [updateBillboardVisibility]);
 
   const restore = async () => {
     if (restoring) return;
     setRestoring(true);
     const active = await restoreGoIndiePurchases();
-    if (active !== null) {
-      s.setGoIndieActive(active);
-    }
     if (active === true) {
       s.pushNotif('Purchases restored. Go Indie is active.', 'growth');
     } else if (active === false) {
@@ -57,7 +171,14 @@ export default function StoreScreen() {
   };
 
   return (
-    <Screen>
+    <Screen
+      onLayout={catvertising ? onScreenLayout : undefined}
+      onScroll={catvertising ? onScreenScroll : undefined}
+      onScrollBeginDrag={catvertising ? onScreenScrollBegin : undefined}
+      onScrollEndDrag={catvertising ? onScreenScrollEndDrag : undefined}
+      onMomentumScrollBegin={catvertising ? onScreenScrollBegin : undefined}
+      onMomentumScrollEnd={catvertising ? onScreenMomentumScrollEnd : undefined}
+    >
       <ScreenTop
         day={s.day}
         right={owned > 0 ? `${owned} / ${SHOP.length} OWNED` : undefined}
@@ -125,14 +246,20 @@ export default function StoreScreen() {
         );
       })}
 
+      {catvertising && (
+        <PhoneBillboard
+          active={active}
+          indie={indie}
+          onViewportFrameChange={onBillboardFrameChange}
+          viewportMeasurementCurrent={viewportMeasurementCurrent}
+          viewportVisible={billboardInViewport}
+        />
+      )}
+
       <Section>
         <SectionHeader title="Go Indie" meta={indie ? 'ACTIVE' : undefined} metaColor={C.mint} />
         <Unit tone={indie ? C.mint : C.gold} style={st.indie}>
-          <Text style={st.indieCopy}>
-            {indie
-              ? 'Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'
-              : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.'}
-          </Text>
+          <Text style={st.indieCopy}>{indieCopy}</Text>
           <Btn label="Go Indie" ghost={indie} onPress={s.openGoIndiePaywall} style={{ marginTop: 14 }} />
           <Btn
             small

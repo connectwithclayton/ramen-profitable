@@ -1,0 +1,3270 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const fs = require('node:fs');
+const Module = require('node:module');
+const ts = require('typescript');
+const React = require('react');
+const { act, create } = require('react-test-renderer');
+
+global.__DEV__ = true;
+global.IS_REACT_ACT_ENVIRONMENT = true;
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+};
+let nextCustomerInfoRequestTime = Date.parse('2026-09-12T00:00:00.000Z');
+const info = (active, requestDate = new Date(nextCustomerInfoRequestTime += 1_000).toISOString()) => ({
+  entitlements: { active: active ? { go_indie: {} } : {} },
+  requestDate,
+});
+let customer = deferred();
+let restored = deferred();
+let paywall = deferred();
+let consentInfoUpdate = deferred();
+let consentForm = deferred();
+let listener;
+const customerInfoBoundaryCalls = [];
+let storageRead = async () => null;
+let storageWrite = async () => {};
+let consentAllowed = true;
+let consentStatus = 'UNKNOWN';
+let privacyRequired = false;
+let consentInfoGate = null;
+let consentInfoCalls = 0;
+let initializationCalls = 0;
+let initializationFailuresRemaining = 0;
+let consentInfoUpdateCalls = 0;
+let consentInfoUpdateArguments;
+let consentFormCalls = 0;
+let admobConfig = require('../config/admob').TEST_IDS;
+const requests = [];
+const nativeWidthTeardowns = [];
+const privacyFormBannerCounts = [];
+let nextBannerInstanceId = 0;
+let mountedNativeBanners = 0;
+const appStateListeners = new Set();
+const mockNative = {
+  Platform: { OS: 'ios', select: options => options[mockNative.Platform.OS] ?? options.default },
+  StyleSheet: { create: value => value, hairlineWidth: 1 },
+  AppState: {
+    currentState: 'active',
+    addEventListener: (_event, listener) => {
+      appStateListeners.add(listener);
+      return { remove: () => appStateListeners.delete(listener) };
+    },
+  },
+  StatusBar: { currentHeight: 0 },
+  View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', SafeAreaView: 'SafeAreaView',
+};
+const setAppState = state => {
+  mockNative.AppState.currentState = state;
+  for (const listener of appStateListeners) listener(state);
+};
+const ads = {
+  default: () => ({
+    setRequestConfiguration: async () => { throw new Error('unexpected request configuration'); },
+    initialize: async () => {
+      initializationCalls++;
+      if (initializationFailuresRemaining > 0) {
+        initializationFailuresRemaining--;
+        throw new Error('initialization unavailable');
+      }
+    },
+  }),
+  BannerAdSize: { INLINE_ADAPTIVE_BANNER: 'INLINE_ADAPTIVE_BANNER' },
+  AdsConsentPrivacyOptionsRequirementStatus: { REQUIRED: 'REQUIRED' },
+  AdsConsent: {
+    requestInfoUpdate: (...args) => {
+      consentInfoUpdateCalls++;
+      consentInfoUpdateArguments = args;
+      return consentInfoUpdate.promise;
+    },
+    loadAndShowConsentFormIfRequired: () => {
+      consentFormCalls++;
+      return consentForm.promise;
+    },
+    getConsentInfo: async () => {
+      consentInfoCalls++;
+      if (consentInfoGate) await consentInfoGate.promise;
+      return { status: consentStatus, canRequestAds: consentAllowed, privacyOptionsRequirementStatus: privacyRequired ? 'REQUIRED' : 'NOT_REQUIRED' };
+    },
+    showPrivacyOptionsForm: async () => {
+      privacyFormBannerCounts.push(mountedNativeBanners);
+      consentAllowed = false;
+      privacyRequired = false;
+    },
+  },
+  BannerAd: props => {
+    const instanceId = React.useRef(null);
+    const previousWidth = React.useRef(null);
+    if (instanceId.current === null) instanceId.current = ++nextBannerInstanceId;
+    React.useLayoutEffect(() => {
+      mountedNativeBanners++;
+      return () => { mountedNativeBanners--; };
+    }, []);
+    React.useLayoutEffect(() => {
+      if (previousWidth.current !== null && previousWidth.current !== props.width) {
+        nativeWidthTeardowns.push({
+          nativeInstanceId: instanceId.current,
+          from: previousWidth.current,
+          to: props.width,
+        });
+      }
+      previousWidth.current = props.width;
+      requests.push({ ...props, nativeInstanceId: instanceId.current });
+    }, [props.width]);
+    return React.createElement('NativeBanner', { ...props, nativeInstanceId: instanceId.current });
+  },
+};
+const originalLoad = Module._load;
+Module._load = function (name, parent, main) {
+  if (name === 'react-native') return mockNative;
+  if (name === 'expo-constants') return { __esModule: true, default: { expoConfig: { extra: {
+    revenueCat: { testStoreApiKey: 'test_fixture' }, admob: admobConfig,
+  } } } };
+  if (name === '@react-native-async-storage/async-storage') return {
+    getItem: () => storageRead(),
+    setItem: (key, value) => storageWrite(key, value),
+  };
+  if (name === 'expo-status-bar') return { StatusBar: 'StatusBar' };
+  if (name === 'expo-haptics') return { selectionAsync: async () => {}, notificationAsync: async () => {}, NotificationFeedbackType: {} };
+  if (name === 'react-native-svg') return new Proxy({ __esModule: true, default: 'Svg' }, { get: (obj, key) => obj[key] ?? String(key) });
+  if (name === 'react-native-google-mobile-ads') return ads;
+  if (name === 'react-native-purchases') return { default: {
+    setLogHandler() {}, setLogLevel: async () => {}, configure() {},
+    invalidateCustomerInfoCache: async () => { customerInfoBoundaryCalls.push('invalidate'); },
+    addCustomerInfoUpdateListener: cb => {
+      customerInfoBoundaryCalls.push('listener');
+      listener = cb;
+    },
+    getCustomerInfo: () => {
+      customerInfoBoundaryCalls.push('getCustomerInfo');
+      return customer.promise;
+    },
+    restorePurchases: () => restored.promise,
+    getOfferings: async () => ({ current: { availablePackages: [{}] } }),
+  }, LOG_LEVEL: { VERBOSE: 'VERBOSE' } };
+  if (name === 'react-native-purchases-ui') return { default: { presentPaywall: () => paywall.promise }, PAYWALL_RESULT: { PURCHASED: 'PURCHASED', RESTORED: 'RESTORED', CANCELLED: 'CANCELLED' } };
+  return originalLoad(name, parent, main);
+};
+for (const ext of ['.ts', '.tsx']) Module._extensions[ext] = (module, filename) => {
+  const source = fs.readFileSync(filename, 'utf8');
+  module._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText, filename);
+};
+const { useGame } = require('../src/state/gameStore.ts');
+const purchases = require('../src/monetization/purchases.ts');
+const { useGameLoop } = require('../src/systems/useGameLoop.ts');
+const App = require('../App.tsx').default;
+const StoreScreen = require('../src/screens/StoreScreen.tsx').default;
+const LaunchHarness = () => {
+  useGameLoop();
+  React.useEffect(() => { void purchases.initPurchases(); }, []);
+  return null;
+};
+const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
+const refreshOwnership = async active => {
+  customer = { promise: Promise.resolve(info(active)) };
+  return purchases.hasGoIndie();
+};
+const loadFreshStoreScreen = () => {
+  for (const path of [
+    '../src/monetization/ads.ts',
+    '../src/components/PhoneBillboard.tsx',
+    '../src/screens/StoreScreen.tsx',
+  ]) {
+    delete require.cache[require.resolve(path)];
+  }
+  return require('../src/screens/StoreScreen.tsx').default;
+};
+const loadFreshApp = () => {
+  for (const path of [
+    '../src/monetization/ads.ts',
+    '../src/components/PhoneBillboard.tsx',
+    '../src/screens/StoreScreen.tsx',
+    '../App.tsx',
+  ]) {
+    delete require.cache[require.resolve(path)];
+  }
+  return require('../App.tsx').default;
+};
+const mountStore = async Store => {
+  let tree;
+  await act(async () => { tree = create(React.createElement(Store, { viewportBottom: 800 })); });
+  return tree;
+};
+const setStoreBillboardViewport = async (tree, {
+  scrollY = 0,
+  viewportHeight = 800,
+  sectionY = 100,
+  phoneY = 20,
+  billboardY = 30,
+  billboardHeight = 50,
+} = {}) => {
+  const scroll = tree.root.findAllByType('ScrollView')
+    .find(node => typeof node.props.onLayout === 'function' && typeof node.props.onScroll === 'function');
+  const section = tree.root.findAllByProps({ testID: 'catvertising-section' })[0];
+  const phone = tree.root.findAllByProps({ testID: 'catvertising-phone' })[0];
+  const billboard = tree.root.findAllByProps({ testID: 'catvertising-billboard-frame' })[0];
+  assert.ok(scroll, 'Store must expose its raw viewport handlers');
+  assert.ok(section && phone && billboard, 'Catvertising must expose its nested content-coordinate frames');
+  await act(async () => {
+    section.props.onLayout({ nativeEvent: { layout: { x: 0, y: sectionY, width: 390, height: 180 } } });
+    phone.props.onLayout({ nativeEvent: { layout: { x: 0, y: phoneY, width: 360, height: 140 } } });
+    billboard.props.onLayout({ nativeEvent: { layout: { x: 0, y: billboardY, width: 320, height: billboardHeight } } });
+    scroll.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: viewportHeight } } });
+    scroll.props.onScroll({
+      nativeEvent: {
+        contentOffset: { x: 0, y: scrollY },
+        contentSize: { width: 390, height: 1400 },
+        layoutMeasurement: { width: 390, height: viewportHeight },
+      },
+    });
+  });
+  await flush();
+};
+const setBillboardProbeWidth = async (tree, width) => {
+  const layout = tree.root.findAllByType('View')
+    .find(node => (
+      node.props.testID !== 'catvertising-billboard-frame' &&
+      node.props.collapsable === false &&
+      node.props.onLayout
+    ));
+  assert.ok(layout, 'an active Catvertising surface must expose its measurement probe');
+  await act(async () => { layout.props.onLayout({ nativeEvent: { layout: { width } } }); });
+  await flush();
+};
+const setBillboardWidth = async (tree, width) => {
+  await setDefaultAppViewport(tree);
+  await setStoreBillboardViewport(tree);
+  await setBillboardProbeWidth(tree, width);
+};
+const setDockFadeTop = async (tree, y) => {
+  const dockFade = tree.root.findAllByProps({ testID: 'dock-fade' })[0];
+  assert.ok(dockFade?.props.onLayout, 'App must expose the measured dock-fade boundary');
+  await act(async () => {
+    dockFade.props.onLayout({ nativeEvent: { layout: { x: 0, y, width: 390, height: 172 } } });
+  });
+  await flush();
+};
+const setScreenHostTop = async (tree, y, height = 800) => {
+  const host = tree.root.findAllByProps({ testID: 'screen-host' })[0];
+  assert.ok(host?.props.onLayout, 'App must expose the measured screen origin');
+  await act(async () => {
+    host.props.onLayout({ nativeEvent: { layout: { x: 0, y, width: 390, height } } });
+  });
+  await flush();
+};
+const setDefaultAppViewport = async tree => {
+  if (tree.root.findAllByProps({ testID: 'screen-host' }).length === 0) return;
+  await act(async () => {
+    const host = tree.root.findAllByProps({ testID: 'screen-host' })[0];
+    const dockFade = tree.root.findAllByProps({ testID: 'dock-fade' })[0];
+    host.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 800 } } });
+    dockFade.props.onLayout({ nativeEvent: { layout: { x: 0, y: 800, width: 390, height: 172 } } });
+  });
+  await flush();
+};
+const resetAdLifecycleState = () => {
+  consentAllowed = true;
+  consentStatus = 'NOT_REQUIRED';
+  privacyRequired = false;
+  consentInfoGate = null;
+  consentInfoCalls = 0;
+  consentInfoUpdate = deferred();
+  consentForm = deferred();
+  initializationCalls = 0;
+  initializationFailuresRemaining = 0;
+  consentInfoUpdateCalls = 0;
+  consentInfoUpdateArguments = undefined;
+  consentFormCalls = 0;
+  admobConfig = require('../config/admob').TEST_IDS;
+  requests.length = 0;
+  nativeWidthTeardowns.length = 0;
+  privacyFormBannerCounts.length = 0;
+  appStateListeners.clear();
+  mockNative.AppState.currentState = 'active';
+  useGame.setState({
+    goIndieActive: false,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    overlay: null,
+  });
+};
+
+test('app launch refreshes paid-user privacy state without requesting an ad', async () => {
+  useGame.setState({ goIndieActive: true, goIndieResolved: true, overlay: null, notifs: [] });
+  let tree;
+  await act(async () => { tree = create(React.createElement(App)); });
+  await flush();
+  assert.deepEqual(customerInfoBoundaryCalls, ['invalidate', 'getCustomerInfo']);
+  await act(async () => {
+    customer.resolve(info(true));
+    assert.equal(await purchases.initPurchases(), true);
+  });
+  assert.deepEqual(
+    customerInfoBoundaryCalls,
+    ['invalidate', 'getCustomerInfo', 'listener'],
+  );
+  assert.equal(consentInfoUpdateCalls, 1, 'UMP must refresh once at launch');
+  assert.deepEqual(consentInfoUpdateArguments, [], 'general-audience refresh must not send an age tag');
+
+  consentStatus = 'OBTAINED';
+  privacyRequired = true;
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  const storeTab = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
+  await act(async () => { storeTab.props.onPress(); });
+  await flush();
+
+  const privacy = tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityLabel === 'Ad privacy choices');
+  assert.ok(privacy);
+  assert.equal(consentFormCalls, 0, 'paid users must not receive a consent form');
+  assert.equal(initializationCalls, 0, 'paid users must not initialize Mobile Ads');
+  assert.equal(requests.length, 0, 'paid users must not request a banner');
+  const consentInfoCallsBeforeForm = consentInfoCalls;
+  await act(async () => { await privacy.props.onPress(); });
+  await flush();
+  assert.equal(
+    consentInfoCalls,
+    consentInfoCallsBeforeForm + 1,
+    'privacy status must refresh once after the privacy form changes consent',
+  );
+  assert.equal(
+    tree.root.findAllByType('Pressable')
+      .some(node => node.props.accessibilityLabel === 'Ad privacy choices'),
+    false,
+  );
+  await act(async () => { tree.unmount(); });
+  consentAllowed = true;
+  privacyRequired = false;
+  consentStatus = 'NOT_REQUIRED';
+});
+
+// Exercise the mounted Store screen, real Zustand state, and public purchase APIs.
+// Only native/network boundaries are doubles; removing the production gate must fail.
+test('Store billboard waits for ownership and consent, honors purchases, and handles privacy changes', async () => {
+  useGame.setState({ goIndieActive: true, goIndieResolved: false, overlay: null, notifs: [] });
+  let tree;
+  await act(async () => { tree = create(React.createElement(StoreScreen, { viewportBottom: 800 })); });
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  await setBillboardWidth(tree, 340);
+  const visibleText = tree.root.findAllByType('Text').map(node => node.props.children);
+  assert.equal(visibleText.includes('The cat is between sponsors.'), false);
+  assert.equal(visibleText.includes('Go Indie. No ads. Just you and the cat.'), false);
+  const initial = purchases.initPurchases();
+  await flush();
+  assert.equal(banners().length, 0, 'unknown ownership must not render ads');
+  assert.equal(initializationCalls, 0);
+  await initial;
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(banners().length, 0, 'consent is still pending');
+  await act(async () => { listener(info(true)); consentForm.resolve(); });
+  await flush();
+  assert.equal(banners().length, 0, 'a purchase during consent must cancel the late ad');
+  assert.equal(initializationCalls, 0, 'purchasers must not initialize ads after consent');
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  await flush();
+  assert.equal(banners().length, 1);
+  assert.equal(requests[0].unitId, require('../config/admob').TEST_IDS.ios.bannerId);
+  assert.equal(consentInfoUpdateCalls, 1, 'free ads must reuse the launch UMP refresh');
+  assert.equal(consentFormCalls, 1);
+  assert.deepEqual(requests[0].requestOptions, { requestNonPersonalizedAdsOnly: true });
+
+  let restore;
+  await act(async () => { restore = purchases.restoreGoIndiePurchases(); });
+  await act(async () => { restored.resolve(info(true)); assert.equal(await restore, true); });
+  assert.equal(banners().length, 0, 'restored lifetime entitlement must remain ad free');
+  await act(async () => { tree.unmount(); tree = create(React.createElement(StoreScreen, { viewportBottom: 800 })); });
+  await setBillboardWidth(tree, 340);
+  assert.equal(banners().length, 0, 'remount cannot resurrect a restored purchaser ad');
+
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  await flush();
+  assert.equal(banners().length, 1);
+  let purchase;
+  await act(async () => { purchase = purchases.presentGoIndiePaywall(); });
+  await act(async () => { customer = { promise: Promise.resolve(info(true)) }; paywall.resolve('PURCHASED'); assert.equal(await purchase, true); });
+  assert.equal(banners().length, 0, 'purchase suppresses without a restart');
+
+  await act(async () => { listener(info(false)); });
+  await flush();
+  assert.equal(banners().length, 0, 'a listener cannot revoke confirmed ownership');
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  await flush();
+  assert.equal(banners().length, 1);
+  const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+  await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
+  assert.equal(banners().length, 0, 'no-fill returns to fictional empty inventory');
+  assert.ok(tree.root.findAllByType('Text').some(node => node.props.children === 'The cat is between sponsors.'));
+  await act(async () => { tree.unmount(); });
+
+  // A fresh install starts unknown, even if a persisted flag says not purchased.
+  useGame.setState({ goIndieActive: false, goIndieResolved: false });
+  privacyRequired = true;
+  await act(async () => { tree = create(React.createElement(StoreScreen, { viewportBottom: 800 })); });
+  await setBillboardWidth(tree, 340);
+  const before = requests.length;
+  restored = deferred();
+  await act(async () => { restore = purchases.restoreGoIndiePurchases(); });
+  await act(async () => { restored.resolve(info(true)); await restore; });
+  assert.equal(requests.length, before, 'fresh-install restore must never mount an ad');
+
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  await flush();
+  assert.equal(banners().length, 1);
+  const privacy = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityLabel === 'Ad privacy choices');
+  assert.ok(privacy, 'required privacy options must be accessible');
+  const privacyFormsBeforePress = privacyFormBannerCounts.length;
+  await act(async () => { await privacy.props.onPress(); });
+  await flush();
+  assert.deepEqual(
+    privacyFormBannerCounts.slice(privacyFormsBeforePress),
+    [0],
+    'the native privacy form must start only after the banner unmount commits',
+  );
+  assert.equal(banners().length, 0, 'withdrawal cannot leave the old creative mounted');
+  assert.equal(
+    tree.root.findAllByType('Pressable').some(node => node.props.accessibilityLabel === 'Ad privacy choices'),
+    false,
+    'privacy requirements must refresh after choices change',
+  );
+  await act(async () => { tree.unmount(); });
+});
+
+
+test('late CustomerInfo and disk hydration cannot resurrect ads for a known purchaser', async () => {
+  const staleRefreshInfo = info(false);
+  customer = deferred();
+  const refresh = purchases.hasGoIndie();
+  await new Promise(resolve => setImmediate(resolve));
+  listener(info(true));
+  customer.resolve(staleRefreshInfo);
+  assert.equal(await refresh, true);
+  assert.equal(useGame.getState().goIndieActive, true);
+  const disk = deferred();
+  storageRead = () => disk.promise;
+  const hydration = useGame.persist.rehydrate();
+  listener(info(true));
+  disk.resolve(JSON.stringify({ version: 2, state: { goIndieActive: false } }));
+  await hydration;
+  assert.equal(useGame.getState().goIndieActive, true);
+});
+
+test('late hydration preserves the post-entitlement earnings clock', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: 100,
+    goIndieActive: false,
+    goIndieResolved: false,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  const disk = deferred();
+  storageRead = () => disk.promise;
+  const hydration = useGame.persist.rehydrate();
+  listener(info(true));
+  now += 5_000;
+  useGame.getState().touchLastSeen();
+  const departedAt = useGame.getState().lastSeen;
+  disk.resolve(JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: 100, goIndieActive: false },
+  }));
+  await hydration;
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(useGame.getState().lastSeen, departedAt);
+
+  now += 61_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+});
+
+test('returning owner launch pays exactly once across hydration order', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  let tree;
+  Date.now = () => now;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 12.2);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 24.4);
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 24.4);
+  await act(async () => { tree.unmount(); });
+  tree = null;
+
+  now = 2_000_000;
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  const lateDisk = deferred();
+  storageRead = () => lateDisk.promise;
+  const lateHydration = useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 0);
+
+  await act(async () => { listener(info(true)); });
+  now += 30_000;
+  await act(async () => {
+    lateDisk.resolve(JSON.stringify({
+      version: 2,
+      state: { cash: 0, mrr: 120, lastSeen: 2_000_000 - 61_000, goIndieActive: true },
+    }));
+    await lateHydration;
+  });
+  assert.equal(useGame.getState().cash, 24.4);
+  assert.equal(useGame.getState().lastSeen, 2_000_000);
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 24.4);
+});
+
+test('late free hydration reconciles launch earnings exactly once', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  const launchTime = 2_500_000;
+  let tree;
+  Date.now = () => launchTime;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: launchTime,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  const disk = deferred();
+  storageRead = () => disk.promise;
+  const hydration = useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 0);
+
+  await act(async () => {
+    disk.resolve(JSON.stringify({
+      version: 2,
+      state: { cash: 0, mrr: 120, lastSeen: launchTime - 61_000, goIndieActive: false },
+    }));
+    await hydration;
+  });
+  assert.equal(useGame.getState().cash, 12.2);
+  assert.equal(useGame.getState().applyLaunchOfflineEarnings(), 0);
+  assert.equal(useGame.getState().cash, 12.2);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 12.2);
+});
+
+test('returning owner launch requires persisted and confirmed ownership', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  let now = 3_000_000;
+  let tree;
+  Date.now = () => now;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 12.2);
+  assert.equal(useGame.getState().goIndieResolved, false);
+  await act(async () => { tree.unmount(); });
+  tree = null;
+
+  now = 4_000_000;
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 120, lastSeen: now - 61_000, goIndieActive: false },
+  });
+  await useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  assert.equal(useGame.getState().cash, 12.2);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 12.2);
+});
+
+test('returning owner launch preserves the lifecycle clock', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  const launchTime = 5_000_000;
+  let now = launchTime;
+  let tree;
+  Date.now = () => now;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: launchTime,
+    goIndieActive: false,
+    goIndieResolved: false,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  const disk = deferred();
+  storageRead = () => disk.promise;
+  const hydration = useGame.persist.rehydrate();
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+
+  now += 10_000;
+  await act(async () => { setAppState('background'); });
+  const backgroundedAt = now;
+  now += 20_000;
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().lastSeen, backgroundedAt);
+  await act(async () => {
+    disk.resolve(JSON.stringify({
+      version: 2,
+      state: { cash: 0, mrr: 120, lastSeen: launchTime - 61_000, goIndieActive: true },
+    }));
+    await hydration;
+  });
+  assert.equal(useGame.getState().cash, 24.4);
+  assert.equal(useGame.getState().lastSeen, backgroundedAt);
+
+  now = launchTime + 71_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 48.8);
+  assert.equal(useGame.getState().lastSeen, now);
+});
+
+test('pending owner bonus accumulates across foregrounds and settles exactly once', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousStorageWrite = storageWrite;
+  const previousState = useGame.getState();
+  let now = 6_000_000;
+  let tree;
+  let latestWrite = null;
+  const discardWrite = async () => {};
+  const captureWrite = async (_key, value) => { latestWrite = value; };
+  const resetProcessState = () => {
+    useGame.setState({
+      cash: 0,
+      mrr: 0,
+      lastSeen: now,
+      goIndieActive: false,
+      goIndieResolved: false,
+      notifs: [],
+      overlay: null,
+      launchEarningsCutoff: null,
+      pendingLaunchInterval: undefined,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    });
+  };
+  const mountLaunch = async () => {
+    await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+    await flush();
+  };
+  const unmountLaunch = async () => {
+    if (!tree) return;
+    await act(async () => { tree.unmount(); });
+    tree = null;
+  };
+  Date.now = () => now;
+  t.after(async () => {
+    await unmountLaunch();
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    storageWrite = discardWrite;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      notifs: previousState.notifs,
+      overlay: previousState.overlay,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+    storageWrite = previousStorageWrite;
+  });
+
+  storageWrite = discardWrite;
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  resetProcessState();
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 600, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 61);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 61);
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 183);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 183);
+  await unmountLaunch();
+  const firstProcessSave = latestWrite;
+  assert.equal(typeof firstProcessSave, 'string');
+
+  now += 61_000;
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => firstProcessSave;
+  await useGame.persist.rehydrate();
+  latestWrite = null;
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 244);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 244);
+  await unmountLaunch();
+  const secondProcessSave = latestWrite;
+  assert.equal(typeof secondProcessSave, 'string');
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => secondProcessSave;
+  await useGame.persist.rehydrate();
+  latestWrite = null;
+  storageWrite = captureWrite;
+  await mountLaunch();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 488);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 488);
+  storageRead = async () => secondProcessSave;
+  await useGame.persist.rehydrate();
+  assert.equal(useGame.getState().cash, 488, 'stale debt hydration must not undo its settlement');
+  await unmountLaunch();
+  const settledProcessSave = latestWrite;
+  assert.equal(typeof settledProcessSave, 'string');
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => settledProcessSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 488, 'a settled bonus must not return after another relaunch');
+});
+
+test('confirmed non-ownership durably discards a pending owner bonus', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousStorageWrite = storageWrite;
+  const previousState = useGame.getState();
+  let now = 7_000_000;
+  let tree;
+  let latestWrite = null;
+  const discardWrite = async () => {};
+  const captureWrite = async (_key, value) => { latestWrite = value; };
+  const resetProcessState = () => {
+    useGame.setState({
+      cash: 0,
+      mrr: 0,
+      lastSeen: now,
+      goIndieActive: false,
+      goIndieResolved: false,
+      notifs: [],
+      overlay: null,
+      launchEarningsCutoff: null,
+      pendingLaunchInterval: undefined,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    });
+  };
+  Date.now = () => now;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    storageWrite = discardWrite;
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      notifs: previousState.notifs,
+      overlay: previousState.overlay,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+    storageWrite = previousStorageWrite;
+  });
+
+  storageWrite = discardWrite;
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  resetProcessState();
+  storageRead = async () => JSON.stringify({
+    version: 2,
+    state: { cash: 0, mrr: 600, lastSeen: now - 61_000, goIndieActive: true },
+  });
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  await flush();
+  assert.equal(useGame.getState().cash, 61);
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 122);
+
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  const discardedProcessSave = latestWrite;
+  assert.equal(typeof discardedProcessSave, 'string');
+  await act(async () => { tree.unmount(); });
+  tree = null;
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => discardedProcessSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+  await flush();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 122, 'discarded owner credit must not return after relaunch');
+});
+
+test('pre-hydration lifecycle earnings settle once through the durable revision', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousStorageWrite = storageWrite;
+  const previousCustomer = customer;
+  const previousAppState = mockNative.AppState.currentState;
+  const previousState = useGame.getState();
+  let now = 8_000_000;
+  let tree;
+  let latestWrite = null;
+  const discardWrite = async () => {};
+  const captureWrite = async (_key, value) => { latestWrite = value; };
+  const resetProcessState = () => {
+    mockNative.AppState.currentState = 'active';
+    useGame.setState({
+      cash: 0,
+      mrr: 0,
+      lastSeen: now,
+      goIndieActive: false,
+      goIndieResolved: false,
+      notifs: [],
+      overlay: null,
+      launchEarningsCutoff: null,
+      pendingLaunchInterval: undefined,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    });
+  };
+  const mountLaunch = async () => {
+    await act(async () => { tree = create(React.createElement(LaunchHarness)); });
+    await flush();
+  };
+  const unmountLaunch = async () => {
+    if (!tree) return;
+    await act(async () => { tree.unmount(); });
+    tree = null;
+  };
+  const completeColdStartCycle = async launchTime => {
+    await mountLaunch();
+    now = launchTime + 10_000;
+    await act(async () => { setAppState('background'); });
+    now = launchTime + 71_000;
+    await act(async () => { setAppState('active'); });
+    assert.equal(useGame.getState().cash, 0, 'unhydrated MRR cannot settle the interval early');
+    assert.equal(useGame.getState().lastSeen, now);
+  };
+  Date.now = () => now;
+  t.after(async () => {
+    await unmountLaunch();
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    storageWrite = discardWrite;
+    mockNative.AppState.currentState = previousAppState;
+    useGame.setState(previousState);
+    customer = previousCustomer;
+    storageWrite = previousStorageWrite;
+  });
+
+  storageWrite = discardWrite;
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+
+  const freeLaunchTime = now;
+  resetProcessState();
+  const freeDiskState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: 600,
+      lastSeen: freeLaunchTime - 61_000,
+      goIndieActive: false,
+      pendingOwnerBonus: { revision: 4, amount: 0 },
+    },
+  });
+  const freeDisk = deferred();
+  storageRead = () => freeDisk.promise;
+  const freeHydration = useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await completeColdStartCycle(freeLaunchTime);
+  await act(async () => {
+    freeDisk.resolve(freeDiskState);
+    await freeHydration;
+  });
+  await flush();
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().lastSeen, freeLaunchTime + 71_000);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.ok(useGame.getState().pendingOwnerBonus.revision > 4);
+  assert.equal(useGame.getState().reconcilePendingLaunchEarnings(), 0);
+  const freeRevision = useGame.getState().pendingOwnerBonus.revision;
+  const freeSettledSave = latestWrite;
+  assert.equal(typeof freeSettledSave, 'string');
+
+  storageRead = async () => freeDiskState;
+  await act(async () => { await useGame.persist.rehydrate(); });
+  assert.equal(useGame.getState().cash, 122, 'stale hydration must preserve settled free earnings');
+  assert.equal(useGame.getState().lastSeen, freeLaunchTime + 71_000);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, freeRevision);
+  await unmountLaunch();
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => freeSettledSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 122, 'relaunch must not replay settled free earnings');
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, freeRevision);
+  await unmountLaunch();
+
+  now = 9_000_000;
+  const ownerLaunchTime = now;
+  latestWrite = null;
+  storageWrite = discardWrite;
+  resetProcessState();
+  const ownerDiskState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: 600,
+      lastSeen: ownerLaunchTime - 61_000,
+      goIndieActive: true,
+      pendingOwnerBonus: { revision: 4, amount: 13 },
+    },
+  });
+  const ownerDisk = deferred();
+  storageRead = () => ownerDisk.promise;
+  const ownerHydration = useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await completeColdStartCycle(ownerLaunchTime);
+  await act(async () => {
+    ownerDisk.resolve(ownerDiskState);
+    await ownerHydration;
+  });
+  await flush();
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().lastSeen, ownerLaunchTime + 71_000);
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 135);
+  assert.ok(useGame.getState().pendingOwnerBonus.revision > 4);
+  const debtRevision = useGame.getState().pendingOwnerBonus.revision;
+  const ownerDebtSave = latestWrite;
+  assert.equal(typeof ownerDebtSave, 'string');
+  await unmountLaunch();
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => ownerDebtSave;
+  await useGame.persist.rehydrate();
+  latestWrite = null;
+  storageWrite = captureWrite;
+  await mountLaunch();
+  assert.equal(useGame.getState().cash, 122);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 135);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, debtRevision);
+
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 257);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.ok(useGame.getState().pendingOwnerBonus.revision > debtRevision);
+  const settledRevision = useGame.getState().pendingOwnerBonus.revision;
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 257);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, settledRevision);
+  const ownerSettledSave = latestWrite;
+  assert.equal(typeof ownerSettledSave, 'string');
+
+  storageRead = async () => ownerDebtSave;
+  await act(async () => { await useGame.persist.rehydrate(); });
+  assert.equal(useGame.getState().cash, 257, 'stale owner debt must not survive its tombstone');
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, settledRevision);
+  await unmountLaunch();
+
+  storageWrite = discardWrite;
+  resetProcessState();
+  storageRead = async () => ownerSettledSave;
+  await useGame.persist.rehydrate();
+  storageWrite = captureWrite;
+  await mountLaunch();
+  await act(async () => { listener(info(true)); });
+  assert.equal(useGame.getState().cash, 257, 'relaunch must not replay settled owner earnings');
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.equal(useGame.getState().pendingOwnerBonus.revision, settledRevision);
+  await unmountLaunch();
+
+  now = 10_000_000;
+  storageWrite = discardWrite;
+  resetProcessState();
+  const failedDisk = deferred();
+  storageRead = () => failedDisk.promise;
+  const failedHydration = useGame.persist.rehydrate();
+  await completeColdStartCycle(now);
+  await act(async () => {
+    failedDisk.reject(new Error('storage unavailable'));
+    await failedHydration;
+  });
+  useGame.setState({ mrr: 120 });
+  await act(async () => { setAppState('background'); });
+  now += 61_000;
+  await act(async () => { setAppState('active'); });
+  assert.equal(useGame.getState().cash, 12.2, 'a hydration failure must not disable later earnings');
+});
+
+test('an active restore preserves the paid offline earnings interval', async t => {
+  const originalNow = Date.now;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: true,
+    goIndieResolved: true,
+  });
+  customer = { promise: Promise.resolve(info(true)) };
+  await purchases.initPurchases();
+  restored = deferred();
+  const restore = purchases.restoreGoIndiePurchases();
+  await new Promise(resolve => setImmediate(resolve));
+  useGame.getState().touchLastSeen();
+  const departedAt = useGame.getState().lastSeen;
+
+  now += 30_000;
+  restored.resolve(info(true));
+  assert.equal(await restore, true);
+  assert.equal(useGame.getState().lastSeen, departedAt);
+
+  now += 31_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+});
+
+test('a first-session purchase advances lastSeen so relaunch cannot repay foreground time', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: now,
+    pendingLaunchInterval: null,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  now += 3 * 3600 * 1000;
+  customer = { promise: Promise.resolve(info(true)) };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, true);
+  assert.equal(useGame.getState().lastSeen, now);
+  assert.equal(useGame.getState().goIndieRateStartsAt, now);
+
+  const savedState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: useGame.getState().mrr,
+      lastSeen: useGame.getState().lastSeen,
+      goIndieActive: useGame.getState().goIndieActive,
+      goIndieRateStartsAt: useGame.getState().goIndieRateStartsAt,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    },
+  });
+  now += 61_000;
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  storageRead = async () => savedState;
+  await useGame.persist.rehydrate();
+
+  assert.equal(useGame.getState().applyLaunchOfflineEarnings(), 12.2);
+  assert.equal(useGame.getState().cash, 12.2);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 12.2);
+  listener(info(true));
+  assert.equal(useGame.getState().cash, 24.4);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+});
+
+test('a fresh purchase applies the owner rate only after confirmation', async t => {
+  const originalNow = Date.now;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: now,
+    pendingLaunchInterval: null,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  now += 10_000;
+  useGame.getState().touchLastSeen();
+
+  now += 70_000;
+  customer = { promise: Promise.resolve(info(true)) };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, true);
+  assert.equal(useGame.getState().goIndieRateStartsAt, now);
+
+  now += 20_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 22);
+  assert.equal(useGame.getState().cash, 22);
+  assert.equal(useGame.getState().goIndieRateStartsAt, null);
+  assert.equal(useGame.getState().applyOfflineEarnings(), 0);
+});
+
+test('the fresh-purchase rate boundary survives relaunch and settles once', async t => {
+  const originalNow = Date.now;
+  const previousStorageRead = storageRead;
+  const previousState = useGame.getState();
+  const now = 2_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    storageRead = previousStorageRead;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  const savedState = JSON.stringify({
+    version: 2,
+    state: {
+      cash: 0,
+      mrr: 120,
+      lastSeen: now - 90_000,
+      goIndieActive: true,
+      goIndieRateStartsAt: now - 20_000,
+      pendingOwnerBonus: { revision: 0, amount: 0 },
+    },
+  });
+  useGame.setState({
+    cash: 0,
+    mrr: 0,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: false,
+    goIndieRateStartsAt: null,
+    launchEarningsCutoff: null,
+    pendingLaunchInterval: undefined,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  storageRead = async () => savedState;
+  await useGame.persist.rehydrate();
+
+  assert.equal(useGame.getState().applyLaunchOfflineEarnings(), 18);
+  assert.equal(useGame.getState().cash, 18);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 4);
+  assert.equal(useGame.getState().goIndieRateStartsAt, null);
+
+  listener(info(true));
+  assert.equal(useGame.getState().cash, 22);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  listener(info(true));
+  assert.equal(useGame.getState().cash, 22);
+
+  await useGame.persist.rehydrate();
+  assert.equal(useGame.getState().cash, 22);
+  assert.equal(useGame.getState().pendingOwnerBonus.amount, 0);
+  assert.equal(useGame.getState().goIndieRateStartsAt, null);
+});
+
+test('an identity-less restore listener cannot revoke a confirmed purchase', async t => {
+  const originalNow = Date.now;
+  const previousState = useGame.getState();
+  let now = 1_000_000;
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalNow;
+    useGame.setState({
+      cash: previousState.cash,
+      mrr: previousState.mrr,
+      lastSeen: previousState.lastSeen,
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+    });
+  });
+
+  useGame.setState({
+    cash: 0,
+    mrr: 120,
+    lastSeen: now,
+    goIndieActive: false,
+    goIndieResolved: true,
+  });
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  listener(info(false));
+  restored = deferred();
+  const restore = purchases.restoreGoIndiePurchases();
+  await new Promise(resolve => setImmediate(resolve));
+
+  const confirmedPurchaseInfo = info(true);
+  customer = { promise: Promise.resolve(confirmedPurchaseInfo) };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, true);
+  assert.equal(useGame.getState().goIndieActive, true);
+
+  const staleRestoreInfo = info(false);
+  assert.ok(
+    Date.parse(staleRestoreInfo.requestDate) > Date.parse(confirmedPurchaseInfo.requestDate),
+    'the older restore must return a CustomerInfo fetched after purchase confirmation',
+  );
+  restored.resolve(staleRestoreInfo);
+  assert.equal(await restore, true);
+
+  listener(staleRestoreInfo);
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+
+  listener(info(false));
+  assert.equal(useGame.getState().goIndieActive, true);
+
+  now += 61_000;
+  assert.equal(useGame.getState().applyOfflineEarnings(), 24.4);
+
+  assert.equal(await refreshOwnership(false), false);
+  assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), true);
+});
+
+test('a stalled purchase refresh cannot discard confirmed restore ownership', async () => {
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  assert.equal(await refreshOwnership(false), false);
+
+  restored = deferred();
+  const restore = purchases.restoreGoIndiePurchases();
+  await new Promise(resolve => setImmediate(resolve));
+
+  const refreshInfo = deferred();
+  const refreshStarted = deferred();
+  customer = {
+    get promise() {
+      refreshStarted.resolve();
+      return refreshInfo.promise;
+    },
+  };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  await refreshStarted.promise;
+
+  restored.resolve(info(true));
+  assert.equal(await restore, true);
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+
+  refreshInfo.resolve(info(true));
+  assert.equal(await purchase, true);
+});
+
+test('a stale negative restore cannot clear the post-payment ad barrier', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  listener(info(false));
+
+  const FreshApp = loadFreshApp();
+  let tree;
+  await act(async () => { tree = create(React.createElement(FreshApp)); });
+  const tab = tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const button = label => tree.root.findAllByType('Pressable')
+    .filter(node => node.findAllByType('Text').some(text => text.props.children === label))
+    .at(-1);
+
+  await act(async () => { tab.props.onPress(); });
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(banners().length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+
+  restored = deferred();
+  const restore = purchases.restoreGoIndiePurchases();
+  await new Promise(resolve => setImmediate(resolve));
+
+  const refreshInfo = deferred();
+  const refreshStarted = deferred();
+  customer = {
+    get promise() {
+      refreshStarted.resolve();
+      return refreshInfo.promise;
+    },
+  };
+  paywall = deferred();
+  const purchase = purchases.presentGoIndiePaywall();
+  await act(async () => {
+    paywall.resolve('PURCHASED');
+    await refreshStarted.promise;
+  });
+  await act(async () => {
+    listener(info(false));
+    restored.resolve(info(false));
+    assert.equal(await restore, null);
+  });
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+  assert.equal(banners().length, 0, 'pending purchase confirmation must unmount the advert');
+
+  await act(async () => { button('Remain humble').props.onPress(); });
+  await flush();
+  await setBillboardWidth(tree, 320);
+  assert.equal(useGame.getState().overlay, null);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+  assert.equal(banners().length, 0, 'overlay dismissal must not reveal an advert after payment');
+  assert.equal(requests.length, 1, 'overlay dismissal must not issue another native request');
+
+  await act(async () => {
+    refreshInfo.resolve(info(true));
+    assert.equal(await purchase, true);
+  });
+  assert.equal(useGame.getState().goIndieActive, true);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  await act(async () => { tree.unmount(); });
+});
+
+test('a paywall success without a confirmed go_indie entitlement fails closed', async () => {
+  assert.equal(await refreshOwnership(false), false);
+  paywall = deferred();
+  customer = { promise: Promise.reject(new Error('offline after payment')) };
+  // Attach a handler immediately; the production refresh consumes this later.
+  customer.promise.catch(() => {});
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, null);
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+});
+
+test('suppressed CustomerInfo cannot confirm unresolved persisted ownership', async () => {
+  useGame.setState({ goIndieActive: true, goIndieResolved: false });
+  paywall = deferred();
+  customer = { promise: Promise.resolve(info(false)) };
+  const purchase = purchases.presentGoIndiePaywall();
+  paywall.resolve('PURCHASED');
+  assert.equal(await purchase, null);
+  assert.equal(useGame.getState().goIndieResolved, false);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+});
+
+test('release runtime accepts a valid pair and rejects cross-publisher identifiers', () => {
+  const modulePath = require.resolve('../src/monetization/ads.ts');
+  admobConfig = {
+    ios: {
+      appId: 'ca-app-pub-1111111111111111~1111111111',
+      bannerId: 'ca-app-pub-1111111111111111/1111111111',
+    },
+  };
+  global.__DEV__ = false;
+  delete require.cache[modulePath];
+  try {
+    assert.equal(require(modulePath).bannerId(), admobConfig.ios.bannerId);
+    admobConfig = {
+      ios: {
+        appId: 'ca-app-pub-2222222222222222~1111111111',
+        bannerId: 'ca-app-pub-1111111111111111/1111111111',
+      },
+    };
+    delete require.cache[modulePath];
+    assert.throws(() => require(modulePath), /same publisher account/);
+  } finally {
+    global.__DEV__ = true;
+    delete require.cache[modulePath];
+  }
+});
+
+test('the measured dock-fade boundary requires the full billboard above the fade', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const FreshApp = loadFreshApp();
+  let tree;
+  try {
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    await setDockFadeTop(tree, 638);
+    const storeTab = tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === 'Store');
+    await act(async () => { storeTab.props.onPress(); });
+
+    const frame = {
+      viewportHeight: 763,
+      sectionY: 650,
+      phoneY: 60,
+      billboardY: 20,
+      billboardHeight: 50,
+    };
+    await setStoreBillboardViewport(tree, { ...frame, scrollY: 0 });
+    assert.equal(
+      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
+      0,
+      'a dock-fade measurement without the screen origin must fail closed',
+    );
+    assert.equal(requests.length, 0);
+
+    await setScreenHostTop(tree, 47, 763);
+    assert.equal(
+      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
+      0,
+      'a billboard entirely behind the normalized dock-fade boundary must not activate ad measurement',
+    );
+    assert.equal(requests.length, 0);
+
+    await setStoreBillboardViewport(tree, { ...frame, scrollY: 60 });
+    assert.equal(
+      tree.root.findAllByType('View').filter(node => node.props.collapsable === false && node.props.onLayout).length,
+      0,
+      'a billboard above the dock but beneath the fade must not activate ad measurement',
+    );
+    assert.equal(requests.length, 0);
+
+    await setStoreBillboardViewport(tree, { ...frame, scrollY: 189 });
+    await setBillboardProbeWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(requests.length, 1, 'full containment above the dock fade must permit one request');
+  } finally {
+    if (tree) await act(async () => { tree.unmount(); });
+  }
+});
+
+test('billboard requests measured-width adaptive ads in phone and iPad multitasking layouts', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const hasNoFillCopy = () => tree.root.findAllByType('Text')
+    .some(node => node.props.children === 'The cat is between sponsors.');
+
+  assert.equal(hasNoFillCopy(), false, 'measurement and consent are not no-fill');
+  await setBillboardWidth(tree, 339);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(banners().length, 1, 'phone layout must mount Catvertising');
+  assert.equal(banners()[0].props.size, 'INLINE_ADAPTIVE_BANNER');
+  assert.equal(banners()[0].props.width, 339, 'phone layout must use its measured width');
+  assert.equal(banners()[0].props.maxHeight, 50);
+  assert.deepEqual(banners()[0].props.requestOptions, { requestNonPersonalizedAdsOnly: true });
+  const initialInstanceId = banners()[0].props.nativeInstanceId;
+  assert.equal(requests.length, 1);
+
+  await setBillboardWidth(tree, 339);
+  assert.equal(requests.length, 1, 'an unchanged width must not issue another native request');
+  assert.equal(banners()[0].props.nativeInstanceId, initialInstanceId);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 339, height: 50 }); });
+
+  await setBillboardWidth(tree, 344);
+  assert.equal(banners().length, 1, 'iPad Split View-sized layout must mount Catvertising');
+  assert.equal(banners()[0].props.size, 'INLINE_ADAPTIVE_BANNER');
+  assert.equal(banners()[0].props.width, 344, 'iPad Split View-sized layout must use its measured width');
+  assert.equal(banners()[0].props.maxHeight, 50);
+  assert.deepEqual(banners()[0].props.requestOptions, { requestNonPersonalizedAdsOnly: true });
+  assert.equal(requests.length, 2, 'the completed resize must issue exactly one native request');
+  assert.notStrictEqual(banners()[0].props.nativeInstanceId, initialInstanceId);
+  const splitViewRequest = banners()[0];
+
+  await setBillboardWidth(tree, 330);
+  await setBillboardWidth(tree, 284);
+  assert.strictEqual(banners()[0], splitViewRequest, 'in-flight resizing must retain the native request');
+  assert.equal(banners()[0].props.width, 344, 'in-flight resizing must not mutate the committed native width');
+  assert.equal(requests.length, 2, 'continuous in-flight resizing must not issue native requests');
+  assert.deepEqual(nativeWidthTeardowns, [], 'the native wrapper must never receive an in-place width change');
+
+  await act(async () => { splitViewRequest.props.onAdLoaded({ width: 344, height: 50 }); });
+  assert.equal(banners().length, 1, 'the latest iPad Slide Over-sized layout must mount Catvertising');
+  assert.notStrictEqual(banners()[0], splitViewRequest, 'settlement must replace the stale-width native request');
+  assert.equal(banners()[0].props.width, 284, 'settlement must coalesce to the latest measured width');
+  assert.equal(requests.length, 3, 'settlement must issue one latest-width replacement request');
+  assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
+  assert.equal(hasNoFillCopy(), false);
+  assert.deepEqual(nativeWidthTeardowns, []);
+
+  const slideOverRequest = banners()[0];
+  await act(async () => { slideOverRequest.props.onAdLoaded({ width: 284, height: 50 }); });
+  assert.strictEqual(banners()[0], slideOverRequest);
+  assert.equal(requests.length, 3, 'the latest-width load must not issue another request');
+  assert.deepEqual(requests.map(request => request.width), [339, 344, 284]);
+
+  const refreshNoFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+  await act(async () => { slideOverRequest.props.onAdFailedToLoad(refreshNoFill); });
+  assert.equal(banners().length, 1, 'an automatic-refresh failure must retain the loaded banner');
+  assert.strictEqual(banners()[0], slideOverRequest);
+  assert.equal(banners()[0].props.nativeInstanceId, slideOverRequest.props.nativeInstanceId);
+  assert.equal(requests.length, 3);
+  assert.equal(hasNoFillCopy(), false, 'a refresh failure must not replace a loaded advert with no-fill copy');
+  assert.deepEqual(nativeWidthTeardowns, []);
+  await act(async () => { tree.unmount(); });
+});
+
+test('preparation coalesces width changes without repeating consent reads', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  t.after(async () => {
+    consentInfoGate = null;
+    await act(async () => { tree.unmount(); });
+  });
+
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  consentInfoGate = deferred();
+  const consentReadsBeforeForm = consentInfoCalls;
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(consentInfoCalls, consentReadsBeforeForm + 1);
+
+  await setBillboardProbeWidth(tree, 300);
+  await setBillboardProbeWidth(tree, 284);
+  assert.equal(
+    consentInfoCalls,
+    consentReadsBeforeForm + 1,
+    'positive width changes must not restart consent preparation',
+  );
+
+  await act(async () => { consentInfoGate.resolve(); await consentInfoGate.promise; });
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].width, 284);
+});
+
+test('surface loss retires pending requests but retains loaded creatives', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const renderStore = active => React.createElement(FreshStoreScreen, { active, viewportBottom: 800 });
+  const setActive = async active => {
+    await act(async () => { tree.update(renderStore(active)); });
+    await flush();
+  };
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+
+  await act(async () => { tree = create(renderStore(true)); });
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  assert.equal(banners().length, 1);
+  const pendingBanner = banners()[0];
+  const pendingInstanceId = pendingBanner.props.nativeInstanceId;
+  const retiredLoad = pendingBanner.props.onAdLoaded;
+
+  await setActive(false);
+  assert.equal(probes().length, 0);
+  assert.equal(banners().length, 0, 'surface loss must unmount a pending native request');
+  await act(async () => { retiredLoad({ width: 320, height: 50 }); });
+  await flush();
+  assert.equal(banners().length, 0, 'a retired pending load must not settle shared state');
+
+  await setActive(true);
+  assert.equal(probes().length, 1);
+  assert.equal(banners().length, 0, 'a return must await fresh measured geometry');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 1, 'a sub-cooldown return must not remount the retired request');
+  assert.equal(banners().length, 0);
+
+  now += 60_000;
+  await flush();
+  assert.equal(requests.length, 1, 'elapsed time alone must not retry a retired request');
+  await setActive(false);
+  await setActive(true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'the next due measured return must mount one retry');
+  assert.equal(banners().length, 1);
+  const retryingBanner = banners()[0];
+  assert.notEqual(retryingBanner.props.nativeInstanceId, pendingInstanceId);
+
+  await setActive(false);
+  assert.equal(banners().length, 0, 'surface loss must also unmount a retrying native request');
+  await setActive(true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'a retired retry must keep the same cooldown boundary');
+  assert.equal(banners().length, 0);
+
+  now += 60_000;
+  await flush();
+  assert.equal(requests.length, 2);
+  await setActive(false);
+  await setActive(true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 3);
+  const loadedBanner = banners()[0];
+  await act(async () => { loadedBanner.props.onAdLoaded({ width: 320, height: 50 }); });
+
+  await setActive(false);
+  assert.strictEqual(banners()[0], loadedBanner, 'surface loss may retain an already loaded creative');
+  assert.equal(bannerConcealed(), true, 'the retained loaded creative must remain concealed and disabled');
+  assert.equal(requests.length, 3);
+});
+
+test('App retains loaded banners and reloads only after due foregrounds', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+  const FreshApp = loadFreshApp();
+  await act(async () => { tree = create(React.createElement(FreshApp)); });
+  const tab = label => tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+  const hasNoFillCopy = () => tree.root.findAllByType('Text')
+    .some(node => node.props.children === 'The cat is between sponsors.');
+
+  await act(async () => { tab('Store').props.onPress(); });
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(banners().length, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false, 'the loaded advert must be visible in Store');
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+  const loadedBannerInstanceId = loadedBanner.props.nativeInstanceId;
+  const initialProbe = probes()[0];
+  const foregroundTimerDelays = [];
+  const foregroundTimerHandles = new Set();
+  global.setTimeout = (_callback, delay) => {
+    foregroundTimerDelays.push(delay);
+    const handle = {};
+    foregroundTimerHandles.add(handle);
+    return handle;
+  };
+  global.clearTimeout = handle => { foregroundTimerHandles.delete(handle); };
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.equal(probes().length, 0, 'backgrounding must remove the active measurement probe');
+  assert.strictEqual(banners()[0], loadedBanner, 'backgrounding must retain the loaded native banner');
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), true, 'backgrounding must conceal and disable the retained advert');
+  now += 59_999;
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.equal(probes().length, 1);
+  assert.notStrictEqual(probes()[0], initialProbe, 'foregrounding must create a fresh measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner, 'foregrounding must retain the same loaded banner before layout');
+  assert.equal(requests.length, 1, 'foregrounding must not issue another request');
+  assert.equal(bannerConcealed(), true, 'foregrounding must keep the advert concealed until layout completes');
+  await setBillboardWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), false);
+  now += 1;
+  await flush();
+  assert.equal(requests.length, 1, 'elapsed cooldown time must not defer a foreground reload');
+  assert.deepEqual(foregroundTimerDelays, [], 'a sub-cooldown foreground must not schedule recovery');
+
+  await act(async () => { tab('Home').props.onPress(); });
+  await flush();
+  assert.equal(banners().length, 1, 'leaving Store must retain the loaded native banner');
+  assert.equal(bannerConcealed(), true, 'the inactive Store must conceal and disable the retained advert');
+  await act(async () => { tab('Store').props.onPress(); });
+  await flush();
+  assert.equal(bannerConcealed(), true, 'returning must keep the retained advert concealed until layout completes');
+  await setBillboardWidth(tree, 320);
+  assert.equal(banners().length, 1);
+  assert.equal(requests.length, 1, 'returning to Store must reuse the loaded advert');
+  assert.equal(bannerConcealed(), false, 'returning to Store must reveal the retained advert');
+  assert.equal(hasNoFillCopy(), false);
+
+  await act(async () => { tab('Home').props.onPress(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'hiding must retain the loaded native banner');
+  assert.equal(banners()[0].props.width, 320, 'the concealed banner must retain its committed width');
+  assert.equal(requests.length, 1, 'hiding must not issue a native request');
+  await act(async () => { tab('Store').props.onPress(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'returning must await the completed layout before replacement');
+  assert.equal(bannerConcealed(), true, 'a potentially stale creative must remain concealed before returned layout');
+  assert.equal(requests.length, 1);
+  await setBillboardWidth(tree, 284);
+  assert.equal(banners().length, 1);
+  assert.notStrictEqual(banners()[0], loadedBanner, 'returning after a resize must replace the old native banner');
+  assert.notStrictEqual(banners()[0].props.nativeInstanceId, loadedBannerInstanceId);
+  assert.equal(banners()[0].props.width, 284);
+  assert.equal(requests.length, 2, 'returning after a hidden resize must issue exactly one request');
+  assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 284, height: 50 }); });
+  const resizedBanner = banners()[0];
+
+  now += 60_000;
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  await flush();
+  assert.equal(banners().length, 1, 'the paywall must conceal without destroying the advert');
+  assert.strictEqual(banners()[0], resizedBanner);
+  assert.equal(bannerConcealed(), true, 'the paywall must disable the retained advert');
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.equal(banners().length, 1);
+  assert.strictEqual(banners()[0], resizedBanner);
+  assert.equal(bannerConcealed(), true, 'closing the paywall must await fresh billboard geometry');
+  await setBillboardWidth(tree, 284);
+  assert.equal(requests.length, 2, 'closing the paywall must reveal the loaded advert');
+  assert.equal(bannerConcealed(), false);
+  assert.equal(hasNoFillCopy(), false);
+
+  await act(async () => { resizedBanner.props.onAdLoaded({ width: 284, height: 50 }); });
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.strictEqual(banners()[0], resizedBanner, 'suspension must retain the loaded native banner');
+  assert.equal(requests.length, 2);
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.strictEqual(banners()[0], resizedBanner, 'foreground recovery must await fresh geometry');
+  assert.equal(requests.length, 2, 'foregrounding must not request before layout completes');
+  await setBillboardWidth(tree, 284);
+  assert.strictEqual(banners()[0], resizedBanner, 'a fresh automatic load must renew the foreground cooldown');
+  assert.equal(requests.length, 2, 'a brief suspension must retain the automatically refreshed advert');
+
+  now += 60_000;
+  await act(async () => { setAppState('background'); });
+  await flush();
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.strictEqual(banners()[0], resizedBanner, 'due foreground recovery must await fresh geometry');
+  assert.equal(requests.length, 2, 'due foregrounding must not request before layout completes');
+  await setBillboardWidth(tree, 284);
+  assert.equal(requests.length, 3, 'the first post-cooldown foreground must issue one reload');
+  assert.notStrictEqual(banners()[0], resizedBanner, 'foreground recovery must replace the suspended native banner');
+  assert.equal(banners()[0].props.width, 284);
+  assert.equal(requests.at(-1).nativeInstanceId, banners()[0].props.nativeInstanceId);
+  assert.deepEqual(nativeWidthTeardowns, [], 'foreground recovery must not mutate a native banner width');
+  const foregroundReplacement = banners()[0];
+  await act(async () => { foregroundReplacement.props.onAdLoaded({ width: 284, height: 50 }); });
+  await setBillboardWidth(tree, 284);
+  assert.strictEqual(banners()[0], foregroundReplacement);
+  assert.equal(requests.length, 3, 'loading the foreground replacement must not request again');
+  assert.deepEqual(foregroundTimerDelays, [], 'suspension recovery must not schedule a timer');
+});
+
+test('replaced banners drop stale native callbacks before shared state changes', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalWarn = console.warn;
+  let now = originalNow();
+  const warnings = [];
+  let tree;
+  Date.now = () => now;
+  console.warn = (...args) => { warnings.push(args); };
+  t.after(async () => {
+    Date.now = originalNow;
+    console.warn = originalWarn;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const hasNoFillCopy = () => tree.root.findAllByType('Text')
+    .some(node => node.props.children === 'The cat is between sponsors.');
+  const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+
+  await setBillboardWidth(tree, 284);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  const first = banners()[0];
+  const firstInstanceId = first.props.nativeInstanceId;
+  const staleLoad = first.props.onAdLoaded;
+  const staleFailure = first.props.onAdFailedToLoad;
+  const staleOpen = first.props.onAdOpened;
+  await act(async () => { staleLoad({ width: 284, height: 50 }); });
+
+  now += 60_000;
+  await act(async () => { setAppState('background'); });
+  await flush();
+  await act(async () => { setAppState('active'); });
+  await flush();
+  await setBillboardWidth(tree, 284);
+  assert.equal(requests.length, 2, 'a due foreground must mount one same-width successor');
+  const successor = banners()[0];
+  assert.notEqual(successor.props.nativeInstanceId, firstInstanceId);
+
+  await act(async () => { staleOpen(); });
+  await flush();
+  assert.equal(probes().length, 1, 'a retired destination event must not hide the current request');
+  await act(async () => { staleLoad({ width: 284, height: 50 }); });
+  await flush();
+  assert.strictEqual(banners()[0], successor, 'a retired load must not replace or settle its successor');
+  await act(async () => { staleFailure(noFill); });
+  await flush();
+  assert.strictEqual(banners()[0], successor, 'a retired failure must not tear down its successor');
+  assert.equal(requests.length, 2);
+  assert.equal(hasNoFillCopy(), false, 'a retired no-fill event must not change fallback copy');
+  assert.deepEqual(warnings, [], 'retired failures must be dropped silently');
+
+  await act(async () => { successor.props.onAdFailedToLoad(noFill); });
+  await flush();
+  assert.equal(banners().length, 0, 'the current request failure must still be honored');
+  assert.equal(hasNoFillCopy(), true, 'only the current no-fill may reveal fallback copy');
+});
+
+test('fully visible scroll returns replace one expired creative without timers', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalSetTimeout = global.setTimeout;
+  const originalSetInterval = global.setInterval;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  const timeoutDelays = [];
+  const intervalDelays = [];
+  t.after(async () => {
+    Date.now = originalNow;
+    global.setTimeout = originalSetTimeout;
+    global.setInterval = originalSetInterval;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+    useGame.setState({ overlay: null });
+  });
+
+  const FreshApp = loadFreshApp();
+  await act(async () => { tree = create(React.createElement(FreshApp)); });
+  await setDefaultAppViewport(tree);
+  const tab = label => tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => (
+      node.props.testID !== 'catvertising-billboard-frame' &&
+      node.props.collapsable === false &&
+      node.props.onLayout
+    ));
+  const storeScroll = () => tree.root.findAllByType('ScrollView')
+    .find(node => typeof node.props.onLayout === 'function' && typeof node.props.onScroll === 'function');
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+  const scrollTo = async y => {
+    const scroll = storeScroll();
+    assert.ok(scroll, 'Store must expose its raw viewport handlers');
+    await act(async () => {
+      scroll.props.onScroll({
+        nativeEvent: {
+          contentOffset: { x: 0, y },
+          contentSize: { width: 390, height: 1400 },
+          layoutMeasurement: { width: 390, height: 600 },
+        },
+      });
+    });
+    await flush();
+  };
+
+  await act(async () => { tab('Store').props.onPress(); });
+  await setStoreBillboardViewport(tree, {
+    scrollY: 0,
+    viewportHeight: 600,
+    sectionY: 600,
+    phoneY: 80,
+    billboardY: 20,
+    billboardHeight: 50,
+  });
+  await scrollTo(0);
+  assert.equal(probes().length, 0, 'an offscreen billboard must not expose an ad measurement boundary');
+  assert.equal(requests.length, 0, 'an initially offscreen billboard must not request an advert');
+
+  await scrollTo(150);
+  assert.equal(probes().length, 1, 'full vertical visibility must activate measurement');
+  await setBillboardProbeWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  assert.equal(banners().length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+  const loadedInstanceId = loadedBanner.props.nativeInstanceId;
+  assert.equal(bannerConcealed(), false);
+
+  global.setTimeout = (_callback, delay) => {
+    timeoutDelays.push(delay);
+    return {};
+  };
+  global.setInterval = (_callback, delay) => {
+    intervalDelays.push(delay);
+    return {};
+  };
+
+  await act(async () => { tab('Home').props.onPress(); });
+  await flush();
+  assert.equal(probes().length, 0);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await act(async () => { tab('Store').props.onPress(); });
+  await flush();
+  assert.equal(probes().length, 1, 'a Store return must use the shared measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  await flush();
+  assert.equal(probes().length, 0);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.equal(probes().length, 1, 'an overlay dismissal must use the shared measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.equal(probes().length, 0);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(bannerConcealed(), true);
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.equal(probes().length, 1, 'foregrounding must use the shared measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner);
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  await scrollTo(750);
+  assert.equal(probes().length, 0, 'zero vertical intersection must conceal the billboard');
+  assert.strictEqual(banners()[0], loadedBanner, 'scrolling away must retain the loaded native banner');
+  assert.equal(bannerConcealed(), true);
+  now += 60 * 60_000;
+  await flush();
+  assert.equal(requests.length, 1, 'expiry while offscreen must not issue a request');
+
+  await scrollTo(700);
+  assert.equal(probes().length, 1, 'full vertical visibility must create a fresh measurement boundary');
+  assert.strictEqual(banners()[0], loadedBanner, 'an expired return must await fresh width');
+  assert.equal(bannerConcealed(), true);
+  assert.equal(requests.length, 1);
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'the expired scroll return must issue exactly one replacement');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+  assert.notEqual(banners()[0].props.nativeInstanceId, loadedInstanceId);
+  assert.deepEqual(requests.map(request => request.width), [320, 320]);
+  assert.deepEqual(nativeWidthTeardowns, []);
+  const replacement = banners()[0];
+
+  await scrollTo(700);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], replacement);
+  assert.equal(requests.length, 2, 'repeated visible scroll events must not duplicate the replacement');
+  await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
+  await scrollTo(700);
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], replacement);
+  assert.equal(requests.length, 2, 'settling the replacement must not create another request');
+  assert.deepEqual(timeoutDelays, [], 'visibility recovery must not schedule timers');
+  assert.deepEqual(intervalDelays, [], 'visibility recovery must not schedule loops');
+});
+
+test('scrolling blocks new banner requests until a settled viewport measurement', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const storeScroll = () => tree.root.findAllByType('ScrollView')
+    .find(node => typeof node.props.onLayout === 'function' && typeof node.props.onScroll === 'function');
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => (
+      node.props.testID !== 'catvertising-billboard-frame' &&
+      node.props.collapsable === false &&
+      node.props.onLayout
+    ));
+  const scrollEvent = (y, { targetY, velocityY } = {}) => ({
+    nativeEvent: {
+      contentInset: { top: 0, right: 0, bottom: 0, left: 0 },
+      contentOffset: { x: 0, y },
+      contentSize: { width: 390, height: 1400 },
+      layoutMeasurement: { width: 390, height: 600 },
+      ...(targetY === undefined ? {} : { targetContentOffset: { x: 0, y: targetY } }),
+      ...(velocityY === undefined ? {} : { velocity: { x: 0, y: velocityY } }),
+    },
+  });
+  const sendScroll = async (handlerName, y, options) => {
+    const handler = storeScroll()?.props[handlerName];
+    assert.equal(typeof handler, 'function', `Store must expose ${handlerName}`);
+    await act(async () => { handler(scrollEvent(y, options)); });
+    await flush();
+  };
+  const assertLoadedBannerPresented = expected => {
+    assert.strictEqual(banners()[0], expected, 'scroll freshness must retain the loaded native banner');
+    const layers = tree.root.findAllByType('View')
+      .filter(node => node.props.accessibilityElementsHidden !== undefined);
+    assert.equal(layers.length, 2, 'the billboard and native banner wrappers must remain mounted');
+    for (const layer of layers) {
+      const styles = (Array.isArray(layer.props.style) ? layer.props.style.flat(Infinity) : [layer.props.style])
+        .filter(Boolean);
+      assert.equal(layer.props.accessibilityElementsHidden, false);
+      assert.equal(layer.props.pointerEvents, 'auto');
+      assert.equal(styles.some(style => style.display === 'none' || style.opacity === 0), false);
+    }
+  };
+
+  await setStoreBillboardViewport(tree, {
+    scrollY: 0,
+    viewportHeight: 600,
+    sectionY: 600,
+    phoneY: 80,
+    billboardY: 20,
+    billboardHeight: 50,
+  });
+  assert.equal(probes().length, 0);
+
+  await sendScroll('onScrollBeginDrag', 0);
+  await sendScroll('onScroll', 150);
+  assert.equal(probes().length, 1, 'scrolling into view may measure without authorizing a request');
+  await setBillboardProbeWidth(tree, 320);
+  await act(async () => {
+    consentInfoUpdate.resolve();
+    consentForm.resolve();
+    await Promise.all([consentInfoUpdate.promise, consentForm.promise]);
+  });
+  assert.equal(consentInfoUpdateCalls, 0, 'dragging must not begin consent or an ad request');
+  assert.equal(requests.length, 0);
+
+  await sendScroll('onScrollEndDrag', 150, { targetY: 180, velocityY: 1 });
+  await sendScroll('onMomentumScrollBegin', 150, { targetY: 180, velocityY: 1 });
+  await sendScroll('onScroll', 160);
+  assert.equal(requests.length, 0, 'momentum must keep the request gate closed');
+
+  await sendScroll('onMomentumScrollEnd', 160, { targetY: 160, velocityY: 0 });
+  await flush();
+  assert.equal(consentInfoUpdateCalls, 1, 'the settled measurement may start consent exactly once');
+  assert.equal(consentFormCalls, 1);
+  assert.equal(requests.length, 1, 'the settled visible measurement may issue one request');
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+
+  now += 60 * 60_000;
+  await sendScroll('onScrollBeginDrag', 160);
+  await sendScroll('onScroll', 170);
+  assert.equal(requests.length, 1, 'an expired replacement must wait while dragging');
+  assertLoadedBannerPresented(loadedBanner);
+
+  await sendScroll('onScrollEndDrag', 170, { targetY: 170, velocityY: 0 });
+  await flush();
+  assert.equal(requests.length, 2, 'a no-momentum settled measurement may replace the expired banner');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+});
+
+test('visibility returns replace creatives one hour after the latest native load', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+    useGame.setState({ overlay: null });
+  });
+  const FreshApp = loadFreshApp();
+  await act(async () => { tree = create(React.createElement(FreshApp)); });
+  const tab = label => tree.root.findAllByType('Pressable')
+    .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+
+  await act(async () => { tab('Store').props.onPress(); });
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+  const loadedInstanceId = loadedBanner.props.nativeInstanceId;
+  const timerDelays = [];
+  global.setTimeout = (_callback, delay) => {
+    timerDelays.push(delay);
+    return {};
+  };
+  global.clearTimeout = () => {};
+  const returnToStoreAfter = async elapsed => {
+    await act(async () => { tab('Home').props.onPress(); });
+    now += elapsed;
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    await setBillboardWidth(tree, 320);
+  };
+
+  await returnToStoreAfter(3_599_999);
+  assert.strictEqual(banners()[0], loadedBanner, 'a pre-expiry Store return must reuse the loaded creative');
+  assert.equal(requests.length, 1);
+
+  await act(async () => { loadedBanner.props.onAdLoaded({ width: 320, height: 50 }); });
+  assert.equal(requests.length, 1, 'an automatic refresh load must keep the native instance');
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  now += 3_599_999;
+  await flush();
+  assert.equal(requests.length, 1, 'a hidden billboard must not request before a visibility return');
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'a pre-expiry overlay dismissal must await fresh geometry');
+  assert.equal(bannerConcealed(), true);
+  await setBillboardWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner, 'expiry must be measured from the latest automatic refresh load');
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  const refreshFailure = Object.assign(new Error('refresh unavailable'), { code: 'googleMobileAds/network-error' });
+  await act(async () => { loadedBanner.props.onAdFailedToLoad(refreshFailure); });
+  assert.strictEqual(banners()[0], loadedBanner, 'a post-load refresh failure must retain the loaded creative');
+  assert.equal(requests.length, 1);
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  now += 1;
+  await flush();
+  assert.equal(requests.length, 1, 'reaching expiry while hidden must not issue a request');
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'an expired return inside the request cooldown must retain its state');
+  assert.equal(bannerConcealed(), true, 'overlay dismissal must await fresh geometry');
+  assert.equal(requests.length, 1);
+  await setBillboardWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner, 'replacement must defer until a later visibility transition');
+  assert.equal(requests.length, 1);
+  assert.equal(bannerConcealed(), false);
+
+  now += 59_999;
+  await flush();
+  assert.equal(requests.length, 1, 'elapsed cooldown time alone must not issue a replacement');
+  await act(async () => { useGame.getState().openGoIndiePaywall(); });
+  await act(async () => { useGame.getState().dismissOverlay(); });
+  await flush();
+  assert.strictEqual(banners()[0], loadedBanner, 'expiry replacement must await returned overlay geometry');
+  assert.equal(bannerConcealed(), true, 'the due expired creative must remain concealed after overlay dismissal');
+  assert.equal(requests.length, 1);
+  const returnedProbe = probes()[0];
+  assert.ok(returnedProbe);
+  await act(async () => {
+    returnedProbe.props.onLayout({ nativeEvent: { layout: { width: 284 } } });
+    returnedProbe.props.onLayout({ nativeEvent: { layout: { width: 320 } } });
+  });
+  await flush();
+  assert.equal(requests.length, 2, 'the next due overlay dismissal must issue one replacement request');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+  assert.notEqual(banners()[0].props.nativeInstanceId, loadedInstanceId);
+  assert.equal(banners()[0].props.width, 320, 'the replacement must use the latest coalesced width');
+  assert.deepEqual(requests.map(request => request.width), [320, 320]);
+  assert.deepEqual(nativeWidthTeardowns, []);
+  assert.deepEqual(timerDelays, [], 'creative expiry must not schedule a timer');
+  const replacement = banners()[0];
+  await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
+  await setBillboardWidth(tree, 320);
+  assert.strictEqual(banners()[0], replacement);
+  assert.equal(requests.length, 2, 'settling the replacement must not issue another request');
+});
+
+test('returning from an ad destination rechecks creative expiry', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  t.after(async () => {
+    Date.now = originalNow;
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+
+  await act(async () => { loadedBanner.props.onAdOpened(); });
+  await flush();
+  assert.equal(probes().length, 0, 'an SDK-presented destination must suspend measurement');
+  now += 60 * 60_000 - 1;
+  await act(async () => { loadedBanner.props.onAdClosed(); });
+  await flush();
+  await setBillboardProbeWidth(tree, 320);
+  assert.strictEqual(banners()[0], loadedBanner, 'a pre-expiry destination return must reuse the creative');
+  assert.equal(requests.length, 1);
+
+  await act(async () => { loadedBanner.props.onAdOpened(); });
+  now += 1;
+  await act(async () => { loadedBanner.props.onAdClosed(); });
+  await flush();
+  assert.equal(probes().length, 1, 'destination return must create a fresh measurement boundary');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'an expired destination return must issue one replacement');
+  assert.notStrictEqual(banners()[0], loadedBanner);
+});
+
+test('ownership invalidation keeps an open ad destination blocked until foreground return', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  customer = { promise: Promise.resolve(info(false)) };
+  await purchases.initPurchases();
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  let tree;
+  t.after(async () => {
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  await setBillboardWidth(tree, 320);
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(requests.length, 1);
+  await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+  const loadedBanner = banners()[0];
+  const retiredOnAdOpened = loadedBanner.props.onAdOpened;
+
+  await act(async () => { loadedBanner.props.onAdOpened(); });
+  await flush();
+  assert.equal(probes().length, 0, 'an SDK-presented destination must suspend measurement');
+  await act(async () => { listener(info(true)); });
+  await flush();
+  assert.equal(banners().length, 0, 'confirmed ownership must retire the presenting banner');
+
+  await act(async () => { assert.equal(await refreshOwnership(false), false); });
+  await flush();
+  assert.equal(banners().length, 0, 'a later valid downgrade must not mount a successor behind the destination');
+  assert.equal(probes().length, 0, 'ownership changes cannot establish that the destination closed');
+  assert.equal(requests.length, 1, 'the destination barrier must block successor requests');
+
+  await act(async () => { setAppState('background'); });
+  await flush();
+  assert.equal(probes().length, 0);
+  await act(async () => { setAppState('active'); });
+  await flush();
+  assert.equal(probes().length, 1, 'a measured foreground return may clear the destination barrier');
+  await act(async () => { retiredOnAdOpened(); });
+  assert.equal(probes().length, 1, 'a retired banner callback must not conceal the current surface');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(requests.length, 2, 'remeasurement after return must issue one successor request');
+  assert.equal(banners().length, 1);
+  assert.notStrictEqual(banners()[0], loadedBanner);
+});
+
+test('no-fill retries only on a Store return after sixty seconds', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  try {
+    const FreshApp = loadFreshApp();
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const banners = () => tree.root.findAllByType('NativeBanner');
+    const hasNoFillCopy = () => tree.root.findAllByType('Text')
+      .some(node => node.props.children === 'The cat is between sponsors.');
+    const noFill = Object.assign(new Error('no fill'), { code: 'googleMobileAds/no-fill' });
+    const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
+
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(requests.length, 1);
+
+    await act(async () => { banners()[0].props.onAdFailedToLoad(noFill); });
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), true);
+
+    await setBillboardWidth(tree, 300);
+    assert.equal(requests.length, 1, 'layout changes must not bypass no-fill recovery timing');
+    assert.equal(hasNoFillCopy(), true);
+
+    await act(async () => { setAppState('background'); });
+    now += 59_999;
+    await act(async () => { setAppState('active'); });
+    await setBillboardWidth(tree, 300);
+    await flush();
+    assert.equal(requests.length, 1, 'a visible return before sixty seconds must not request another advert');
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), true);
+
+    now += 1;
+    await flush();
+    assert.equal(requests.length, 1, 'elapsed time alone must not retry while Store remains visible');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await flush();
+    assert.equal(requests.length, 1, 'a return must await its completed layout before retrying');
+    await setBillboardWidth(tree, 284);
+    assert.equal(requests.length, 2, 'the next qualifying return must issue one request');
+    assert.equal(banners().length, 1);
+    assert.equal(banners()[0].props.width, 284);
+    assert.equal(hasNoFillCopy(), true, 'the confirmed fallback must remain while replacement loads');
+
+    const retryingBanner = banners()[0];
+    await setBillboardWidth(tree, 270);
+    await setBillboardWidth(tree, 250);
+    assert.equal(requests.length, 2, 'continuous retrying resizes must not issue native requests');
+    assert.strictEqual(banners()[0], retryingBanner, 'retrying resizes must retain the in-flight native request');
+    assert.equal(banners()[0].props.width, 284, 'retrying resizes must keep the committed native width immutable');
+    assert.deepEqual(nativeWidthTeardowns, [], 'retrying resizes must not trigger native teardown');
+    assert.equal(hasNoFillCopy(), true, 'retrying resizes must retain the confirmed fallback');
+
+    await act(async () => { retryingBanner.props.onAdFailedToLoad(networkError); });
+    await flush();
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), true, 'a stale-width failure must retain the confirmed fallback');
+    assert.equal(requests.length, 2, 'a stale-width failure must not request the coalesced width');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 250);
+    await flush();
+    assert.equal(requests.length, 2, 'an immediate return after failure must honor the retry interval');
+    assert.equal(hasNoFillCopy(), true);
+
+    now += 60_000;
+    await flush();
+    assert.equal(requests.length, 2, 'elapsed time alone must not issue a replacement request');
+    await act(async () => { setAppState('background'); });
+    await flush();
+    assert.equal(requests.length, 2, 'no request may run while the app is backgrounded');
+    await act(async () => { setAppState('active'); });
+    await setBillboardWidth(tree, 250);
+    await flush();
+    assert.equal(requests.length, 3, 'foregrounding into Store must recover on a qualifying return');
+    assert.equal(hasNoFillCopy(), true, 'the fallback must remain until the replacement reports loaded');
+    const recoveredBanner = banners()[0];
+    assert.equal(recoveredBanner.props.width, 250);
+
+    await setBillboardWidth(tree, 240);
+    await setBillboardWidth(tree, 230);
+    assert.strictEqual(banners()[0], recoveredBanner, 'recovery resizes must retain the in-flight native request');
+    assert.equal(banners()[0].props.width, 250);
+    assert.equal(requests.length, 3, 'recovery resizes must not issue native requests');
+    assert.equal(hasNoFillCopy(), true);
+
+    await act(async () => { recoveredBanner.props.onAdLoaded({ width: 250, height: 50 }); });
+    assert.equal(requests.length, 4, 'retry settlement must issue one request at the latest width');
+    assert.notStrictEqual(banners()[0], recoveredBanner, 'retry settlement must replace the stale native request');
+    assert.equal(banners()[0].props.width, 230, 'retry settlement must use only the latest measured width');
+    assert.equal(hasNoFillCopy(), true, 'a stale-width load must not clear the confirmed fallback');
+    assert.deepEqual(nativeWidthTeardowns, []);
+
+    const replacement = banners()[0];
+    await act(async () => { replacement.props.onAdLoaded({ width: 230, height: 50 }); });
+    assert.strictEqual(banners()[0], replacement, 'the latest-width load must reveal the replacement without remounting it');
+    assert.equal(hasNoFillCopy(), false, 'only a loaded replacement may clear the fallback');
+    assert.equal(requests.length, 4);
+    assert.deepEqual(requests.map(request => request.width), [320, 284, 250, 230]);
+  } finally {
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  }
+});
+
+test('unloaded banners recover only on qualifying Store returns', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  let now = originalNow();
+  Date.now = () => now;
+  const retryTimerDelays = [];
+  const retryTimerHandles = new Set();
+  let tree;
+  try {
+    const FreshApp = loadFreshApp();
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const banners = () => tree.root.findAllByType('NativeBanner');
+    const hasNoFillCopy = () => tree.root.findAllByType('Text')
+      .some(node => node.props.children === 'The cat is between sponsors.');
+    const networkError = Object.assign(new Error('offline'), { code: 'googleMobileAds/network-error' });
+    global.setTimeout = (callback, delay, ...args) => {
+      if (typeof delay === 'number' && delay >= 60_000) {
+        retryTimerDelays.push(delay);
+        const handle = { callback, args };
+        retryTimerHandles.add(handle);
+        return handle;
+      }
+      return originalSetTimeout(callback, delay, ...args);
+    };
+    global.clearTimeout = handle => {
+      if (retryTimerHandles.delete(handle)) return;
+      return originalClearTimeout(handle);
+    };
+
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(requests.length, 1);
+    assert.equal(banners().length, 1);
+    assert.equal(hasNoFillCopy(), false, 'an unresolved request is not no-fill');
+
+    await act(async () => { banners()[0].props.onAdFailedToLoad(networkError); });
+    await flush();
+    assert.equal(banners().length, 0);
+    assert.equal(hasNoFillCopy(), false, 'a network failure must not claim genuine no-fill');
+
+    now += 59_999;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await flush();
+    assert.equal(requests.length, 1, 'a failed advert must honor the retry interval');
+
+    now += 1;
+    await flush();
+    assert.equal(requests.length, 1, 'elapsed time alone must not retry a failed advert');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await flush();
+    assert.equal(requests.length, 2, 'a qualifying return must recover a network failure');
+    assert.equal(banners().length, 1);
+    assert.equal(hasNoFillCopy(), false);
+
+    now += 59_999;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await flush();
+    assert.equal(requests.length, 2, 'an unresolved request must honor the retry interval');
+
+    now += 1;
+    await flush();
+    assert.equal(requests.length, 2, 'elapsed time alone must not retry an unresolved request');
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await flush();
+    assert.equal(requests.length, 3, 'the next qualifying return must replace an advert that never loaded');
+    const replacement = banners()[0];
+    await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
+
+    now += 60_000;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await flush();
+    assert.equal(requests.length, 3, 'a loaded creative must be reused without another request');
+    assert.strictEqual(banners()[0], replacement);
+    assert.deepEqual(retryTimerDelays, [], 'banner recovery must not schedule a background timer');
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  }
+});
+
+test('a rejected UMP refresh retries only on a measured visibility return', async t => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [], goIndieActive: false, goIndieResolved: false });
+  const originalSetTimeout = global.setTimeout;
+  const originalSetInterval = global.setInterval;
+  const timeoutDelays = [];
+  const intervalDelays = [];
+  let tree;
+  t.after(async () => {
+    global.setTimeout = originalSetTimeout;
+    global.setInterval = originalSetInterval;
+    if (tree) await act(async () => { tree.unmount(); });
+  });
+  global.setTimeout = (_callback, delay) => {
+    timeoutDelays.push(delay);
+    return {};
+  };
+  global.setInterval = (_callback, delay) => {
+    intervalDelays.push(delay);
+    return {};
+  };
+
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const adsSession = require('../src/monetization/ads.ts');
+  const failedUpdate = consentInfoUpdate;
+  const launchRefresh = adsSession.refreshConsentSession();
+  const sharedRefresh = adsSession.refreshConsentSession();
+  assert.equal(consentInfoUpdateCalls, 1, 'concurrent consumers must share the launch refresh');
+
+  tree = await mountStore(FreshStoreScreen);
+  await setStoreBillboardViewport(tree);
+  assert.equal(consentInfoUpdateCalls, 1, 'viewport intersection must await completed width measurement');
+  await setBillboardProbeWidth(tree, 320);
+  assert.equal(consentInfoUpdateCalls, 1, 'visible preparation must share the launch refresh');
+
+  const launchRejected = assert.rejects(launchRefresh, /offline at launch/);
+  const sharedRejected = assert.rejects(sharedRefresh, /offline at launch/);
+  await act(async () => {
+    failedUpdate.reject(new Error('offline at launch'));
+    await Promise.all([launchRejected, sharedRejected]);
+  });
+  await flush();
+  assert.equal(consentInfoCalls, 1, 'a rejected launch refresh must produce one privacy-status read');
+  await setBillboardProbeWidth(tree, 300);
+  assert.equal(consentInfoUpdateCalls, 1, 'continuous visibility must not immediately retry consent');
+  assert.equal(consentInfoCalls, 1, 'layout changes must not repeat privacy-status reads');
+  assert.equal(initializationCalls, 0);
+  assert.equal(requests.length, 0);
+
+  await act(async () => { useGame.setState({ goIndieResolved: true }); });
+  await flush();
+  assert.equal(
+    consentInfoUpdateCalls,
+    1,
+    'ownership resolving free while continuously visible must not retry the rejected launch refresh',
+  );
+
+  consentInfoUpdate = deferred();
+  await setStoreBillboardViewport(tree, { scrollY: 1_000 });
+  await setStoreBillboardViewport(tree);
+  assert.equal(consentInfoUpdateCalls, 1, 'visibility return must await its new width measurement');
+  await setBillboardProbeWidth(tree, 284);
+  assert.equal(consentInfoUpdateCalls, 2, 'the next measured visibility return must retry once');
+  assert.equal(consentInfoCalls, 1, 'retry privacy status must await the replacement consent update');
+
+  const recoveredUpdate = consentInfoUpdate;
+  const sharedRecovery = adsSession.refreshConsentSession();
+  assert.equal(consentInfoUpdateCalls, 2, 'recovery consumers must share one in-flight refresh');
+  await act(async () => {
+    recoveredUpdate.resolve();
+    await Promise.all([recoveredUpdate.promise, sharedRecovery]);
+  });
+  await flush();
+  assert.equal(consentInfoCalls, 2, 'each consent update must produce one privacy-status read');
+  assert.equal(consentFormCalls, 1);
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].width, 284);
+  assert.equal(consentInfoCalls, 3, 'ad preparation may read consent once after the form settles');
+
+  await adsSession.refreshConsentSession();
+  assert.equal(consentInfoUpdateCalls, 2, 'a successful refresh must remain deduplicated for the launch');
+  assert.deepEqual(timeoutDelays, [], 'consent recovery must not schedule timers');
+  assert.deepEqual(intervalDelays, [], 'consent recovery must not schedule loops');
+});
+
+test('SDK preparation failure retries without a loop', async () => {
+  resetAdLifecycleState();
+  initializationFailuresRemaining = 1;
+  useGame.setState({ notifs: [] });
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  let tree;
+  try {
+    const FreshApp = loadFreshApp();
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const banners = () => tree.root.findAllByType('NativeBanner');
+
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(initializationCalls, 1);
+    assert.equal(requests.length, 0);
+    await flush();
+    assert.equal(initializationCalls, 1, 'a preparation failure must not create a retry loop');
+
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await flush();
+    assert.equal(initializationCalls, 2, 'the next Store return must retry preparation before any banner request exists');
+    assert.equal(requests.length, 1);
+    const replacement = banners()[0];
+    await act(async () => { replacement.props.onAdLoaded({ width: 320, height: 50 }); });
+
+    now += 60_000;
+    await act(async () => { tab('Home').props.onPress(); });
+    await act(async () => { tab('Store').props.onPress(); });
+    await setBillboardWidth(tree, 320);
+    await flush();
+    assert.equal(initializationCalls, 2);
+    assert.equal(requests.length, 1, 'loaded creative must survive later returns');
+    assert.strictEqual(banners()[0], replacement);
+  } finally {
+    initializationFailuresRemaining = 0;
+    Date.now = originalNow;
+    mockNative.AppState.currentState = 'active';
+    if (tree) await act(async () => { tree.unmount(); });
+  }
+});
+
+test('hidden Store ignores slow ticks and renders current cash on return', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const FreshPhoneBillboard = require('../src/components/PhoneBillboard.tsx').default;
+  const before = useGame.getState();
+  let commits = 0;
+  let tree;
+  try {
+    useGame.setState({ cash: 100.75, mrr: 60, day: 3, dayTick: 5, hasJob: false });
+    const renderedStore = active => React.createElement(
+      React.Profiler,
+      { id: 'Store', onRender: () => { commits++; } },
+      React.createElement(FreshStoreScreen, { active }),
+    );
+    await act(async () => {
+      tree = create(renderedStore(true));
+    });
+    const retainedBillboard = tree.root.findByType(FreshPhoneBillboard);
+    await act(async () => { tree.update(renderedStore(false)); });
+    const hiddenCommits = commits;
+    await act(async () => { useGame.getState().slowTick(); });
+    assert.equal(useGame.getState().cash, 101.25);
+    assert.equal(useGame.getState().day, 4);
+    assert.equal(commits, hiddenCommits, 'a slow tick must not rerender the hidden Store subtree');
+    assert.strictEqual(tree.root.findByType(FreshPhoneBillboard), retainedBillboard);
+
+    await act(async () => { tree.update(renderedStore(true)); });
+    assert.strictEqual(tree.root.findByType(FreshPhoneBillboard), retainedBillboard);
+    assert.ok(
+      tree.root.findAllByType('Text').some(node => node.props.children === '$101'),
+      'the first visible Store render must read current cash',
+    );
+  } finally {
+    if (tree) await act(async () => { tree.unmount(); });
+    useGame.setState({
+      cash: before.cash,
+      mrr: before.mrr,
+      day: before.day,
+      dayTick: before.dayTick,
+      hasJob: before.hasJob,
+    });
+  }
+});
+
+test('a live remount continues one in-flight consent form', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  let tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+  await act(async () => { tree.unmount(); });
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  assert.equal(consentFormCalls, 0, 'an unmounted billboard must not present consent');
+  assert.equal(initializationCalls, 0);
+
+  tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+  assert.equal(consentFormCalls, 1);
+  await act(async () => { tree.unmount(); });
+  tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+  assert.equal(consentFormCalls, 1, 'remounting must not duplicate an in-flight form');
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 1, 'the live remount must initialize after consent');
+  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  await act(async () => { tree.unmount(); });
+});
+
+test('an overlay blocks consent presentation and Mobile Ads initialization', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+
+  await act(async () => { useGame.setState({ overlay: { type: 'paywall' } }); });
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  assert.equal(consentFormCalls, 0, 'an overlay opened during refresh must prevent consent presentation');
+
+  await act(async () => { useGame.setState({ overlay: null }); });
+  await setBillboardWidth(tree, 320);
+  await flush();
+  assert.equal(consentFormCalls, 1);
+  consentInfoGate = deferred();
+  const consentReadsBeforeForm = consentInfoCalls;
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.ok(consentInfoCalls > consentReadsBeforeForm, 'preparation must reach the consent-info boundary');
+  await act(async () => { useGame.setState({ overlay: { type: 'paywall' } }); });
+  await act(async () => { consentInfoGate.resolve(); await consentInfoGate.promise; });
+  await flush();
+  assert.equal(initializationCalls, 0, 'an overlay opened before initialization must prevent it');
+
+  await act(async () => { useGame.setState({ overlay: null }); });
+  await setBillboardWidth(tree, 320);
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  await act(async () => { tree.unmount(); });
+});
+
+test('notifications block ad preparation and conceal retained creatives', async () => {
+  resetAdLifecycleState();
+  useGame.setState({ notifs: [] });
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  const banners = () => tree.root.findAllByType('NativeBanner');
+  const probes = () => tree.root.findAllByType('View')
+    .filter(node => node.props.collapsable === false && node.props.onLayout);
+  const bannerConcealed = () => {
+    const frame = tree.root.findAllByType('View')
+      .find(node => node.props.accessibilityElementsHidden !== undefined);
+    const styles = (Array.isArray(frame.props.style) ? frame.props.style.flat() : [frame.props.style])
+      .filter(Boolean);
+    return frame.props.accessibilityElementsHidden === true &&
+      frame.props.pointerEvents === 'none' &&
+      styles.some(style => style.display === 'none');
+  };
+
+  try {
+    await setBillboardWidth(tree, 320);
+    await act(async () => { useGame.getState().pushNotif('Payday.', 'day-job'); });
+    await flush();
+    assert.equal(probes().length, 0, 'a notification must remove the active measurement boundary');
+
+    await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+    await flush();
+    assert.equal(consentFormCalls, 0, 'a notification shown during refresh must block consent presentation');
+    assert.equal(initializationCalls, 0);
+    assert.equal(requests.length, 0);
+
+    await act(async () => { useGame.setState({ notifs: [] }); });
+    await flush();
+    assert.equal(probes().length, 1, 'clearing notifications must create a fresh measurement boundary');
+    await setBillboardProbeWidth(tree, 320);
+    assert.equal(consentFormCalls, 1);
+    await act(async () => { consentForm.resolve(); await consentForm.promise; });
+    await flush();
+    assert.equal(initializationCalls, 1);
+    assert.equal(banners().length, 1);
+    assert.equal(requests.length, 1);
+    await act(async () => { banners()[0].props.onAdLoaded({ width: 320, height: 50 }); });
+    const loadedBanner = banners()[0];
+    assert.equal(bannerConcealed(), false);
+
+    await act(async () => { useGame.getState().pushNotif('An event occurred.', 'store'); });
+    await flush();
+    assert.equal(probes().length, 0);
+    assert.strictEqual(banners()[0], loadedBanner, 'a notification may retain the loaded native banner');
+    assert.equal(bannerConcealed(), true, 'a notification must conceal and disable the retained advert');
+    assert.equal(requests.length, 1);
+
+    await act(async () => { useGame.setState({ notifs: [] }); });
+    await flush();
+    assert.equal(probes().length, 1);
+    assert.strictEqual(banners()[0], loadedBanner);
+    assert.equal(bannerConcealed(), true, 'a notification return must await fresh geometry');
+    await setBillboardProbeWidth(tree, 320);
+    assert.strictEqual(banners()[0], loadedBanner);
+    assert.equal(bannerConcealed(), false);
+    assert.equal(requests.length, 1, 'clearing notifications must not duplicate the loaded request');
+  } finally {
+    useGame.setState({ notifs: [] });
+    await act(async () => { tree.unmount(); });
+  }
+});
+
+test('backgrounding blocks consent presentation and Mobile Ads initialization', async () => {
+  resetAdLifecycleState();
+  const FreshStoreScreen = loadFreshStoreScreen();
+  const tree = await mountStore(FreshStoreScreen);
+  await setBillboardWidth(tree, 320);
+
+  await act(async () => { setAppState('background'); });
+  await act(async () => { consentInfoUpdate.resolve(); await consentInfoUpdate.promise; });
+  await flush();
+  assert.equal(consentFormCalls, 0, 'backgrounding during refresh must prevent consent presentation');
+
+  await act(async () => { setAppState('active'); });
+  await setBillboardWidth(tree, 320);
+  await flush();
+  assert.equal(consentFormCalls, 1);
+  await act(async () => { setAppState('background'); });
+  await act(async () => { consentForm.resolve(); await consentForm.promise; });
+  await flush();
+  assert.equal(initializationCalls, 0, 'backgrounding during consent must prevent initialization');
+
+  await act(async () => { setAppState('active'); });
+  await setBillboardWidth(tree, 320);
+  await flush();
+  assert.equal(initializationCalls, 1);
+  assert.equal(tree.root.findAllByType('NativeBanner').length, 1);
+  await act(async () => { tree.unmount(); });
+});
+
+test('Android App unmounts Store between visits', async () => {
+  const previousOS = mockNative.Platform.OS;
+  let tree;
+  try {
+    mockNative.Platform.OS = 'android';
+    resetAdLifecycleState();
+    useGame.setState({ notifs: [] });
+    const FreshApp = loadFreshApp();
+    const FreshStoreScreen = require('../src/screens/StoreScreen.tsx').default;
+    await act(async () => { tree = create(React.createElement(FreshApp)); });
+    const tab = label => tree.root.findAllByType('Pressable')
+      .find(node => node.props.accessibilityRole === 'tab' && node.props.accessibilityLabel === label);
+    const stores = () => tree.root.findAllByType(FreshStoreScreen);
+
+    await act(async () => { tab('Store').props.onPress(); });
+    assert.equal(stores().length, 1);
+    const firstStore = stores()[0];
+    await act(async () => { tab('Home').props.onPress(); });
+    assert.equal(stores().length, 0, 'Android must remove Store when another tab is active');
+    await act(async () => { tab('Store').props.onPress(); });
+    assert.equal(stores().length, 1);
+    assert.notStrictEqual(stores()[0], firstStore, 'Android must create a fresh Store on return');
+    assert.equal(requests.length, 0);
+  } finally {
+    if (tree) await act(async () => { tree.unmount(); });
+    mockNative.Platform.OS = previousOS;
+    useGame.setState({ overlay: null });
+  }
+});
+
+test('Android omits Catvertising and describes only the offline Go Indie benefit', async () => {
+  const previousOS = mockNative.Platform.OS;
+  const visibleText = tree => tree.root.findAllByType('Text')
+    .flatMap(node => React.Children.toArray(node.props.children))
+    .filter(value => typeof value === 'string');
+  let store;
+  let overlay;
+  try {
+    mockNative.Platform.OS = 'android';
+    useGame.setState({ goIndieActive: false, goIndieResolved: true, overlay: null });
+    store = await mountStore(StoreScreen);
+
+    assert.equal(visibleText(store).includes('Your phone'), false);
+    assert.equal(visibleText(store).includes('CATVERTISING'), false);
+    assert.ok(visibleText(store).includes('Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.'));
+    assert.equal(visibleText(store).some(value => value.includes('removes ads')), false);
+
+    await act(async () => { useGame.setState({ goIndieActive: true }); });
+    assert.ok(visibleText(store).includes('Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'));
+    assert.equal(visibleText(store).some(value => value.includes('Ads are removed')), false);
+    await act(async () => { store.unmount(); });
+    store = null;
+
+    useGame.setState({ overlay: { type: 'paywall' } });
+    const OverlayHost = require('../src/components/OverlayHost.tsx').default;
+    await act(async () => { overlay = create(React.createElement(OverlayHost, { onReturnHome() {} })); });
+    assert.ok(visibleText(overlay).includes('Make your character an indie operator. Go Indie doubles offline earnings in this game.'));
+    assert.equal(visibleText(overlay).some(value => value.includes('removes ads')), false);
+  } finally {
+    if (store) await act(async () => { store.unmount(); });
+    if (overlay) await act(async () => { overlay.unmount(); });
+    mockNative.Platform.OS = previousOS;
+    useGame.setState({ overlay: null });
+  }
+});
+
+test('launch refresh invalidates cached ownership before applying a refund', async t => {
+  const previousState = useGame.getState();
+  const previousOS = mockNative.Platform.OS;
+  t.after(() => {
+    mockNative.Platform.OS = previousOS;
+    useGame.setState({
+      goIndieActive: previousState.goIndieActive,
+      goIndieResolved: previousState.goIndieResolved,
+      goIndieRateStartsAt: previousState.goIndieRateStartsAt,
+      launchEarningsCutoff: previousState.launchEarningsCutoff,
+      pendingLaunchInterval: previousState.pendingLaunchInterval,
+      pendingOwnerBonus: previousState.pendingOwnerBonus,
+    });
+  });
+
+  mockNative.Platform.OS = 'ios';
+  useGame.setState({
+    goIndieActive: true,
+    goIndieResolved: true,
+    goIndieRateStartsAt: null,
+    pendingLaunchInterval: null,
+    pendingOwnerBonus: { revision: 0, amount: 0 },
+  });
+  customer = { promise: Promise.resolve(info(false)) };
+  customerInfoBoundaryCalls.length = 0;
+  delete require.cache[require.resolve('../src/monetization/purchases.ts')];
+  const launchPurchases = require('../src/monetization/purchases.ts');
+
+  assert.equal(await launchPurchases.initPurchases(), false);
+  assert.deepEqual(
+    customerInfoBoundaryCalls,
+    ['invalidate', 'getCustomerInfo', 'listener'],
+  );
+  assert.equal(useGame.getState().goIndieActive, false);
+  assert.equal(useGame.getState().goIndieResolved, true);
+  assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), true);
+});

@@ -557,7 +557,7 @@ test('offline owner bonuses remain pending until definitive entitlement settleme
   });
 
   assert.equal(launch.earned, 720);
-  assert.deepEqual(launch.pendingOwnerBonus, { amount: 720 });
+  assert.deepEqual(launch.pendingOwnerBonus, { revision: 1, amount: 720 });
   const persisted = JSON.parse(JSON.stringify(selectPersistedState({
     cash: launch.earned,
     pendingOwnerBonus: launch.pendingOwnerBonus,
@@ -570,7 +570,7 @@ test('offline owner bonuses remain pending until definitive entitlement settleme
   );
   assert.deepEqual(settlement, {
     earned: 720,
-    pendingOwnerBonus: { amount: 0 },
+    pendingOwnerBonus: { revision: 2, amount: 0 },
   });
   assert.deepEqual(settlePendingOwnerBonus(settlement.pendingOwnerBonus, true), {
     earned: 0,
@@ -580,7 +580,7 @@ test('offline owner bonuses remain pending until definitive entitlement settleme
   const discarded = settlePendingOwnerBonus(launch.pendingOwnerBonus, false);
   assert.deepEqual(discarded, {
     earned: 0,
-    pendingOwnerBonus: { amount: 0 },
+    pendingOwnerBonus: { revision: 2, amount: 0 },
   });
   assert.equal(settlePendingOwnerBonus(discarded.pendingOwnerBonus, true).earned, 0);
 });
@@ -625,12 +625,12 @@ test('offline earnings aggregate unresolved intervals and validate persisted deb
   });
 
   assert.equal(first.earned, 12.2);
-  assert.deepEqual(second.pendingOwnerBonus, { amount: 24.4 });
+  assert.deepEqual(second.pendingOwnerBonus, { revision: 2, amount: 24.4 });
   assert.equal(confirmed.earned, 24.4);
   assert.deepEqual(confirmed.pendingOwnerBonus, emptyPendingOwnerBonus());
   assert.equal(free.earned, 12.2);
   assert.deepEqual(free.pendingOwnerBonus, emptyPendingOwnerBonus());
-  assert.deepEqual(parsePendingOwnerBonus({ revision: 1, amount: 720 }), { amount: 720 });
+  assert.deepEqual(parsePendingOwnerBonus({ revision: 1, amount: 720 }), { revision: 1, amount: 720 });
   for (const malformed of [
     undefined,
     { amount: -1 },

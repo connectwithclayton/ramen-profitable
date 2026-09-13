@@ -1,7 +1,8 @@
 /**
  * RevenueCat integration — the HAMM Award centerpiece.
  *
- * "Go Indie" is a non-consumable unlock that upgrades your in-game character.
+ * "Go Indie" is a non-consumable unlock that doubles offline earnings and,
+ * on iOS, removes the Catvertising banner.
  *
  * react-native-purchases requires a development build for real purchases.
  * When the native module or the appropriate environment key is unavailable,
@@ -9,6 +10,7 @@
  */
 
 import Constants from 'expo-constants';
+import { useGame } from '../state/gameStore';
 
 type NativePlatform = 'ios' | 'android';
 
@@ -80,6 +82,10 @@ export function selectRevenueCatApiKey(
 let Purchases: any = null;
 let RevenueCatUI: any = null;
 let mockMode = true;
+let nextCustomerInfoRevision = 0;
+let appliedCustomerInfoRevision = 0;
+let ignoreNegativeCustomerInfoThroughRevision = 0;
+let postPurchaseConfirmationPending = false;
 let initializationPromise: Promise<boolean | null> | null = null;
 
 const GO_INDIE_ENTITLEMENT = 'go_indie';
@@ -112,11 +118,63 @@ function isGoIndieActive(customerInfo: any): boolean {
   return customerInfo?.entitlements?.active?.[GO_INDIE_ENTITLEMENT] !== undefined;
 }
 
-async function refreshGoIndieEntitlement(): Promise<boolean | null> {
+function beginCustomerInfoOperation(): number {
+  return ++nextCustomerInfoRevision;
+}
+
+function confirmedGoIndieOwnership(): boolean | null {
+  const ownership = useGame.getState();
+  return ownership.goIndieResolved ? ownership.goIndieActive : null;
+}
+
+function applyGoIndieOwnership(active: boolean): void {
+  useGame.getState().setGoIndieActive(active);
+}
+
+function applyCustomerInfo(customerInfo: any, revision: number): boolean | null {
+  if (revision <= appliedCustomerInfoRevision) return confirmedGoIndieOwnership();
+  const active = isGoIndieActive(customerInfo);
+  if (
+    !active &&
+    (revision <= ignoreNegativeCustomerInfoThroughRevision || postPurchaseConfirmationPending)
+  ) {
+    return confirmedGoIndieOwnership();
+  }
+  appliedCustomerInfoRevision = revision;
+  applyGoIndieOwnership(active);
+  return active;
+}
+
+function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
+  const active = isGoIndieActive(customerInfo);
+  if (active) {
+    ignoreNegativeCustomerInfoThroughRevision = Math.max(
+      ignoreNegativeCustomerInfoThroughRevision,
+      nextCustomerInfoRevision,
+    );
+    applyGoIndieOwnership(true);
+    return true;
+  }
+
+  const ownership = useGame.getState();
+  if (
+    postPurchaseConfirmationPending ||
+    (ownership.goIndieResolved && ownership.goIndieActive)
+  ) {
+    return confirmedGoIndieOwnership();
+  }
+
+  applyGoIndieOwnership(false);
+  return false;
+}
+
+async function refreshGoIndieEntitlement(invalidateCache = false): Promise<boolean | null> {
   if (mockMode || !Purchases) return null;
+  const revision = beginCustomerInfoOperation();
   try {
+    if (invalidateCache) await Purchases.invalidateCustomerInfoCache();
     const info = await Purchases.getCustomerInfo();
-    return isGoIndieActive(info);
+    return applyCustomerInfo(info, revision);
   } catch (e) {
     console.warn('[purchases] Could not refresh CustomerInfo.', e);
     return null;
@@ -145,7 +203,11 @@ async function configurePurchases(): Promise<boolean | null> {
     Purchases.configure({ apiKey: selection.apiKey });
     mockMode = false;
     console.log(`[purchases] RevenueCat configured for ${selection.environment}.`);
-    return refreshGoIndieEntitlement();
+    const ownership = await refreshGoIndieEntitlement(true);
+    Purchases.addCustomerInfoUpdateListener((info: any) => {
+      applyCustomerInfoUpdate(info);
+    });
+    return ownership;
   } catch (e) {
     console.log('[purchases] Native module unavailable (Expo Go?) — mock mode.', e);
     return null;
@@ -182,7 +244,28 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
 
     const result = await RevenueCatUI.presentPaywall({ offering });
     if (result === uiMod.PAYWALL_RESULT.PURCHASED || result === uiMod.PAYWALL_RESULT.RESTORED) {
-      return refreshGoIndieEntitlement();
+      // The UI result alone is not the go_indie entitlement. Fail closed if confirmation is missing.
+      ignoreNegativeCustomerInfoThroughRevision = nextCustomerInfoRevision;
+      postPurchaseConfirmationPending = true;
+      const ownership = useGame.getState();
+      if (!ownership.goIndieResolved || !ownership.goIndieActive) {
+        useGame.setState({ goIndieResolved: false });
+      }
+      let active: boolean | null = null;
+      try {
+        active = await refreshGoIndieEntitlement();
+      } finally {
+        postPurchaseConfirmationPending = false;
+      }
+      if (active !== true) {
+        const currentOwnership = useGame.getState();
+        if (currentOwnership.goIndieResolved && currentOwnership.goIndieActive) {
+          return true;
+        }
+        useGame.setState({ goIndieResolved: false });
+        return null;
+      }
+      return true;
     }
     return null;
   } catch (e) {
@@ -194,9 +277,10 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
 export async function restoreGoIndiePurchases(): Promise<boolean | null> {
   await initPurchases();
   if (mockMode || !Purchases) return null;
+  const revision = beginCustomerInfoOperation();
   try {
     const customerInfo = await Purchases.restorePurchases();
-    return isGoIndieActive(customerInfo);
+    return applyCustomerInfo(customerInfo, revision);
   } catch (e) {
     console.warn('[purchases] restore failed', e);
     return null;

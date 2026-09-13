@@ -41,9 +41,9 @@ Design decisions worth knowing:
   entitlement flags, and in-flight Home priority timers stay out of storage so
   you never rehydrate into a stale modal or a covered countdown.
 - **Offline earnings** credit the base interval from `lastSeen` immediately on
-  foreground, capped at 8h. If a remembered Go Indie owner is still awaiting
-  entitlement confirmation, that interval's owner bonus stays pending on
-  `lastSeen` and settles exactly once when the entitlement is known.
+  foreground, capped at 8h. A remembered Go Indie owner's unconfirmed remainder
+  settles exactly once when entitlement is known; the rate-split and lastSeen
+  contracts live in [`docs/ADMOB_SETUP.md`](docs/ADMOB_SETUP.md#entitlements-and-consent).
 - **Go Indie** opens the remotely configured RevenueCat Paywall only after a
   deliberate Go Indie tap from the approved-app affordance or Store. There is
   no launch paywall. The lifetime unlock doubles offline earnings only after
@@ -127,3 +127,7 @@ variable.
 | App MRR roll | `resolveReview` | $40–200 base |
 | Win condition | `MRR_GOAL` | $2,000 MRR |
 | Day length | `slowTick` | ~30s real time |
+
+## Catvertising advertising
+
+On iPhone and iPad, the Store contains a real AdMob banner inside its fictional phone; Go Indie removes it. Android contains no advertising. See [AdMob setup, release guards, and privacy handoff](docs/ADMOB_SETUP.md). Ads require a rebuilt native development client and resolved RevenueCat ownership. The general-audience integration sends no child or under-age treatment signals and requests only non-personalized banners.

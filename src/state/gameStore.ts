@@ -20,13 +20,12 @@ import {
   advanceHomeReactionExposure,
   calculatePaywallTransaction,
   emptyPendingOwnerBonus,
-  offlineEarningsTransition,
   paywallReaction,
+  parseGoIndieRateStartsAt,
   parsePendingOwnerBonus,
   priorityHomeReactionState,
   resolveGameEvent,
   selectPersistedState,
-  settlePendingOwnerBonus,
   tapReactionKind,
 } from './experience';
 import type {
@@ -107,12 +106,33 @@ export type GameState = {
   goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
-  lastSeen: number; // epoch ms; identity for base offline credit and pending owner bonus
+  lastSeen: number; // epoch ms; interval identity for base offline credit
+  goIndieRateStartsAt: number | null;
   pendingOwnerBonus: PendingOwnerBonus;
   homePriority?: HomePriority;
   homePrioritySecondsLeft: number;
   homeReceipt?: HomeReceipt;
   homeReceiptSecondsLeft: number;
+};
+
+type PendingLaunchInterval =
+  | {
+      phase: 'hydrating';
+      completedLifecycleUnits: number;
+      backgroundedAt: number | null;
+    }
+  | {
+      phase: 'ready';
+      from: number;
+      mrr: number;
+      persistedOwner: boolean;
+      goIndieRateStartsAt: number | null;
+      completedLifecycleUnits: number;
+    };
+
+type RuntimeState = GameState & {
+  launchEarningsCutoff: number | null;
+  pendingLaunchInterval: PendingLaunchInterval | null | undefined;
 };
 
 type Actions = {
@@ -137,14 +157,145 @@ type Actions = {
   openPaywallDesigner: (appId: string) => void;
   applyPaywall: (appId: string, picks: Record<string, string>) => void;
   unlock: (id: string) => void;
+  applyLaunchOfflineEarnings: () => number;
   applyOfflineEarnings: () => number;
+  reconcilePendingLaunchEarnings: () => number;
+  discardPendingLaunchHydration: () => void;
   touchLastSeen: () => void;
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 
-const initial: GameState = {
+function offlineEarningUnitsBetween(from: number, until: number): number {
+  const awayMs = until - from;
+  if (awayMs < 60_000) return 0;
+  const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
+  return cappedSec / 5;
+}
+
+function offlineEarningsForUnits(
+  mrr: number,
+  units: number,
+  multiplier: number,
+): number {
+  if (mrr <= 0 || units <= 0) return 0;
+  return (mrr / 120) * units * multiplier;
+}
+
+function offlineEarningsBetween(
+  mrr: number,
+  from: number,
+  until: number,
+  multiplier: number,
+): number {
+  return offlineEarningsForUnits(
+    mrr,
+    offlineEarningUnitsBetween(from, until),
+    multiplier,
+  );
+}
+
+function ownerBonusEarningsBetween(
+  mrr: number,
+  from: number,
+  until: number,
+  ownerRateStartsAt: number | null,
+): number {
+  const totalUnits = offlineEarningUnitsBetween(from, until);
+  if (totalUnits <= 0) return 0;
+  if (ownerRateStartsAt === null || ownerRateStartsAt <= from) {
+    return offlineEarningsForUnits(mrr, totalUnits, 1);
+  }
+  const cappedUntil = Math.min(until, from + 8 * 3600 * 1000);
+  const ownerUnits = Math.max(0, cappedUntil - ownerRateStartsAt) / 5000;
+  return offlineEarningsForUnits(mrr, ownerUnits, 1);
+}
+
+function appendPendingOwnerBonus(
+  pendingOwnerBonus: PendingOwnerBonus,
+  amount: number,
+): PendingOwnerBonus {
+  if (amount <= 0) return pendingOwnerBonus;
+  return {
+    revision: pendingOwnerBonus.revision + 1,
+    amount: pendingOwnerBonus.amount + amount,
+  };
+}
+
+function reconcileLaunchCredits(
+  pendingLaunchInterval: PendingLaunchInterval | null | undefined,
+  cutoff: number | null,
+  pendingOwnerBonus: PendingOwnerBonus,
+  ownership: boolean | null,
+  goIndieRateStartsAt: number | null,
+): {
+  earned: number;
+  pendingLaunchInterval: PendingLaunchInterval | null | undefined;
+  pendingOwnerBonus: PendingOwnerBonus;
+  goIndieRateStartsAt: number | null;
+} {
+  let earned = 0;
+  let nextLaunchInterval = pendingLaunchInterval;
+  let nextOwnerBonus = pendingOwnerBonus;
+  let nextGoIndieRateStartsAt = goIndieRateStartsAt;
+
+  if (pendingLaunchInterval?.phase === 'ready' && cutoff !== null) {
+    const launchBase = offlineEarningsBetween(
+      pendingLaunchInterval.mrr,
+      pendingLaunchInterval.from,
+      cutoff,
+      1,
+    );
+    const completedLifecycleBase = offlineEarningsForUnits(
+      pendingLaunchInterval.mrr,
+      pendingLaunchInterval.completedLifecycleUnits,
+      1,
+    );
+    const base = launchBase + completedLifecycleBase;
+    earned += base;
+    let ownerBonus = 0;
+    if (pendingLaunchInterval.persistedOwner && base > 0) {
+      const eligibleOwnerBonus =
+        ownerBonusEarningsBetween(
+          pendingLaunchInterval.mrr,
+          pendingLaunchInterval.from,
+          cutoff,
+          pendingLaunchInterval.goIndieRateStartsAt,
+        ) + completedLifecycleBase;
+      if (ownership === true) {
+        earned += eligibleOwnerBonus;
+      } else if (ownership === null) {
+        ownerBonus = eligibleOwnerBonus;
+      }
+    }
+    if (base > 0) {
+      nextOwnerBonus = {
+        revision: nextOwnerBonus.revision + 1,
+        amount: nextOwnerBonus.amount + ownerBonus,
+      };
+    }
+    nextLaunchInterval = null;
+    nextGoIndieRateStartsAt = null;
+  }
+
+  if (ownership !== null && nextOwnerBonus.amount > 0) {
+    if (ownership) earned += nextOwnerBonus.amount;
+    nextOwnerBonus = {
+      revision: nextOwnerBonus.revision + 1,
+      amount: 0,
+    };
+  }
+
+  return {
+    earned,
+    pendingLaunchInterval: nextLaunchInterval,
+    pendingOwnerBonus: nextOwnerBonus,
+    goIndieRateStartsAt: nextGoIndieRateStartsAt,
+  };
+}
+
+const initial: RuntimeState = {
   day: 1,
   dayTick: 0,
   cash: 120,
@@ -170,15 +321,18 @@ const initial: GameState = {
   won: false,
   achievements: {},
   lastSeen: Date.now(),
+  goIndieRateStartsAt: null,
   pendingOwnerBonus: emptyPendingOwnerBonus(),
   homePriority: undefined,
   homePrioritySecondsLeft: 0,
   homeReceipt: undefined,
   homeReceiptSecondsLeft: 0,
+  launchEarningsCutoff: null,
+  pendingLaunchInterval: undefined,
 };
 
-export const useGame = create<GameState & Actions>()(
-  persist(
+export const useGame = create<RuntimeState & Actions>()(
+  persist<RuntimeState & Actions, [], [], Partial<GameState>>(
     (set, get) => ({
       ...initial,
 
@@ -336,12 +490,35 @@ export const useGame = create<GameState & Actions>()(
 
       setGoIndieActive: active => {
         set(state => {
-          const settlement = settlePendingOwnerBonus(state.pendingOwnerBonus, active);
+          const ownershipActivated = active && !state.goIndieActive;
+          const confirmationTime = ownershipActivated ? Date.now() : null;
+          const hasNewerLifecycleClock =
+            state.launchEarningsCutoff !== null &&
+            state.lastSeen > state.launchEarningsCutoff;
+          const reconciliation = reconcileLaunchCredits(
+            state.pendingLaunchInterval,
+            state.launchEarningsCutoff,
+            state.pendingOwnerBonus,
+            active,
+            state.goIndieRateStartsAt,
+          );
+          const goIndieRateStartsAt =
+            ownershipActivated && state.pendingLaunchInterval === null
+              ? confirmationTime
+              : reconciliation.goIndieRateStartsAt;
+          // First-session confirmation must not persist the launch cutoff as lastSeen:
+          // relaunch would then repay already-ticked foreground time as an away interval.
+          // A later away start is already protected by hasNewerLifecycleClock.
           return {
-            cash: state.cash + settlement.earned,
+            ...(ownershipActivated && !hasNewerLifecycleClock
+              ? { lastSeen: confirmationTime as number }
+              : {}),
+            cash: state.cash + reconciliation.earned,
             goIndieActive: active,
             goIndieResolved: true,
-            pendingOwnerBonus: settlement.pendingOwnerBonus,
+            goIndieRateStartsAt: active ? goIndieRateStartsAt : null,
+            pendingLaunchInterval: reconciliation.pendingLaunchInterval,
+            pendingOwnerBonus: reconciliation.pendingOwnerBonus,
           };
         });
       },
@@ -499,28 +676,154 @@ export const useGame = create<GameState & Actions>()(
         s.pushNotif('Achievement: ' + a.name, a.drawnIcon ? 'achievement' : undefined, a.drawnIcon ? undefined : a.icon);
       },
 
+      applyLaunchOfflineEarnings: () => {
+        const s = get();
+        if (s.launchEarningsCutoff !== null) {
+          return s.reconcilePendingLaunchEarnings();
+        }
+        const cutoff = Date.now();
+        const ownership = s.goIndieResolved ? s.goIndieActive : null;
+        const pendingLaunchInterval =
+          s.pendingLaunchInterval === undefined
+            ? {
+                phase: 'hydrating' as const,
+                completedLifecycleUnits: 0,
+                backgroundedAt: null,
+              }
+            : s.pendingLaunchInterval;
+        const reconciliation = reconcileLaunchCredits(
+          pendingLaunchInterval,
+          cutoff,
+          s.pendingOwnerBonus,
+          ownership,
+          s.goIndieRateStartsAt,
+        );
+        const earned = reconciliation.earned + (pendingLaunchInterval
+          ? 0
+          : offlineEarningsBetween(s.mrr, s.lastSeen, cutoff, 1) +
+            (ownership === true
+              ? ownerBonusEarningsBetween(
+                  s.mrr,
+                  s.lastSeen,
+                  cutoff,
+                  s.goIndieRateStartsAt,
+                )
+              : 0));
+        set({
+          cash: s.cash + earned,
+          lastSeen: cutoff,
+          goIndieRateStartsAt: null,
+          launchEarningsCutoff: cutoff,
+          pendingLaunchInterval: reconciliation.pendingLaunchInterval,
+          pendingOwnerBonus: reconciliation.pendingOwnerBonus,
+        });
+        return earned;
+      },
       applyOfflineEarnings: () => {
         const now = Date.now();
         let earned = 0;
         set(s => {
-          const transition = offlineEarningsTransition({
-            mrr: s.mrr,
-            from: s.lastSeen,
-            until: now,
-            ownership: s.goIndieResolved ? s.goIndieActive : null,
-            rememberedOwner: s.goIndieActive,
-            pendingOwnerBonus: s.pendingOwnerBonus,
-          });
-          earned = transition.earned;
+          if (s.pendingLaunchInterval?.phase === 'hydrating') {
+            const backgroundedAt = s.pendingLaunchInterval.backgroundedAt;
+            return {
+              lastSeen: now,
+              pendingLaunchInterval: {
+                ...s.pendingLaunchInterval,
+                completedLifecycleUnits:
+                  s.pendingLaunchInterval.completedLifecycleUnits +
+                  (backgroundedAt === null
+                    ? 0
+                    : offlineEarningUnitsBetween(backgroundedAt, now)),
+                backgroundedAt: null,
+              },
+            };
+          }
+          const ownership = s.goIndieResolved ? s.goIndieActive : null;
+          const base = offlineEarningsBetween(s.mrr, s.lastSeen, now, 1);
+          const ownerBonus = ownership === true
+            ? ownerBonusEarningsBetween(
+                s.mrr,
+                s.lastSeen,
+                now,
+                s.goIndieRateStartsAt,
+              )
+            : 0;
+          earned = base + ownerBonus;
           return {
             cash: s.cash + earned,
             lastSeen: now,
-            pendingOwnerBonus: transition.pendingOwnerBonus,
+            goIndieRateStartsAt: null,
+            pendingOwnerBonus:
+              ownership === null && s.goIndieActive
+                ? appendPendingOwnerBonus(
+                    s.pendingOwnerBonus,
+                    ownerBonusEarningsBetween(
+                      s.mrr,
+                      s.lastSeen,
+                      now,
+                      s.goIndieRateStartsAt,
+                    ),
+                  )
+                : s.pendingOwnerBonus,
           };
         });
         return earned;
       },
-      touchLastSeen: () => set({ lastSeen: Date.now() }),
+      reconcilePendingLaunchEarnings: () => {
+        const s = get();
+        const ownership = s.goIndieResolved ? s.goIndieActive : null;
+        if (
+          (s.pendingLaunchInterval?.phase !== 'ready' ||
+            s.launchEarningsCutoff === null) &&
+          (ownership === null || s.pendingOwnerBonus.amount === 0)
+        ) {
+          return 0;
+        }
+        const result = reconcileLaunchCredits(
+          s.pendingLaunchInterval,
+          s.launchEarningsCutoff,
+          s.pendingOwnerBonus,
+          ownership,
+          s.goIndieRateStartsAt,
+        );
+        if (
+          result.earned !== 0 ||
+          result.pendingLaunchInterval !== s.pendingLaunchInterval ||
+          result.pendingOwnerBonus !== s.pendingOwnerBonus
+        ) {
+          set({
+            cash: s.cash + result.earned,
+            goIndieRateStartsAt: result.goIndieRateStartsAt,
+            pendingLaunchInterval: result.pendingLaunchInterval,
+            pendingOwnerBonus: result.pendingOwnerBonus,
+          });
+        }
+        return result.earned;
+      },
+      discardPendingLaunchHydration: () => {
+        const pendingLaunchInterval = get().pendingLaunchInterval;
+        if (
+          pendingLaunchInterval === undefined ||
+          pendingLaunchInterval?.phase === 'hydrating'
+        ) {
+          set({ pendingLaunchInterval: null });
+        }
+      },
+      touchLastSeen: () => {
+        const now = Date.now();
+        set(s => ({
+          lastSeen: now,
+          goIndieRateStartsAt: null,
+          ...(s.pendingLaunchInterval?.phase === 'hydrating'
+            ? {
+                pendingLaunchInterval: {
+                  ...s.pendingLaunchInterval,
+                  backgroundedAt: now,
+                },
+              }
+            : {}),
+        }));
+      },
     }),
     {
       name: 'ramen-profitable-v1',
@@ -543,10 +846,75 @@ export const useGame = create<GameState & Actions>()(
         return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
-      merge: (persisted, current) => ({
-        ...current,
-        ...selectPersistedState(persisted, BETA_TESTER),
-      }),
+      merge: (persisted, current) => {
+        const persistedState = selectPersistedState(persisted, BETA_TESTER);
+        const persistedOwnerBonus = parsePendingOwnerBonus(
+          persistedState.pendingOwnerBonus,
+        );
+        const persistedGoIndieRateStartsAt = parseGoIndieRateStartsAt(
+          persistedState.goIndieRateStartsAt,
+        );
+        const preserveCurrentOwnerBonus =
+          current.pendingOwnerBonus.revision > persistedOwnerBonus.revision ||
+          (current.pendingOwnerBonus.revision === persistedOwnerBonus.revision &&
+            current.pendingOwnerBonus.revision > 0);
+        const completedLifecycleUnits =
+          current.pendingLaunchInterval?.phase === 'hydrating'
+            ? current.pendingLaunchInterval.completedLifecycleUnits
+            : 0;
+        const savedLaunchInterval =
+          typeof persistedState.lastSeen === 'number' &&
+          Number.isFinite(persistedState.lastSeen) &&
+          typeof persistedState.mrr === 'number' &&
+          Number.isFinite(persistedState.mrr)
+            ? {
+                phase: 'ready' as const,
+                from: persistedState.lastSeen,
+                mrr: persistedState.mrr,
+                persistedOwner: persistedState.goIndieActive === true,
+                goIndieRateStartsAt: persistedGoIndieRateStartsAt,
+                completedLifecycleUnits,
+              }
+            : null;
+        const useSavedLaunchInterval =
+          current.pendingLaunchInterval === undefined ||
+          current.pendingLaunchInterval?.phase === 'hydrating';
+        return {
+          ...current,
+          ...persistedState,
+          pendingLaunchInterval:
+            useSavedLaunchInterval
+              ? savedLaunchInterval
+              : current.pendingLaunchInterval,
+          goIndieRateStartsAt: useSavedLaunchInterval
+            ? savedLaunchInterval?.goIndieRateStartsAt ?? null
+            : current.goIndieRateStartsAt,
+          ...(preserveCurrentOwnerBonus
+            ? {
+                cash: current.cash,
+                pendingOwnerBonus: current.pendingOwnerBonus,
+              }
+            : { pendingOwnerBonus: persistedOwnerBonus }),
+          ...(current.goIndieResolved
+            ? {
+                goIndieActive: current.goIndieActive,
+              }
+            : {}),
+          ...(current.launchEarningsCutoff !== null ||
+          (current.goIndieResolved &&
+            current.goIndieActive &&
+            persistedState.goIndieActive !== true)
+            ? { lastSeen: current.lastSeen }
+            : {}),
+        };
+      },
+      onRehydrateStorage: stateBeforeHydration => (state, error) => {
+        if (error) {
+          stateBeforeHydration.discardPendingLaunchHydration();
+          return;
+        }
+        state?.reconcilePendingLaunchEarnings();
+      },
       partialize: s => selectPersistedState(s, BETA_TESTER),
     }
   )
