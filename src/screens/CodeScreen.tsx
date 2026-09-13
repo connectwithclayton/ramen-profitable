@@ -15,6 +15,7 @@ import {
 } from '../components/ui';
 import { C } from '../theme';
 import { EnergyIcon, IdeaIcon, LaunchIcon } from '../components/icons';
+import { codeProgressStatus } from '../state/experience';
 
 const RING = 248;
 const R_BUILD = 110;
@@ -117,7 +118,13 @@ export default function CodeScreen() {
   const p = s.project;
   const spent = p ? Math.min(1, p.loc / p.need) : 0;
   const done = Boolean(p && p.loc >= p.need);
-  const drained = s.energy < 1;
+  const progressStatus = codeProgressStatus({
+    done,
+    energy: s.energy,
+    energyRegen: s.energyRegen,
+    autoCode: s.autoCode,
+  });
+  const drained = progressStatus.drained;
   const built = p ? Math.round((p.loc / p.need) * 100) : 0;
   const locText = p ? fmtN(p.loc) : '0';
   const locSize = locText.length > 7 ? 30 : locText.length > 5 ? 40 : 54;
@@ -171,8 +178,17 @@ export default function CodeScreen() {
           </View>
 
           <MonoText style={[st.prompt, drained && !done && { color: C.pink }]}>
-            {done ? 'SHIP IT AND FIND OUT' : drained ? 'OUT OF ENERGY · REGENERATING' : 'TAP THE RING TO WRITE CODE'}
+            {progressStatus.prompt}
           </MonoText>
+
+          {progressStatus.manualTapLabel && (
+            <MonoText
+              accessibilityLabel={progressStatus.manualTapAccessibilityLabel}
+              style={st.waitText}
+            >
+              {progressStatus.manualTapLabel}
+            </MonoText>
+          )}
 
           {done && (
             <Btn
@@ -257,6 +273,7 @@ const st = StyleSheet.create({
   floatText: { color: C.mint, fontSize: 13, fontWeight: '700' },
 
   prompt: { color: C.mut, fontSize: 10, letterSpacing: 2, textAlign: 'center' },
+  waitText: { alignSelf: 'center', color: C.gold, fontSize: 10, letterSpacing: 0.8, marginTop: 11 },
   meta: {
     flexDirection: 'row',
     justifyContent: 'space-between',

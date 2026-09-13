@@ -7,9 +7,12 @@ import {
   StyleSheet,
   Platform,
   StyleProp,
+  ScrollViewProps,
   TextProps,
+  ViewProps,
   ViewStyle,
   TextStyle,
+  Insets,
 } from 'react-native';
 import Svg, { Defs, Rect as SvgRect, RadialGradient, Stop } from 'react-native-svg';
 import { C, R, S } from '../theme';
@@ -35,6 +38,7 @@ type BtnProps = ({ label: string; children?: never } | { label?: never; children
   ghost?: boolean;
   disabled?: boolean;
   small?: boolean;
+  hitSlop?: number | Insets;
   style?: ViewStyle;
 };
 
@@ -47,6 +51,7 @@ export function Btn({
   ghost,
   disabled,
   small,
+  hitSlop,
   style,
 }: BtnProps) {
   const textStyle = [st.btnText, ghost && { color: C.ink, fontWeight: '600' as const }, small && { fontSize: 13 }];
@@ -65,6 +70,7 @@ export function Btn({
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       disabled={disabled}
+      hitSlop={hitSlop}
       style={({ pressed }) => [
         st.btn,
         ghost && st.btnGhost,
@@ -114,9 +120,19 @@ export const money = (n: number) => `$${Math.floor(n).toLocaleString()}`;
  *               deliberately has no Hero container.
  * ------------------------------------------------------------------ */
 
-export function Screen({ children }: { children: React.ReactNode }) {
+type ScreenProps = Pick<ScrollViewProps, 'onLayout' | 'onScroll' | 'scrollEventThrottle'> & {
+  children: React.ReactNode;
+};
+
+export function Screen({ children, onLayout, onScroll, scrollEventThrottle }: ScreenProps) {
   return (
-    <ScrollView contentContainerStyle={st.screen} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={st.screen}
+      showsVerticalScrollIndicator={false}
+      onLayout={onLayout}
+      onScroll={onScroll}
+      scrollEventThrottle={scrollEventThrottle}
+    >
       {children}
     </ScrollView>
   );
@@ -197,13 +213,31 @@ export function SectionHeader({ title, meta, metaColor }: { title: string; meta?
   );
 }
 
-export function Section({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
-  return <View style={[st.section, style]}>{children}</View>;
+export function Section({
+  children,
+  style,
+  onLayout,
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+  onLayout?: ViewProps['onLayout'];
+}) {
+  return <View style={[st.section, style]} onLayout={onLayout}>{children}</View>;
 }
 
 /** A genuine unit: something that is one thing. The only shape that still gets a border. */
-export function Unit({ children, style, tone }: { children: React.ReactNode; style?: ViewStyle; tone?: string }) {
-  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]}>{children}</View>;
+export function Unit({
+  children,
+  style,
+  tone,
+  onLayout,
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+  tone?: string;
+  onLayout?: ViewProps['onLayout'];
+}) {
+  return <View style={[st.unit, tone ? { borderColor: tone } : null, style]} onLayout={onLayout}>{children}</View>;
 }
 
 export function Divider() {

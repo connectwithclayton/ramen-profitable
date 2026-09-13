@@ -1,7 +1,15 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import {
+  AppState,
+  Platform,
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+} from 'react-native';
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useGame, MRR_GOAL } from '../state/gameStore';
-import { ACHIEVEMENTS } from '../content/content';
+import { ACHIEVEMENTS, BETA_TESTER, SHOP } from '../content/content';
 import {
   Btn,
   Divider,
@@ -22,6 +30,165 @@ import {
 } from '../components/ui';
 import { C, R } from '../theme';
 import { AbTestIcon, DrawnIcon, EnergyIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
+import {
+  automationAffordabilityNudge,
+  createHomeExposureBuffer,
+  formatMrrDelta,
+  homeExposureMeasurement,
+  homeAutomationStatus,
+  homeEmptyProjectCopy,
+  homeProjectActionLabel,
+  mrrDirection,
+  selectHomeReaction,
+  verticalFrameExposureRate,
+} from '../state/experience';
+
+const HOME_CODE_ACTION_HIT_SLOP = { top: 8, bottom: 8 };
+
+function useForegroundExposure(
+  reactionId: string | undefined,
+  secondsLeft: number,
+  enabled: boolean,
+  record: (reactionId: string, elapsedSeconds: number) => void,
+  exposureRate = 1,
+) {
+  const exposureRateRef = React.useRef(exposureRate);
+  const transitionExposureRate = React.useRef<((nextRate: number) => void) | undefined>(undefined);
+  const focusedRef = React.useRef(true);
+
+  React.useLayoutEffect(() => {
+    transitionExposureRate.current?.(exposureRate);
+    exposureRateRef.current = exposureRate;
+  }, [exposureRate]);
+
+  React.useEffect(() => {
+    if (!enabled || !reactionId || secondsLeft <= 0) return;
+
+    let appState = AppState.currentState;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const measurement = (nextRate = exposureRateRef.current) =>
+      homeExposureMeasurement(appState, focusedRef.current, nextRate);
+    const buffer = createHomeExposureBuffer(
+      secondsLeft,
+      performance.now(),
+      measurement().rate,
+      elapsedSeconds => record(reactionId, elapsedSeconds),
+    );
+    const stopSampling = () => {
+      if (interval !== undefined) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    };
+    const sample = (nextRate = measurement().rate) => {
+      const closed = buffer.sample(performance.now(), nextRate);
+      if (closed) stopSampling();
+      return closed;
+    };
+    const flush = () => {
+      if (buffer.flush()) stopSampling();
+    };
+    const transition = (nextRate: number) => {
+      const { rate, persist } = measurement(nextRate);
+      if (!sample(rate) && persist) flush();
+    };
+    transitionExposureRate.current = transition;
+
+    interval = setInterval(() => sample(), 1000);
+    const appStateSubscription = AppState.addEventListener('change', nextState => {
+      appState = nextState;
+      transition(exposureRateRef.current);
+    });
+    const blurSubscription = Platform.OS === 'android'
+      ? AppState.addEventListener('blur', () => {
+          focusedRef.current = false;
+          transition(exposureRateRef.current);
+        })
+      : undefined;
+    const focusSubscription = Platform.OS === 'android'
+      ? AppState.addEventListener('focus', () => {
+          if (focusedRef.current) return;
+          focusedRef.current = true;
+          transition(exposureRateRef.current);
+        })
+      : undefined;
+
+    return () => {
+      if (transitionExposureRate.current === transition) {
+        transitionExposureRate.current = undefined;
+      }
+      if (!sample(0)) flush();
+      stopSampling();
+      appStateSubscription.remove();
+      blurSubscription?.remove();
+      focusSubscription?.remove();
+    };
+  }, [enabled, reactionId, record, secondsLeft]);
+}
+
+function useHomeReactionViewport(
+  reactionId: string | undefined,
+  bottomOcclusion: number | undefined,
+) {
+  const viewport = React.useRef<{ y: number; height: number }>({ y: 0, height: 0 });
+  const sectionY = React.useRef<number | undefined>(undefined);
+  const card = React.useRef<{ y: number; height: number } | undefined>(undefined);
+  const currentReactionId = React.useRef(reactionId);
+  const [exposureRate, setExposureRate] = React.useState(0);
+
+  const updateExposure = React.useCallback(() => {
+    const cardFrame = sectionY.current === undefined || !card.current
+      ? undefined
+      : { y: sectionY.current + card.current.y, height: card.current.height };
+    const nextRate = verticalFrameExposureRate(
+      cardFrame,
+      viewport.current,
+      bottomOcclusion ?? viewport.current.height,
+    );
+    setExposureRate(current => current === nextRate ? current : nextRate);
+  }, [bottomOcclusion]);
+
+  React.useLayoutEffect(() => {
+    currentReactionId.current = reactionId;
+    sectionY.current = undefined;
+    card.current = undefined;
+    setExposureRate(0);
+  }, [reactionId]);
+
+  React.useLayoutEffect(() => {
+    updateExposure();
+  }, [updateExposure]);
+
+  const onViewportLayout = React.useCallback((event: LayoutChangeEvent) => {
+    viewport.current = { ...viewport.current, height: event.nativeEvent.layout.height };
+    updateExposure();
+  }, [updateExposure]);
+
+  const onViewportScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    viewport.current = {
+      y: event.nativeEvent.contentOffset.y,
+      height: event.nativeEvent.layoutMeasurement.height,
+    };
+    updateExposure();
+  }, [updateExposure]);
+
+  const onSectionLayout = React.useCallback((event: LayoutChangeEvent) => {
+    if (currentReactionId.current !== reactionId) return;
+    sectionY.current = event.nativeEvent.layout.y;
+    updateExposure();
+  }, [reactionId, updateExposure]);
+
+  const onCardLayout = React.useCallback((event: LayoutChangeEvent) => {
+    if (currentReactionId.current !== reactionId) return;
+    card.current = {
+      y: event.nativeEvent.layout.y,
+      height: event.nativeEvent.layout.height,
+    };
+    updateExposure();
+  }, [reactionId, updateExposure]);
+
+  return { exposureRate, onViewportLayout, onViewportScroll, onSectionLayout, onCardLayout };
+}
 
 /** One shipped app: monogram, what it is, what it earns, what you can do to it. */
 function AppRow({
@@ -96,16 +263,54 @@ function AppRow({
   );
 }
 
-export default function HomeScreen() {
+export default function HomeScreen({
+  bottomOcclusion,
+  onOpenCode,
+}: {
+  bottomOcclusion: number | undefined;
+  onOpenCode: () => void;
+}) {
   const s = useGame();
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
   const live = s.apps.filter(a => a.live).length;
   const unlocked = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
   const free = !s.hasJob;
   const canQuit = s.hasJob && s.mrr >= MRR_GOAL;
+  const reaction = selectHomeReaction({
+    chirps: s.chirps,
+    priority: s.homePriority,
+    prioritySecondsLeft: s.homePrioritySecondsLeft,
+    receipt: s.homeReceipt,
+    receiptSecondsLeft: s.homeReceiptSecondsLeft,
+    betaTester: BETA_TESTER,
+  });
+  const timedReactionSecondsLeft = reaction
+    ? Math.max(
+        reaction.id === s.homePriority?.id ? s.homePrioritySecondsLeft : 0,
+        reaction.id === s.homeReceipt?.id ? s.homeReceiptSecondsLeft : 0,
+      )
+    : 0;
+  const timedReactionId = timedReactionSecondsLeft > 0 ? reaction?.id : undefined;
+  const reactionViewport = useHomeReactionViewport(reaction?.id, bottomOcclusion);
+  useForegroundExposure(
+    timedReactionId,
+    timedReactionSecondsLeft,
+    s.overlay === null,
+    s.recordHomeReactionExposure,
+    reactionViewport.exposureRate,
+  );
+  const projectDone = Boolean(s.project && s.project.loc >= s.project.need);
+  const automationStatus = homeAutomationStatus(s.autoCode, s.project);
+  // This passive line keeps automation discoverable without taking Home's action or reaction slots.
+  const automationNudge = automationAffordabilityNudge(s.cash, s.upgrades, SHOP);
+  const emptyProjectCopy = homeEmptyProjectCopy(s.apps);
 
   return (
-    <Screen>
+    <Screen
+      onLayout={reactionViewport.onViewportLayout}
+      onScroll={reactionViewport.onViewportScroll}
+      scrollEventThrottle={16}
+    >
       <ScreenTop
         day={s.day}
         right={`${money(s.cash)} CASH`}
@@ -148,6 +353,30 @@ export default function HomeScreen() {
         )}
       </Hero>
 
+      {reaction && (
+        <Section key={reaction.id} onLayout={reactionViewport.onSectionLayout}>
+          <SectionHeader title="From Chirp" meta={reaction.event} />
+          <Unit
+            style={st.reaction}
+            tone={reaction.kind === 'paywall' ? C.pink : C.gold}
+            onLayout={reactionViewport.onCardLayout}
+          >
+            <View style={st.reactionByline}>
+              <Text style={st.reactionWho}>{reaction.who}</Text>
+              <MonoText style={st.reactionHandle}>{reaction.handle}</MonoText>
+            </View>
+            <Text style={st.reactionText}>{reaction.text}</Text>
+            {reaction.delta && (
+              <MonoText
+                style={[st.receipt, { color: mrrDirection(reaction.delta) === 'down' ? C.pink : C.mint }]}
+              >
+                {formatMrrDelta(reaction.delta)}
+              </MonoText>
+            )}
+          </Unit>
+        </Section>
+      )}
+
       <Section style={st.statusRow}>
         <Unit style={st.statUnit}>
           <View style={st.statTitle}>
@@ -176,6 +405,14 @@ export default function HomeScreen() {
         </Unit>
       </Section>
 
+      {automationNudge && (
+        <Section style={st.affordabilityNudge}>
+          <MonoText style={st.affordabilityNudgeText}>
+            {automationNudge.name.toUpperCase()} · {fmt(automationNudge.cost)} WITHIN BUDGET · {automationNudge.detail.toUpperCase()}
+          </MonoText>
+        </Section>
+      )}
+
       {s.goIndieResolved && s.goIndieActive && (
         <Section style={{ marginTop: S_GAP }}>
           <Unit tone={C.mint} style={st.indie}>
@@ -189,9 +426,50 @@ export default function HomeScreen() {
           title="Your apps"
           meta={s.apps.length ? `${live} OF ${s.apps.length} LIVE` : undefined}
         />
-        {s.apps.length === 0 ? (
-          <Text style={st.empty}>Nothing shipped yet. The Code tab awaits. Everyone starts at zero.</Text>
+        {s.project ? (
+          <Unit style={st.projectUnit} tone={projectDone ? C.mint : C.gold}>
+            <View style={st.projectTop}>
+              <View style={st.projectCopy}>
+                <Text style={st.projectName} numberOfLines={1}>{s.project.name}</Text>
+                <Text style={st.projectIdea} numberOfLines={2}>{s.project.idea}</Text>
+              </View>
+              <MonoText style={[st.projectState, projectDone && { color: C.mint }]}>
+                {projectDone ? 'READY' : Math.floor(s.project.loc) + ' / ' + s.project.need + ' LOC'}
+              </MonoText>
+            </View>
+            <Rail
+              pct={(s.project.loc / s.project.need) * 100}
+              tone={projectDone ? C.mint : C.gold}
+              height={5}
+              accessibilityLabel={'Build progress for ' + s.project.name}
+              accessibilityValue={{ now: Math.min(100, Math.round((s.project.loc / s.project.need) * 100)), min: 0, max: 100 }}
+            />
+            {automationStatus && (
+              <MonoText style={st.automation}>{automationStatus}</MonoText>
+            )}
+            <Btn
+              small
+              label={homeProjectActionLabel(s.project)}
+              onPress={onOpenCode}
+              hitSlop={HOME_CODE_ACTION_HIT_SLOP}
+              style={st.projectButton}
+            />
+          </Unit>
         ) : (
+          <Unit style={st.projectUnit}>
+            <Text style={st.empty}>
+              {emptyProjectCopy}
+            </Text>
+            <Btn
+              small
+              label={homeProjectActionLabel(s.project)}
+              onPress={onOpenCode}
+              hitSlop={HOME_CODE_ACTION_HIT_SLOP}
+              style={st.projectCta}
+            />
+          </Unit>
+        )}
+        {s.apps.length > 0 && (
           <View style={st.appList}>
             {s.apps.map((a, i) => (
               <View key={a.id}>
@@ -250,6 +528,13 @@ const st = StyleSheet.create({
   freeLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   freeText: { fontSize: 11, color: C.mint, letterSpacing: 1 },
 
+  reaction: { paddingVertical: 13 },
+  reactionByline: { flexDirection: 'row', alignItems: 'baseline', gap: 7 },
+  reactionWho: { color: C.ink, fontSize: 13, fontWeight: '700' },
+  reactionHandle: { color: C.dim, fontSize: 10 },
+  reactionText: { color: C.ink, fontSize: 14, lineHeight: 20, marginTop: 7 },
+  receipt: { fontSize: 10.5, marginTop: 8, letterSpacing: 0.25 },
+
   statusRow: { flexDirection: 'row', gap: S_GAP },
   statUnit: { flex: 1, justifyContent: 'flex-start' },
   statTitle: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -257,11 +542,23 @@ const st = StyleSheet.create({
   statValueMuted: { color: C.dim, fontSize: 14, fontWeight: '400' },
   statCaption: { color: C.mut, fontSize: 11, marginTop: 4 },
 
+  affordabilityNudge: { marginTop: S_GAP },
+  affordabilityNudgeText: { color: C.mut, fontSize: 9.5, lineHeight: 15, letterSpacing: 0.35 },
+
   indie: { paddingVertical: 9, alignItems: 'center' },
   indieText: { color: C.mint, fontSize: 10, letterSpacing: 1.2, fontWeight: '600' },
 
-  empty: { color: C.mut, fontSize: 13, lineHeight: 19, marginTop: 10 },
-  appList: { marginTop: 4 },
+  projectUnit: { marginTop: 10 },
+  projectTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
+  projectCopy: { flex: 1 },
+  projectName: { color: C.ink, fontWeight: '700', fontSize: 15 },
+  projectIdea: { color: C.mut, fontSize: 11.5, lineHeight: 16, marginTop: 3 },
+  projectState: { color: C.gold, fontSize: 10, letterSpacing: 0.4 },
+  automation: { color: C.mint, fontSize: 9.5, letterSpacing: 0.5, marginTop: 9 },
+  projectButton: { marginTop: 12 },
+  projectCta: { marginTop: 12 },
+  empty: { color: C.mut, fontSize: 13, lineHeight: 19 },
+  appList: { marginTop: 8 },
   appRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   appInfo: { flex: 1 },
   appName: { color: C.ink, fontWeight: '700', fontSize: 15 },

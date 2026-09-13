@@ -1,11 +1,50 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { APP_IDEAS, REJECTIONS, EVENTS, DARK_EVENTS, SHOP, CHIRPERS, MRR_GOAL, PAYWALL_AXES, ACHIEVEMENTS } from '../content/content';
+import {
+  ACHIEVEMENTS,
+  APP_IDEAS,
+  BETA_TESTER,
+  CHIRPERS,
+  DARK_EVENTS,
+  EVENTS,
+  MRR_GOAL,
+  PAYWALL_AXES,
+  PLAYER,
+  REJECTIONS,
+  SHOP,
+} from '../content/content';
 import type { IconName } from '../components/icons';
 import { pickAppIdea } from './projectIdeas';
+import {
+  advanceHomeReactionExposure,
+  calculatePaywallTransaction,
+  emptyPendingOwnerBonus,
+  offlineEarningsTransition,
+  paywallReaction,
+  parsePendingOwnerBonus,
+  priorityHomeReactionState,
+  resolveGameEvent,
+  selectPersistedState,
+  settlePendingOwnerBonus,
+  tapReactionKind,
+} from './experience';
+import type {
+  DurableHomeReceiptKind,
+  MrrDelta,
+  PendingOwnerBonus,
+  PaywallTransaction,
+  PriorityHomeReactionKind,
+} from './experience';
 
-export type Project = { name: string; idea: string; loc: number; need: number };
+export type Project = {
+  name: string;
+  idea: string;
+  loc: number;
+  need: number;
+  manualTaps: number;
+  depletionReactionDelivered: boolean;
+};
 export type ShippedApp = {
   id: string;
   name: string;
@@ -16,14 +55,30 @@ export type ShippedApp = {
   dark: number; // dark-pattern heat
   hasPaywall: boolean;
 };
-export type Chirp = { id: string; who: string; handle: string; text: string; likes: number; liked?: boolean };
+export type StoryKind = PriorityHomeReactionKind;
+export type Chirp = {
+  id: string;
+  who: string;
+  handle: string;
+  text: string;
+  likes: number;
+  liked?: boolean;
+  kind?: StoryKind;
+  event?: string;
+  delta?: MrrDelta;
+};
+export type HomePriority = Chirp & { kind: PriorityHomeReactionKind };
+export type HomeReceipt = Chirp & { kind: DurableHomeReceiptKind };
+type ChirpOptions = Omit<Partial<Chirp>, 'id' | 'who' | 'handle' | 'text' | 'likes' | 'liked'> & {
+  author?: readonly [string, string];
+};
 export type Notif = { id: string; text: string; icon?: IconName; emoji?: string };
 export type Overlay =
   | { type: 'review'; appName: string }
   | { type: 'verdict'; ok: boolean; appName: string; rule?: string; flavor?: string; gain?: number }
   | { type: 'paywall' }
   | { type: 'paywallDesigner'; appId: string }
-  | { type: 'paywallResult'; appId: string; mult: number; dark: number }
+  | { type: 'paywallResult'; appId: string; transaction: PaywallTransaction }
   | { type: 'win' }
   | null;
 
@@ -52,7 +107,12 @@ export type GameState = {
   goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
-  lastSeen: number; // epoch ms, for offline earnings
+  lastSeen: number; // epoch ms; identity for base offline credit and pending owner bonus
+  pendingOwnerBonus: PendingOwnerBonus;
+  homePriority?: HomePriority;
+  homePrioritySecondsLeft: number;
+  homeReceipt?: HomeReceipt;
+  homeReceiptSecondsLeft: number;
 };
 
 type Actions = {
@@ -67,10 +127,11 @@ type Actions = {
   quitJob: () => void;
   fastTick: () => void;
   slowTick: () => void;
+  recordHomeReactionExposure: (reactionId: string, elapsedSeconds: number) => void;
   maybeEvent: () => void;
   pushNotif: (text: string, icon?: IconName, emoji?: string) => void;
   expireNotif: (id: string) => void;
-  pushChirp: (text: string) => void;
+  pushChirp: (text: string, options?: ChirpOptions) => void;
   markChirpsRead: () => void;
   toggleChirpLike: (id: string) => void;
   openPaywallDesigner: (appId: string) => void;
@@ -82,22 +143,6 @@ type Actions = {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-
-const persistedStateKeys = [
-  'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
-  'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
-  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
-] as const satisfies readonly (keyof GameState)[];
-
-function selectPersistedState(value: unknown): Partial<GameState> {
-  if (!value || typeof value !== 'object') return {};
-  const source = value as Record<string, unknown>;
-  return Object.fromEntries(
-    persistedStateKeys
-      .filter(key => key in source)
-      .map(key => [key, source[key]]),
-  ) as Partial<GameState>;
-}
 
 const initial: GameState = {
   day: 1,
@@ -125,6 +170,11 @@ const initial: GameState = {
   won: false,
   achievements: {},
   lastSeen: Date.now(),
+  pendingOwnerBonus: emptyPendingOwnerBonus(),
+  homePriority: undefined,
+  homePrioritySecondsLeft: 0,
+  homeReceipt: undefined,
+  homeReceiptSecondsLeft: 0,
 };
 
 export const useGame = create<GameState & Actions>()(
@@ -138,10 +188,23 @@ export const useGame = create<GameState & Actions>()(
       },
       expireNotif: id => set(s => ({ notifs: s.notifs.filter(n => n.id !== id) })),
 
-      pushChirp: text => {
-        const [who, handle] = pick(CHIRPERS);
-        const c: Chirp = { id: uid(), who, handle, text, likes: Math.floor(Math.random() * 900) + 12 };
-        set(s => ({ chirps: [c, ...s.chirps].slice(0, 30), unreadChirps: true }));
+      pushChirp: (text, options) => {
+        const [who, handle] = options?.author ?? pick(CHIRPERS);
+        const { author: _author, ...metadata } = options ?? {};
+        const c: Chirp = {
+          id: uid(),
+          who,
+          handle,
+          text,
+          likes: Math.floor(Math.random() * 900) + 12,
+          ...metadata,
+        };
+        const homeReactionState = priorityHomeReactionState(c, BETA_TESTER);
+        set(s => ({
+          chirps: [c, ...s.chirps].slice(0, 30),
+          unreadChirps: true,
+          ...(homeReactionState ?? {}),
+        }));
       },
       markChirpsRead: () => set({ unreadChirps: false }),
       toggleChirpLike: id =>
@@ -158,8 +221,23 @@ export const useGame = create<GameState & Actions>()(
           ...(s.project ? [s.project.name] : []),
         ]);
         const [name, idea] = pickAppIdea(APP_IDEAS, usedNames);
-        set({ project: { name, idea, loc: 0, need: 250 + Math.floor(Math.random() * 250) } });
-        get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`);
+        const project: Project = {
+          name,
+          idea,
+          loc: 0,
+          need: 250 + Math.floor(Math.random() * 250),
+          manualTaps: 0,
+          depletionReactionDelivered: false,
+        };
+        set({ project });
+        get().pushChirp(`day 1 of building ${name} — ${idea}. who's in? #buildinpublic`, {
+          author: PLAYER,
+        });
+        get().pushChirp(`does ${name} have dark mode? haven't opened it yet.`, {
+          author: BETA_TESTER,
+          kind: 'milestone',
+          event: 'FIRST BETA REPLY',
+        });
       },
 
       tapCode: () => {
@@ -169,10 +247,40 @@ export const useGame = create<GameState & Actions>()(
           s.pushNotif('Out of energy. Coffee exists for a reason.', 'energy');
           return false;
         }
+        const nextLoc = s.project.loc + s.tapPower;
+        const nextEnergy = s.energy - 1;
+        const manualTaps = (s.project.manualTaps ?? 0) + 1;
+        const depletionReactionDelivered = s.project.depletionReactionDelivered ?? false;
+        const reactionKind = tapReactionKind(
+          manualTaps,
+          nextEnergy < 1 && nextLoc < s.project.need && s.autoCode <= 0,
+          depletionReactionDelivered,
+        );
         set({
-          energy: s.energy - 1,
-          project: { ...s.project, loc: s.project.loc + s.tapPower },
+          energy: nextEnergy,
+          project: {
+            ...s.project,
+            loc: nextLoc,
+            manualTaps,
+            depletionReactionDelivered:
+              depletionReactionDelivered || reactionKind === 'energy-depleted',
+          },
         });
+        if (reactionKind === 'ten-taps') {
+          get().pushChirp(`${Math.floor(nextLoc)} lines in and the launch thread is already longer than the app.`, {
+            author: BETA_TESTER,
+            kind: 'milestone',
+            event: 'TEN TAPS',
+          });
+        }
+        // This beat lands in the real regeneration wait and yields to the required ten-tap response.
+        if (reactionKind === 'energy-depleted') {
+          get().pushChirp('Have you tried delegating? My cat is between roles.', {
+            author: BETA_TESTER,
+            kind: 'milestone',
+            event: 'ENERGY DEPLETED',
+          });
+        }
         return true;
       },
 
@@ -194,18 +302,29 @@ export const useGame = create<GameState & Actions>()(
             project: null,
             overlay: { type: 'verdict', ok: false, appName: p.name, rule, flavor },
           });
-          s.pushChirp(`App Review rejected ${p.name}. ${rule}. i'm fine. this is fine.`);
+          s.pushChirp(`App Review rejected ${p.name}. ${rule}. i'm fine. this is fine.`, {
+            author: PLAYER,
+          });
           s.unlock('first_reject');
         } else {
           const base = 40 + Math.floor(Math.random() * 160);
           const gain = base * s.mrrMult;
+          const delta: MrrDelta = { before: s.mrr, after: s.mrr + gain };
           set({
             apps: [...s.apps, { id: uid(), name: p.name, idea: p.idea, live: true, baseMrr: base, mult: 1, dark: 0, hasPaywall: false }],
             mrr: s.mrr + gain,
             project: null,
             overlay: { type: 'verdict', ok: true, appName: p.name, gain },
           });
-          s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`);
+          s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`, {
+            author: PLAYER,
+          });
+          get().pushChirp(`${p.name} is live. congratulations. feature request: dark mode.`, {
+            author: BETA_TESTER,
+            kind: 'verdict',
+            event: 'BETA TESTER · APPROVED',
+            delta,
+          });
           s.unlock('first_ship');
           if (get().apps.filter(a => a.live).length >= 3) s.unlock('portfolio');
         }
@@ -216,27 +335,46 @@ export const useGame = create<GameState & Actions>()(
       openGoIndiePaywall: () => set({ overlay: { type: 'paywall' } }),
 
       setGoIndieActive: active => {
-        if (active) set({ lastSeen: Date.now() });
-        set({ goIndieActive: active, goIndieResolved: true });
+        set(state => {
+          const settlement = settlePendingOwnerBonus(state.pendingOwnerBonus, active);
+          return {
+            cash: state.cash + settlement.earned,
+            goIndieActive: active,
+            goIndieResolved: true,
+            pendingOwnerBonus: settlement.pendingOwnerBonus,
+          };
+        });
       },
 
       buy: id => {
         const s = get();
         const item = SHOP.find(i => i.id === id);
         if (!item || s.upgrades[id] || s.cash < item.cost) return;
+        const applied = item.apply(s);
         set({
           cash: s.cash - item.cost,
           upgrades: { ...s.upgrades, [id]: true },
-          ...item.apply(s),
+          ...applied,
         });
         s.pushNotif(`${item.name} acquired.`, 'store');
+        // The committed-rate purchase beat carries the automation joke; progress telemetry alone does not.
+        if (id === 'claude') {
+          const rate = typeof applied.autoCode === 'number' ? applied.autoCode : s.autoCode;
+          get().pushChirp(`${rate} LOC/sec. You have been promoted to code reviewer.`, {
+            author: BETA_TESTER,
+            kind: 'purchase',
+            event: 'AUTOMATION PURCHASED',
+          });
+        }
       },
 
       quitJob: () => {
         const s = get();
         if (s.mrr < MRR_GOAL) return;
         set({ hasJob: false, won: true, overlay: { type: 'win' } });
-        s.pushChirp(`i just quit my job. MRR $${Math.floor(s.mrr)}. hands are shaking. #indiehacker #shipaton`);
+        s.pushChirp(`i just quit my job. MRR $${Math.floor(s.mrr)}. hands are shaking. #indiehacker #shipaton`, {
+          author: PLAYER,
+        });
         s.unlock('ramen');
       },
 
@@ -253,7 +391,10 @@ export const useGame = create<GameState & Actions>()(
 
       slowTick: () => {
         const s = get();
-        const next: Partial<GameState> = { cash: s.cash + s.mrr / 120, dayTick: s.dayTick + 1 };
+        const next: Partial<GameState> = {
+          cash: s.cash + s.mrr / 120,
+          dayTick: s.dayTick + 1,
+        };
         if (s.dayTick + 1 >= 6) {
           next.dayTick = 0;
           next.day = s.day + 1;
@@ -267,6 +408,25 @@ export const useGame = create<GameState & Actions>()(
         if (s.mrr >= 1000) s.unlock('mrr_1000');
       },
 
+      recordHomeReactionExposure: (reactionId, elapsedSeconds) => {
+        const s = get();
+        const next = advanceHomeReactionExposure({
+          priority: s.homePriority,
+          prioritySecondsLeft: s.homePrioritySecondsLeft,
+          receipt: s.homeReceipt,
+          receiptSecondsLeft: s.homeReceiptSecondsLeft,
+          displayedReactionId: reactionId,
+          elapsedSeconds,
+        });
+        if (
+          next.homePriority === s.homePriority &&
+          next.homePrioritySecondsLeft === s.homePrioritySecondsLeft &&
+          next.homeReceipt === s.homeReceipt &&
+          next.homeReceiptSecondsLeft === s.homeReceiptSecondsLeft
+        ) return;
+        set(next);
+      },
+
       maybeEvent: () => {
         const s = get();
         if (!s.apps.some(a => a.live)) return;
@@ -274,9 +434,13 @@ export const useGame = create<GameState & Actions>()(
         const totalDark = s.apps.filter(a => a.live).reduce((n, a) => n + (a.dark ?? 0), 0);
         const useDark = totalDark >= 3 && Math.random() < 0.35;
         const ev = useDark ? pick(DARK_EVENTS) : pick(EVENTS);
-        set(ev.apply(s));
-        s.pushNotif(ev.text, ev.icon);
-        if (Math.random() < 0.4) s.pushChirp(ev.chirpText ?? ev.text);
+        const outcome = resolveGameEvent(ev, s);
+        if (!outcome) return;
+        set(outcome.patch);
+        s.pushNotif(outcome.text, ev.icon);
+        if (Math.random() < 0.4) {
+          s.pushChirp(outcome.chirpText);
+        }
       },
 
 
@@ -298,31 +462,32 @@ export const useGame = create<GameState & Actions>()(
         const s = get();
         const app = s.apps.find(a => a.id === appId);
         if (!app) return;
-        let mult = 1;
-        let dark = 0;
-        for (const axis of PAYWALL_AXES) {
-          const choice = axis.choices.find(c => c.id === picks[axis.id]);
-          if (choice) {
-            mult *= choice.mult;
-            dark += choice.dark;
-          }
-        }
-        mult = Math.round(mult * 100) / 100;
-        const oldContribution = app.baseMrr * (app.mult ?? 1) * s.mrrMult;
-        const newContribution = app.baseMrr * mult * s.mrrMult;
+        const transaction = calculatePaywallTransaction({
+          totalMrr: s.mrr,
+          mrrMult: s.mrrMult,
+          baseMrr: app.baseMrr,
+          previousMult: app.mult ?? 1,
+          picks,
+          axes: PAYWALL_AXES,
+        });
+        const { mult, dark } = transaction;
         set({
           apps: s.apps.map(a => (a.id === appId ? { ...a, mult, dark, hasPaywall: true } : a)),
-          mrr: Math.max(0, s.mrr - oldContribution + newContribution),
-          overlay: { type: 'paywallResult', appId, mult, dark },
+          mrr: transaction.delta.after,
+          overlay: { type: 'paywallResult', appId, transaction },
         });
         s.unlock('paywall_first');
         if (dark >= 5) {
           s.unlock('dark_side');
-          s.pushChirp(`just saw the new ${app.name} paywall... the X appears AFTER FIVE SECONDS?? screenshot saved.`);
         } else if (dark === 0) {
           s.unlock('saint');
-          s.pushChirp(`shoutout to ${app.name} for the most ethical paywall i've ever closed without paying`);
         }
+        get().pushChirp(paywallReaction(app.name, transaction, picks), {
+          author: BETA_TESTER,
+          kind: 'paywall',
+          event: `PAYWALL SHIPPED · HEAT ${dark}`,
+          delta: transaction.delta,
+        });
       },
 
       unlock: id => {
@@ -335,41 +500,54 @@ export const useGame = create<GameState & Actions>()(
       },
 
       applyOfflineEarnings: () => {
-        const s = get();
-        const awayMs = Date.now() - s.lastSeen;
-        if (awayMs < 60_000 || s.mrr <= 0) {
-          set({ lastSeen: Date.now() });
-          return 0;
-        }
-        // Earn cash at the live rate, capped at 8 hours away
-        const cappedSec = Math.min(awayMs / 1000, 8 * 3600);
-        const earned = (s.mrr / 120) * (cappedSec / 5) * (s.goIndieResolved && s.goIndieActive ? 2 : 1);
-        set({ cash: s.cash + earned, lastSeen: Date.now() });
+        const now = Date.now();
+        let earned = 0;
+        set(s => {
+          const transition = offlineEarningsTransition({
+            mrr: s.mrr,
+            from: s.lastSeen,
+            until: now,
+            ownership: s.goIndieResolved ? s.goIndieActive : null,
+            rememberedOwner: s.goIndieActive,
+            pendingOwnerBonus: s.pendingOwnerBonus,
+          });
+          earned = transition.earned;
+          return {
+            cash: s.cash + earned,
+            lastSeen: now,
+            pendingOwnerBonus: transition.pendingOwnerBonus,
+          };
+        });
         return earned;
       },
       touchLastSeen: () => set({ lastSeen: Date.now() }),
     }),
     {
       name: 'ramen-profitable-v1',
-      version: 2,
+      version: 5,
       migrate: (persisted: any) => {
-        const migrated = selectPersistedState(persisted);
+        const migrated = selectPersistedState(persisted, BETA_TESTER);
         if (migrated?.apps) {
           migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
         migrated.achievements = migrated.achievements ?? {};
         migrated.goIndieActive = migrated.goIndieActive ?? false;
+        migrated.pendingOwnerBonus = parsePendingOwnerBonus(migrated.pendingOwnerBonus);
+        if (migrated.project) {
+          migrated.project = {
+            ...migrated.project,
+            manualTaps: migrated.project.manualTaps ?? 0,
+            depletionReactionDelivered: migrated.project.depletionReactionDelivered ?? false,
+          };
+        }
         return migrated;
       },
       storage: createJSONStorage(() => AsyncStorage),
       merge: (persisted, current) => ({
         ...current,
-        ...selectPersistedState(persisted),
+        ...selectPersistedState(persisted, BETA_TESTER),
       }),
-      partialize: s => {
-        const { notifs, overlay, goIndieResolved, ...rest } = s as GameState;
-        return rest;
-      },
+      partialize: s => selectPersistedState(s, BETA_TESTER),
     }
   )
 );

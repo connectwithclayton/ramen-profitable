@@ -21,7 +21,8 @@ build is required for real RevenueCat Test Store purchases.
 
 ```
 App.tsx                     root: custom dock nav (no react-navigation — deliberate)
-src/state/gameStore.ts      zustand + AsyncStorage persist. ALL game logic lives here.
+src/state/gameStore.ts      zustand store actions and AsyncStorage persist wiring
+src/state/experience.ts     offline settlement, Home reactions, paywall receipts, persist allowlist
 src/systems/useGameLoop.ts  ticks (500ms/5s/22s) + offline earnings via AppState
 src/content/content.ts      every idea, event, rejection, upgrade — add content here
 src/components/             ui primitives, notification stack, overlay host
@@ -31,11 +32,18 @@ src/monetization/purchases.ts  RevenueCat wrapper, graceful mock in Expo Go
 
 Design decisions worth knowing:
 
-- **State-first:** screens are dumb renderers of the zustand store. Balancing =
-  editing numbers in `gameStore.ts` initial state and `content.ts`.
-- **Persistence** partializes out `notifs`/`overlay` so you never rehydrate into
-  a stale modal.
-- **Offline earnings** are computed from `lastSeen` on foreground, capped at 8h.
+- **State-first:** screens render the zustand store. Home measures visible
+  reaction exposure in memory and commits only at focus, occlusion, or expiry
+  boundaries. Balancing = numbers in `gameStore.ts` initial state and
+  `content.ts`; reaction copy and offline settlement live in `experience.ts`.
+- **Persistence** is the allowlist in `selectPersistedState`
+  (`src/state/experience.ts`). Transient notifications, overlays, unresolved
+  entitlement flags, and in-flight Home priority timers stay out of storage so
+  you never rehydrate into a stale modal or a covered countdown.
+- **Offline earnings** credit the base interval from `lastSeen` immediately on
+  foreground, capped at 8h. If a remembered Go Indie owner is still awaiting
+  entitlement confirmation, that interval's owner bonus stays pending on
+  `lastSeen` and settles exactly once when the entitlement is known.
 - **Go Indie** opens the remotely configured RevenueCat Paywall only after a
   deliberate Go Indie tap from the approved-app affordance or Store. There is
   no launch paywall. The lifetime unlock doubles offline earnings only after
