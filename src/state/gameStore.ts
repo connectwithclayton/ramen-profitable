@@ -81,11 +81,6 @@ export type Overlay =
   | { type: 'win' }
   | null;
 
-type PendingOwnerBonus = {
-  revision: number;
-  amount: number;
-};
-
 export type GameState = {
   day: number;
   dayTick: number;
@@ -111,7 +106,7 @@ export type GameState = {
   goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
-  lastSeen: number; // epoch ms; identity for base offline credit and pending owner bonus
+  lastSeen: number; // epoch ms; interval identity for base offline credit
   goIndieRateStartsAt: number | null;
   pendingOwnerBonus: PendingOwnerBonus;
   homePriority?: HomePriority;

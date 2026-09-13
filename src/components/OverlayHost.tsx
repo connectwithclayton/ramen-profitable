@@ -148,9 +148,6 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
                 setGoIndiePending(true);
                 try {
                   const active = await presentGoIndiePaywall();
-                  if (active !== null) {
-                    setGoIndieActive(active);
-                  }
                   if (active === true) {
                     pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
                     dismiss();

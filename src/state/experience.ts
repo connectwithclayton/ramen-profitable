@@ -12,7 +12,7 @@ export type PaywallTransaction = {
   delta: MrrDelta;
 };
 
-/** Owner-bonus remainder coupled to `lastSeen`; settled once entitlement is known. */
+/** Durable versioned owner-bonus remainder; settled once entitlement is known. */
 export type PendingOwnerBonus = {
   revision: number;
   amount: number;

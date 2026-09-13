@@ -41,9 +41,9 @@ Design decisions worth knowing:
   entitlement flags, and in-flight Home priority timers stay out of storage so
   you never rehydrate into a stale modal or a covered countdown.
 - **Offline earnings** credit the base interval from `lastSeen` immediately on
-  foreground, capped at 8h. If a remembered Go Indie owner is still awaiting
-  entitlement confirmation, that interval's owner bonus stays pending on
-  `lastSeen` and settles exactly once when the entitlement is known.
+  foreground, capped at 8h. A remembered Go Indie owner's unconfirmed remainder
+  settles exactly once when entitlement is known; the rate-split and lastSeen
+  contracts live in [`docs/ADMOB_SETUP.md`](docs/ADMOB_SETUP.md#entitlements-and-consent).
 - **Go Indie** opens the remotely configured RevenueCat Paywall only after a
   deliberate Go Indie tap from the approved-app affordance or Store. There is
   no launch paywall. The lifetime unlock doubles offline earnings only after
