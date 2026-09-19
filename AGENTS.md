@@ -39,8 +39,8 @@ zustand blob (key `ramen-profitable-v1`) in the app container's
 
 ## Advertising builds
 
-AdMob identifiers, native release guards, consent configuration, and the required privacy
-answers are documented in `docs/ADMOB_SETUP.md`; `config/admob.js` is the sole ID source.
+AdMob identifiers, native release guards, and consent configuration are documented in
+`docs/ADMOB_SETUP.md`; `config/admob.js` is the identifier resolution point.
 Use a Debug development client for sample ads. iOS Release rejects missing, malformed, or sample IDs.
 The general-audience integration sends no child or under-age treatment signals and requests only
 non-personalized banners.
