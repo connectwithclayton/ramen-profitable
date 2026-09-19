@@ -22,14 +22,18 @@
       "distribution": "internal",
       "environment": "preview",
       "env": {
-        "REVENUECAT_BUILD_MODE": "release"
+        "REVENUECAT_BUILD_MODE": "release",
+        "ADMOB_IOS_APP_ID": "ca-app-pub-2274031601035641~1852184394",
+        "ADMOB_IOS_BANNER_ID": "ca-app-pub-2274031601035641/8741026374"
       }
     },
     "production": {
       "autoIncrement": true,
       "environment": "production",
       "env": {
-        "REVENUECAT_BUILD_MODE": "release"
+        "REVENUECAT_BUILD_MODE": "release",
+        "ADMOB_IOS_APP_ID": "ca-app-pub-2274031601035641~1852184394",
+        "ADMOB_IOS_BANNER_ID": "ca-app-pub-2274031601035641/8741026374"
       }
     }
   },
