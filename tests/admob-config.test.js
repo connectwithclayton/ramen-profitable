@@ -3,8 +3,12 @@ const test = require('node:test');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
-const { TEST_IDS, resolveAdMob } = require('../config/admob');
+const { TEST_IDS, assertProductionIds, resolveAdMob } = require('../config/admob');
 const production = { appId: 'ca-app-pub-1111111111111111~2222222222', bannerId: 'ca-app-pub-1111111111111111/3333333333' };
+const verifiedProduction = {
+  appId: 'ca-app-pub-2274031601035641~1852184394',
+  bannerId: 'ca-app-pub-2274031601035641/8741026374',
+};
 const adaptiveSample = {
   ios: {
     appId: 'ca-app-pub-3940256099942544~1458002511',
@@ -24,6 +28,24 @@ test('release resolution carries iOS inventory without global validation', () =>
   assert.deepEqual(resolveAdMob(false, {}), {
     ios: { appId: undefined, bannerId: undefined },
   });
+});
+test('committed EAS release profiles resolve verified production inventory', () => {
+  const eas = require('../eas.json');
+  for (const profile of ['preview', 'production']) {
+    const resolved = resolveAdMob(false, eas.build[profile].env);
+    assert.deepEqual(resolved, { ios: verifiedProduction }, profile);
+    assert.doesNotThrow(() => assertProductionIds(resolved.ios), profile);
+  }
+});
+test('production validation rejects a Google test identifier', () => {
+  const resolved = resolveAdMob(false, {
+    ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
+    ADMOB_IOS_BANNER_ID: verifiedProduction.bannerId,
+  });
+  assert.throws(
+    () => assertProductionIds(resolved.ios),
+    /Google TEST identifier/,
+  );
 });
 test('native build executable independently validates both identifiers', () => {
   const environment = { ...process.env, NODE_ENV: 'development', EAS_BUILD_PROFILE: 'development' };
