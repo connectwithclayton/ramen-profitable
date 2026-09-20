@@ -25,6 +25,7 @@ src/state/gameStore.ts      zustand store actions and AsyncStorage persist wirin
 src/state/experience.ts     offline settlement, Home reactions, paywall receipts, persist allowlist
 src/systems/useGameLoop.ts  ticks (500ms/5s/22s) + offline earnings via AppState
 src/content/content.ts      every idea, event, rejection, upgrade — add content here
+src/content/codePanel.ts    app-specific Code panel source for each idea
 src/components/             ui primitives, notification stack, overlay host
 src/screens/                Home / Code / Store / Chirp
 src/monetization/purchases.ts  RevenueCat wrapper, graceful mock in Expo Go
