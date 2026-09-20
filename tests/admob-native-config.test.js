@@ -31,6 +31,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       'EAS_BUILD_PLATFORM',
       'NODE_ENV',
       'REVENUECAT_BUILD_MODE',
+      'REVENUECAT_BUILD_PLATFORM',
       'CONFIGURATION',
       'RP_ORIGINAL_XCODE_CONFIGURATION',
       'REVENUECAT_TEST_STORE_API_KEY',
@@ -158,9 +159,23 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /AdMob RELEASE BLOCKED/);
     const productionIds = {
+      REVENUECAT_IOS_API_KEY: 'appl_release_value',
       ADMOB_IOS_APP_ID: 'ca-app-pub-1111111111111111~2222222222',
       ADMOB_IOS_BANNER_ID: 'ca-app-pub-1111111111111111/3333333333',
     };
+    const missingRevenueCat = prebuild({
+      EAS_BUILD: 'true',
+      EAS_BUILD_RUNNER: 'eas-build',
+      EAS_BUILD_PLATFORM: 'ios',
+      NODE_ENV: 'production',
+      EAS_BUILD_PROFILE: 'production',
+      REVENUECAT_BUILD_MODE: 'release',
+      ...productionIds,
+      REVENUECAT_IOS_API_KEY: '',
+    });
+    assert.equal(missingRevenueCat.status, 1);
+    assert.match(missingRevenueCat.stderr, /RevenueCat RELEASE BLOCKED/);
+    assert.match(missingRevenueCat.stderr, /REVENUECAT_IOS_API_KEY is missing/);
     const easLocalProduction = prebuild({
       EAS_BUILD: 'true',
       EAS_BUILD_RUNNER: 'local-build-plugin',
@@ -234,7 +249,10 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     const releasePhase = runPhase('Release', productionIds);
     assert.equal(releasePhase.status, 0, releasePhase.stdout + releasePhase.stderr);
     assert.deepEqual(
-      constantsConfig({ CONFIGURATION: 'Release' }).extra.admob.ios,
+      constantsConfig({
+        CONFIGURATION: 'Release',
+        REVENUECAT_IOS_API_KEY: productionIds.REVENUECAT_IOS_API_KEY,
+      }).extra.admob.ios,
       {},
     );
     const releaseRuntime = constantsConfig({ CONFIGURATION: 'Release', ...productionIds });
@@ -298,7 +316,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
       );
       fs.appendFileSync(
         xcodeEnvironment,
-        `\nexport ADMOB_IOS_APP_ID='${productionIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${productionIds.ADMOB_IOS_BANNER_ID}'\n`,
+        `\nexport REVENUECAT_IOS_API_KEY='${productionIds.REVENUECAT_IOS_API_KEY}'\nexport ADMOB_IOS_APP_ID='${productionIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${productionIds.ADMOB_IOS_BANNER_ID}'\n`,
       );
       fs.writeFileSync(
         xcodeLocalEnvironment,
@@ -352,7 +370,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     const loginProfile = path.join(loginHome, '.bash_profile');
     fs.writeFileSync(
       loginProfile,
-      `export ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
+      `export REVENUECAT_IOS_API_KEY='${productionIds.REVENUECAT_IOS_API_KEY}'\nexport ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
     );
     const divergentLoginEnvironment = runPhase('Release', { HOME: loginHome });
     assert.equal(
@@ -363,7 +381,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.match(divergentLoginEnvironment.stderr, /do not match the identifiers captured during prebuild/);
     fs.writeFileSync(
       loginProfile,
-      `export CONFIGURATION='Debug'\nexport ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
+      `export CONFIGURATION='Debug'\nexport REVENUECAT_IOS_API_KEY='${productionIds.REVENUECAT_IOS_API_KEY}'\nexport ADMOB_IOS_APP_ID='${loginIds.ADMOB_IOS_APP_ID}'\nexport ADMOB_IOS_BANNER_ID='${loginIds.ADMOB_IOS_BANNER_ID}'\n`,
     );
     const overriddenLoginConfiguration = runPhase('Release', { HOME: loginHome });
     assert.equal(
@@ -373,6 +391,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     );
     assert.match(overriddenLoginConfiguration.stderr, /do not match the identifiers captured during prebuild/);
     const sampleRuntime = runPhase('Release', {
+      REVENUECAT_IOS_API_KEY: productionIds.REVENUECAT_IOS_API_KEY,
       ADMOB_IOS_APP_ID: TEST_IDS.ios.appId,
       ADMOB_IOS_BANNER_ID: TEST_IDS.ios.bannerId,
     });
@@ -385,6 +404,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.equal(malformedRuntime.status, 1, malformedRuntime.stdout + malformedRuntime.stderr);
     assert.match(malformedRuntime.stderr, /iOS bannerId/);
     const crossPublisherRuntime = runPhase('Release', {
+      REVENUECAT_IOS_API_KEY: productionIds.REVENUECAT_IOS_API_KEY,
       ADMOB_IOS_APP_ID: 'ca-app-pub-2222222222222222~2222222222',
       ADMOB_IOS_BANNER_ID: productionIds.ADMOB_IOS_BANNER_ID,
     });

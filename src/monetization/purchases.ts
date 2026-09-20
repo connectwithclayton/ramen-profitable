@@ -5,8 +5,10 @@
  * on iOS, removes the Catvertising banner.
  *
  * react-native-purchases requires a development build for real purchases.
- * When the native module or the appropriate environment key is unavailable,
- * everything here degrades to mock mode gracefully.
+ * When the native module or a development Test Store key is unavailable,
+ * this module degrades to mock mode. iOS release builds never reach that
+ * fallback for a missing production key: `app.config.js` refuses to
+ * configure instead.
  */
 
 import Constants from 'expo-constants';

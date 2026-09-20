@@ -51,8 +51,10 @@ Design decisions worth knowing:
   Store.
 - **RevenueCat** uses the SDK's `CURRENT` offering without hardcoded product
   identifiers or prices. Dynamic `require` preserves graceful mock fallback
-  when the native module or environment key is unavailable, and unavailable
-  RevenueCat never blocks launch or base offline earnings.
+  in Expo Go and development when the native module or Test Store key is
+  unavailable. iOS release configuration fails before bundling when its
+  production key is missing or malformed, while runtime service failures still
+  fail closed for advertising without blocking launch or base offline earnings.
 
 ## Week 3: going live with RevenueCat
 
@@ -112,10 +114,14 @@ Test Store purchases; the physical iPhone EAS build still requires the Apple
 credentials and device registration described above.
 
 Release environments must instead provide the matching
-`REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. Expo config injects
-only Test Store keys into development builds and only validated platform keys
-into release builds; it never falls back from a release build to the Test Store
-variable.
+`REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. An iOS release refuses
+to configure unless `REVENUECAT_IOS_API_KEY` is a usable `appl_` public SDK
+key, not missing, wrong-type, or prefix-only. Set it in each selected EAS
+preview or production environment with Plain text or Sensitive visibility,
+not Secret visibility, so Expo can read it while resolving dynamic app
+config. Expo config injects only Test Store keys into development builds and
+only validated platform keys into release builds; it never falls back from a
+release build to the Test Store variable.
 
 ## Balancing cheatsheet
 
