@@ -1,5 +1,9 @@
-const { withInfoPlist, withPodfile, withXcodeProject } = require('@expo/config-plugins');
+const fs = require('node:fs');
+const path = require('node:path');
+const { IOSConfig, withInfoPlist, withPodfile, withXcodeProject } = require('@expo/config-plugins');
 const { mergeContents } = require('@expo/config-plugins/build/utils/generateCode');
+
+const BANNER_IDENTITY_SOURCE = 'RPBannerRequestIdentity.m';
 
 function shellQuote(value) {
   return `'${String(value ?? '').replace(/'/g, "'\"'\"'")}'`;
@@ -37,7 +41,21 @@ module.exports = (config, ids) => {
     return mod;
   });
   config = withXcodeProject(config, mod => {
-    const project = mod.modResults;
+    let project = mod.modResults;
+    const projectName = IOSConfig.XcodeUtils.getProjectName(mod.modRequest.projectRoot);
+    const sourcePath = path.join(projectName, BANNER_IDENTITY_SOURCE);
+    fs.copyFileSync(
+      path.join(mod.modRequest.projectRoot, 'native', 'ios', BANNER_IDENTITY_SOURCE),
+      path.join(mod.modRequest.platformProjectRoot, sourcePath),
+    );
+    if (!project.hasFile(sourcePath)) {
+      project = IOSConfig.XcodeUtils.addBuildSourceFileToGroup({
+        filepath: sourcePath,
+        groupName: projectName,
+        project,
+      });
+    }
+
     const name = 'Reject AdMob test identifiers in Release';
     const appId = shellQuote(ids.ios.appId);
     const bannerId = shellQuote(ids.ios.bannerId);
