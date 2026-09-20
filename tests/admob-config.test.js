@@ -70,6 +70,7 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
     ...process.env,
     EXPO_NO_DOTENV: '1',
     REVENUECAT_BUILD_MODE: '',
+    REVENUECAT_BUILD_PLATFORM: '',
     EAS_BUILD: '',
     EAS_BUILD_RUNNER: '',
     EAS_BUILD_PROFILE: '',
@@ -265,16 +266,25 @@ test('Expo config keeps AdMob and RevenueCat build modes independent', () => {
       { admob: TEST_IDS, revenueCat: productionRevenueCat },
     );
   }
-  assert.deepEqual(
-    evaluate(['run:ios', '--configuration', 'Release'], {
-      REVENUECAT_TEST_STORE_API_KEY: '',
-      REVENUECAT_IOS_API_KEY: '',
-      REVENUECAT_ANDROID_API_KEY: '',
-      ADMOB_IOS_APP_ID: '',
-      ADMOB_IOS_BANNER_ID: '',
-    }),
-    { admob: { ios: { appId: '', bannerId: '' } }, revenueCat: {} },
+  const missingRevenueCat = spawnSync(
+    process.execPath,
+    ['-e', script, '--', 'run:ios', '--configuration', 'Release'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...environment,
+        REVENUECAT_TEST_STORE_API_KEY: '',
+        REVENUECAT_IOS_API_KEY: '',
+        REVENUECAT_ANDROID_API_KEY: '',
+        ADMOB_IOS_APP_ID: '',
+        ADMOB_IOS_BANNER_ID: '',
+      },
+    },
   );
+  assert.equal(missingRevenueCat.status, 1);
+  assert.match(missingRevenueCat.stderr, /RevenueCat RELEASE BLOCKED/);
+  assert.match(missingRevenueCat.stderr, /REVENUECAT_IOS_API_KEY is missing/);
 });
 
 test('RevenueCat mode reaches the later Expo Constants consumer', () => {
@@ -303,6 +313,7 @@ test('RevenueCat mode reaches the later Expo Constants consumer', () => {
     CONFIGURATION: '',
     NODE_ENV: 'development',
     REVENUECAT_BUILD_MODE: '',
+    REVENUECAT_BUILD_PLATFORM: '',
     REVENUECAT_TEST_STORE_API_KEY: 'test_local_value',
     REVENUECAT_IOS_API_KEY: 'appl_local_value',
     REVENUECAT_ANDROID_API_KEY: 'goog_local_value',
@@ -312,9 +323,20 @@ test('RevenueCat mode reaches the later Expo Constants consumer', () => {
   delete environment.RP_ORIGINAL_XCODE_CONFIGURATION;
 
   try {
-    for (const [index, args] of [
-      ['run:android', '--variant', 'release'],
-      ['run:ios', '--configuration', 'Release'],
+    for (const [index, { args, overrides, expected }] of [
+      {
+        args: ['run:android', '--variant', 'release'],
+        overrides: { REVENUECAT_IOS_API_KEY: '' },
+        expected: { androidApiKey: 'goog_local_value' },
+      },
+      {
+        args: ['run:ios', '--configuration', 'Release'],
+        overrides: {},
+        expected: {
+          iosApiKey: 'appl_local_value',
+          androidApiKey: 'goog_local_value',
+        },
+      },
     ].entries()) {
       const destination = path.join(fixture, String(index));
       fs.mkdirSync(destination);
@@ -324,7 +346,11 @@ test('RevenueCat mode reaches the later Expo Constants consumer', () => {
         {
           cwd: root,
           encoding: 'utf8',
-          env: { ...environment, APP_CONFIG_DEST: destination },
+          env: {
+            ...environment,
+            ...overrides,
+            APP_CONFIG_DEST: destination,
+          },
         },
       );
       assert.equal(result.status, 0, result.stderr);
@@ -333,10 +359,7 @@ test('RevenueCat mode reaches the later Expo Constants consumer', () => {
       const generated = JSON.parse(
         fs.readFileSync(path.join(destination, 'app.config'), 'utf8'),
       );
-      assert.deepEqual(generated.extra.revenueCat, {
-        iosApiKey: 'appl_local_value',
-        androidApiKey: 'goog_local_value',
-      });
+      assert.deepEqual(generated.extra.revenueCat, expected);
     }
   } finally {
     fs.rmSync(fixture, { recursive: true, force: true });

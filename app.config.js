@@ -6,6 +6,7 @@ const REVENUECAT_DEVELOPMENT_PROFILES = new Set([
 const REVENUECAT_RELEASE_PROFILES = new Set(['preview', 'production']);
 const ADMOB_IOS_RELEASE_PROFILES = new Set(['preview', 'production']);
 const ORIGINAL_XCODE_CONFIGURATION = 'RP_ORIGINAL_XCODE_CONFIGURATION';
+const REVENUECAT_BUILD_PLATFORM = 'REVENUECAT_BUILD_PLATFORM';
 
 function xcodeConfiguration() {
   if (
@@ -132,15 +133,55 @@ function cleanKey(value) {
   return key || undefined;
 }
 
-function releaseKey(name, expectedPrefix) {
+function releaseKey(name, expectedPrefix, required = false) {
   const key = cleanKey(process.env[name]);
-  if (key && !key.startsWith(expectedPrefix)) {
+  if (!key) {
+    if (!required) return undefined;
     throw new Error(
-      `${name} must be a ${expectedPrefix} RevenueCat platform key. ` +
-        'Release configuration refused to embed it.',
+      `RevenueCat RELEASE BLOCKED: ${name} is missing. Set the iOS public ` +
+        `SDK key beginning with ${expectedPrefix} in the EAS preview or ` +
+        'production environment using Plain text or Sensitive visibility, ' +
+        'or in the local release environment, then rebuild.',
+    );
+  }
+  if (!key.startsWith(expectedPrefix) || key.length === expectedPrefix.length) {
+    throw new Error(
+      `RevenueCat RELEASE BLOCKED: ${name} must be a usable ` +
+        `${expectedPrefix} RevenueCat platform key. Replace it with the ` +
+        'matching public SDK key from RevenueCat Project Settings and rebuild.',
     );
   }
   return key;
+}
+
+function revenueCatBuildPlatform(args) {
+  let platform;
+  if (args[0] === 'run:ios') platform = 'ios';
+  else if (args[0] === 'run:android') platform = 'android';
+  else {
+    const commandPlatform = commandOption(args, args[0], '--platform');
+    if (commandPlatform === 'ios' || commandPlatform === 'android') {
+      platform = commandPlatform;
+    } else if (
+      process.env.EAS_BUILD_PLATFORM === 'ios' ||
+      process.env.EAS_BUILD_PLATFORM === 'android'
+    ) {
+      platform = process.env.EAS_BUILD_PLATFORM;
+    } else if (revenueCatXcodeMode()) {
+      platform = 'ios';
+    } else if (
+      process.env[REVENUECAT_BUILD_PLATFORM] === 'ios' ||
+      process.env[REVENUECAT_BUILD_PLATFORM] === 'android'
+    ) {
+      platform = process.env[REVENUECAT_BUILD_PLATFORM];
+    }
+  }
+  if (platform) process.env[REVENUECAT_BUILD_PLATFORM] = platform;
+  return platform;
+}
+
+function requiresRevenueCatIOSKey(args) {
+  return revenueCatBuildPlatform(args) !== 'android';
 }
 
 module.exports = ({ config }) => {
@@ -162,7 +203,11 @@ module.exports = ({ config }) => {
   const revenueCat =
     revenueCatMode === 'release'
       ? {
-          iosApiKey: releaseKey('REVENUECAT_IOS_API_KEY', 'appl_'),
+          iosApiKey: releaseKey(
+            'REVENUECAT_IOS_API_KEY',
+            'appl_',
+            requiresRevenueCatIOSKey(args),
+          ),
           androidApiKey: releaseKey('REVENUECAT_ANDROID_API_KEY', 'goog_'),
         }
       : {
