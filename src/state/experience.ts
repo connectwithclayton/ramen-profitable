@@ -10,6 +10,7 @@ export type PaywallTransaction = {
   mult: number;
   dark: number;
   delta: MrrDelta;
+  choices: Readonly<Record<string, string>>;
 };
 
 /** Durable versioned owner-bonus remainder; settled once entitlement is known. */
@@ -143,7 +144,12 @@ export function codeProgressStatus({
 }): CodeProgressStatus {
   const drained = energy < 1;
   if (done) return { drained, prompt: 'SHIP IT AND FIND OUT' };
-  if (!drained) return { drained, prompt: 'TAP THE RING TO WRITE CODE' };
+  if (!drained) {
+    return {
+      drained,
+      prompt: autoCode > 0 ? 'AUTOMATION IS WRITING · TAP TO PAIR' : 'TAP THE RING TO WRITE CODE',
+    };
+  }
 
   const seconds = secondsUntilNextLine(energy, energyRegen);
   const duration = `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
@@ -464,14 +470,15 @@ export function calculatePaywallTransaction({
     mult,
     dark,
     delta: { before: totalMrr, after: afterMrr },
+    choices: { ...picks },
   };
 }
 
-export function paywallReaction(appName: string, transaction: PaywallTransaction, picks: Record<string, string>) {
+export function paywallReaction(appName: string, transaction: PaywallTransaction) {
   if (transaction.dark === 0) {
     return `shoutout to ${appName} for the most ethical paywall i've ever closed without paying`;
   }
-  if (transaction.dark >= 5 && picks.close === 'delayed') {
+  if (transaction.dark >= 5 && transaction.choices?.close === 'delayed') {
     return `just saw the new ${appName} paywall... the X appears AFTER FIVE SECONDS?? screenshot saved.`;
   }
   if (transaction.dark >= 5) {
