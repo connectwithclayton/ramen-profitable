@@ -11,14 +11,16 @@ async function loadContent() {
 
 test('manual taps reveal more current-project source without a second progress clock', async () => {
   const { projectCodeView } = await loadCodePanel();
-  const untouched = projectCodeView({ name: 'Caffiend', idea: 'coffee', loc: 0, need: 300 });
-  const firstTap = projectCodeView({ name: 'Caffiend', idea: 'coffee', loc: 3, need: 300 });
-  const later = projectCodeView({ name: 'Caffiend', idea: 'coffee', loc: 90, need: 300 });
+  const untouched = projectCodeView({ name: 'SleepShame', idea: 'sleep', loc: 0, need: 499 });
+  const firstTap = projectCodeView({ name: 'SleepShame', idea: 'sleep', loc: 3, need: 499 });
+  const nextTap = projectCodeView({ name: 'SleepShame', idea: 'sleep', loc: 6, need: 499 });
+  const later = projectCodeView({ name: 'SleepShame', idea: 'sleep', loc: 90, need: 499 });
 
   assert.equal(untouched.source, '');
-  assert.ok(firstTap.source.length >= 18);
-  assert.ok(later.source.length > firstTap.source.length);
-  assert.match(later.source, /shots|coffee/);
+  assert.ok(firstTap.source.length > 0);
+  assert.ok(nextTap.source.length > firstTap.source.length);
+  assert.ok(later.source.length > nextTap.source.length);
+  assert.match(later.source, /snooze|alarm|bed/);
 });
 
 test('every catalog app has authored source and project changes replace the panel', async () => {

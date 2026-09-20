@@ -253,9 +253,7 @@ export function projectCodeView({
 }) {
   const source = projectSource(name, idea);
   const progress = need > 0 ? Math.max(0, Math.min(1, loc / need)) : 1;
-  const visibleCharacters = loc <= 0
-    ? 0
-    : Math.min(source.length, Math.max(18, Math.ceil(source.length * progress)));
+  const visibleCharacters = Math.min(source.length, Math.ceil(source.length * progress));
   return {
     source: source.slice(0, visibleCharacters),
     complete: progress >= 1,
