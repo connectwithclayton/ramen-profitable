@@ -181,6 +181,7 @@ function revenueCatBuildPlatform(args) {
 }
 
 function requiresRevenueCatIOSKey(args) {
+  // Fail closed: only a confirmed Android build may omit the iOS key.
   return revenueCatBuildPlatform(args) !== 'android';
 }
 

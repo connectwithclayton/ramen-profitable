@@ -115,12 +115,13 @@ credentials and device registration described above.
 
 Release environments must instead provide the matching
 `REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. An iOS release refuses
-to configure unless `REVENUECAT_IOS_API_KEY` is a non-empty `appl_` public SDK
-key. Set it in each selected EAS preview or production environment with Plain
-text or Sensitive visibility, not Secret visibility, so Expo can read it while
-resolving dynamic app config. Expo config injects only Test Store keys into
-development builds and only validated platform keys into release builds; it
-never falls back from a release build to the Test Store variable.
+to configure unless `REVENUECAT_IOS_API_KEY` is a usable `appl_` public SDK
+key, not missing, wrong-type, or prefix-only. Set it in each selected EAS
+preview or production environment with Plain text or Sensitive visibility,
+not Secret visibility, so Expo can read it while resolving dynamic app
+config. Expo config injects only Test Store keys into development builds and
+only validated platform keys into release builds; it never falls back from a
+release build to the Test Store variable.
 
 ## Balancing cheatsheet
 
