@@ -17,6 +17,18 @@ npx expo start
 Scan the QR with Expo Go on your phone. The game runs there, but a development
 build is required for real RevenueCat Test Store purchases.
 
+## Validate changes
+
+Pull requests and pushes to `main` run the same lockfile-strict Linux checks as:
+
+```bash
+npm ci --no-audit --no-fund
+npm run typecheck
+npm test
+```
+
+CI does not build native apps, deploy, or require release credentials.
+
 ## Architecture
 
 ```
