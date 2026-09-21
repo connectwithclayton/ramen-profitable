@@ -16,6 +16,8 @@ import {
 import { C } from '../theme';
 import { EnergyIcon, IdeaIcon, LaunchIcon } from '../components/icons';
 import { codeProgressStatus } from '../state/experience';
+import CodePanel from '../components/CodePanel';
+import { codePanelMode, projectCodeView } from '../content/codePanel';
 
 const RING = 248;
 const R_BUILD = 110;
@@ -125,6 +127,8 @@ export default function CodeScreen() {
     autoCode: s.autoCode,
   });
   const drained = progressStatus.drained;
+  const panelMode = codePanelMode({ done, energy: s.energy, autoCode: s.autoCode });
+  const codeView = p ? projectCodeView(p) : null;
   const built = p ? Math.round((p.loc / p.need) * 100) : 0;
   const locText = p ? fmtN(p.loc) : '0';
   const locSize = locText.length > 7 ? 30 : locText.length > 5 ? 40 : 54;
@@ -145,7 +149,7 @@ export default function CodeScreen() {
       />
 
       {p ? (
-        <Hero tone={done ? C.mint : C.gold}>
+        <Hero tone={done || panelMode === 'automated' ? C.mint : C.gold}>
           <View style={st.head}>
             <Eyebrow>Current project</Eyebrow>
             <Text style={st.name}>{p.name}</Text>
@@ -161,7 +165,12 @@ export default function CodeScreen() {
               onPress={onTap}
               style={({ pressed }) => [st.ringPress, pressed && { transform: [{ scale: 0.975 }] }]}
             >
-              <Ring build={spent} energy={s.energy / s.energyMax} done={done} dim={drained && !done} />
+              <Ring
+                build={spent}
+                energy={s.energy / s.energyMax}
+                done={done}
+                dim={(drained || panelMode === 'automated') && !done}
+              />
               <View style={st.ringCenter} pointerEvents="none">
                 <Text style={[st.loc, { fontSize: locSize }]} allowFontScaling={false}>
                   {locText}
@@ -177,7 +186,29 @@ export default function CodeScreen() {
             </Pressable>
           </View>
 
-          <MonoText style={[st.prompt, drained && !done && { color: C.pink }]}>
+          {codeView ? (
+            <View style={st.panelWrap}>
+              <CodePanel
+                title={p.name}
+                source={codeView.source}
+                mode={panelMode}
+                automationRate={s.autoCode}
+                accessibilityLabel={
+                  panelMode === 'automated'
+                    ? `${p.name} code is being written automatically at ${s.autoCode} lines per second. ${codeView.source}`
+                    : `${p.name} code, ${built} percent complete. ${codeView.source || 'No source written yet.'}`
+                }
+              />
+            </View>
+          ) : null}
+
+          <MonoText
+            style={[
+              st.prompt,
+              drained && !done && panelMode !== 'automated' && { color: C.pink },
+              panelMode === 'automated' && { color: C.mint },
+            ]}
+          >
             {progressStatus.prompt}
           </MonoText>
 
@@ -272,6 +303,7 @@ const st = StyleSheet.create({
   float: { position: 'absolute' },
   floatText: { color: C.mint, fontSize: 13, fontWeight: '700' },
 
+  panelWrap: { marginBottom: 16 },
   prompt: { color: C.mut, fontSize: 10, letterSpacing: 2, textAlign: 'center' },
   waitText: { alignSelf: 'center', color: C.gold, fontSize: 10, letterSpacing: 0.8, marginTop: 11 },
   meta: {

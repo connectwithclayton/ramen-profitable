@@ -10,6 +10,8 @@ import PaywallDesigner from './PaywallDesigner';
 import { CelebrateIcon, RamenProfitableIcon } from './icons';
 import { handleApprovedVerdictAction } from './approvedVerdictActions';
 import { paywallResultPresentation } from '../state/experience';
+import CodePanel from './CodePanel';
+import { paywallCodeView } from '../content/codePanel';
 
 function Spinner() {
   const spin = useRef(new Animated.Value(0)).current;
@@ -59,9 +61,15 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   const openGoIndiePaywall = useGame(s => s.openGoIndiePaywall);
   const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
+  const paywallApp = useGame(s =>
+    overlay?.type === 'paywallResult' ? s.apps.find(app => app.id === overlay.appId) : undefined,
+  );
   const [goIndiePending, setGoIndiePending] = useState(false);
   const paywallResult = overlay?.type === 'paywallResult'
     ? paywallResultPresentation(overlay.transaction)
+    : null;
+  const paywallCode = overlay?.type === 'paywallResult'
+    ? paywallCodeView(overlay.transaction)
     : null;
 
   useEffect(() => {
@@ -178,6 +186,16 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
             <MonoText style={[st.resultReceipt, { color: paywallResult.direction === 'down' ? C.pink : C.mint }]}>
               {paywallResult.receipt}
             </MonoText>
+            {paywallCode ? (
+              <View style={st.paywallCode}>
+                <CodePanel
+                  title={`${paywallApp?.name ?? 'App'}Paywall`}
+                  source={paywallCode.source}
+                  mode={`paywall-${paywallCode.quality}`}
+                  accessibilityLabel={`${paywallApp?.name ?? 'App'} paywall code quality is ${paywallCode.quality}. ${paywallCode.source}`}
+                />
+              </View>
+            ) : null}
             <Text style={st.body}>{paywallResult.body}</Text>
             <Btn label="Watch the numbers" onPress={dismiss} style={{ marginTop: 16 }} />
           </ScrollView>
@@ -244,6 +262,7 @@ const st = StyleSheet.create({
   heroIcon: { alignItems: 'center' },
   body: { color: C.mut, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 19 },
   resultReceipt: { fontSize: 11, textAlign: 'center', marginTop: 10 },
+  paywallCode: { marginTop: 16 },
   spinner: {
     width: 36,
     height: 36,

@@ -1,6 +1,7 @@
 import type { GameState } from '../state/gameStore';
 import type { IconName } from '../components/icons';
 
+/** Panel source for each name lives in PROJECT_CODE (`codePanel.ts`). */
 export const APP_IDEAS: [string, string][] = [
   ['PlantParent', 'habit tracker, but for your dying succulents'],
   ['DogNal', "AI journaling app for your dog's inner life"],

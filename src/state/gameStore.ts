@@ -659,7 +659,7 @@ export const useGame = create<RuntimeState & Actions>()(
         } else if (dark === 0) {
           s.unlock('saint');
         }
-        get().pushChirp(paywallReaction(app.name, transaction, picks), {
+        get().pushChirp(paywallReaction(app.name, transaction), {
           author: BETA_TESTER,
           kind: 'paywall',
           event: `PAYWALL SHIPPED · HEAT ${dark}`,

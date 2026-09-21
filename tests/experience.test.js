@@ -29,15 +29,24 @@ test('paywall receipt captures the committed transaction values', async () => {
   assert.equal(receipt.dark, 5);
   assert.equal(receipt.delta.before, 230);
   assert.ok(Math.abs(receipt.delta.after - 300.2) < Number.EPSILON * 300.2);
+  assert.deepEqual(receipt.choices, { price: 'hot', close: 'delayed' });
 });
 
 test('paywall reaction only mentions close behavior the player committed', async () => {
   const { calculatePaywallTransaction, paywallReaction } = await loadExperience();
   const { PAYWALL_AXES } = await loadContent();
-  const transaction = { mult: 1.6, dark: 5, delta: { before: 100, after: 160 } };
+  const transaction = {
+    mult: 1.6,
+    dark: 5,
+    delta: { before: 100, after: 160 },
+    choices: { close: 'delayed' },
+  };
 
-  assert.match(paywallReaction('Caffiend', transaction, { close: 'delayed' }), /FIVE SECONDS/);
-  assert.doesNotMatch(paywallReaction('Caffiend', transaction, { close: 'tiny' }), /FIVE SECONDS/);
+  assert.match(paywallReaction('Caffiend', transaction), /FIVE SECONDS/);
+  assert.doesNotMatch(
+    paywallReaction('Caffiend', { ...transaction, choices: { close: 'tiny' } }),
+    /FIVE SECONDS/,
+  );
 
   const moderate = calculatePaywallTransaction({
     totalMrr: 100,
@@ -49,7 +58,7 @@ test('paywall reaction only mentions close behavior the player committed', async
   });
   assert.equal(moderate.dark, 3);
   assert.doesNotMatch(
-    paywallReaction('Caffiend', moderate, { close: 'big' }),
+    paywallReaction('Caffiend', moderate),
     /\b(close|x)\b/i,
   );
 });
@@ -58,6 +67,9 @@ test('energy countdown follows the live regeneration rate', async () => {
   const { codeProgressStatus, secondsUntilNextLine } = await loadExperience();
   assert.equal(secondsUntilNextLine(0.4, 0.06), 5);
   assert.equal(secondsUntilNextLine(1, 0.06), 0);
+
+  const activeAutomation = codeProgressStatus({ done: false, energy: 4, energyRegen: 0.06, autoCode: 6 });
+  assert.equal(activeAutomation.prompt, 'AUTOMATION IS WRITING · TAP TO PAIR');
 
   const automated = codeProgressStatus({ done: false, energy: 0.4, energyRegen: 0.06, autoCode: 6 });
   assert.equal(automated.prompt, 'OUT OF ENERGY · AUTOMATION IS STILL WRITING');
