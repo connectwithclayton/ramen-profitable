@@ -30,7 +30,7 @@ function RequestBoundBanner({
     return () => { requestActiveRef.current = false; };
   }, []);
 
-  // This guard retires the JavaScript handlers. The app-owned iOS boundary generated from
+  // This guard retires the JavaScript handlers. The app-owned iOS boundary in
   // native/ios/RPBannerRequestIdentity.m separately rejects callbacks from a GADBannerView
   // that no longer belongs to Fabric's current RN-GMA component view.
   return (
