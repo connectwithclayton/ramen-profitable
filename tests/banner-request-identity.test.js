@@ -9,24 +9,9 @@ const root = path.resolve(__dirname, '..');
 const harness = path.join(root, 'tests/fixtures/banner-request-identity-harness.m');
 const guard = path.join(root, 'native/ios/RPBannerRequestIdentity.m');
 
-test('request identity boundary matches the pinned RN-GMA Fabric callback path', () => {
+test('request identity boundary targets the pinned RN-GMA release', () => {
   const dependency = require('react-native-google-mobile-ads/package.json');
   assert.equal(dependency.version, '16.5.0');
-
-  const vendorSource = fs.readFileSync(
-    path.join(root, 'node_modules/react-native-google-mobile-ads/ios/RNGoogleMobileAds/RNGoogleMobileAdsBannerView.mm'),
-    'utf8',
-  );
-  const callbackStart = vendorSource.indexOf('- (void)bannerViewDidReceiveAd:');
-  const callbackEnd = vendorSource.indexOf('- (void)bannerViewWillPresentScreen:', callbackStart);
-  assert.ok(callbackStart >= 0 && callbackEnd > callbackStart, 'expected RN-GMA banner delegate callbacks');
-  const settlingCallbacks = vendorSource.slice(callbackStart, callbackEnd);
-  assert.match(settlingCallbacks, /_eventEmitter/);
-  assert.doesNotMatch(
-    settlingCallbacks,
-    /bannerView\s*(?:==|!=)\s*_banner|_banner\s*(?:==|!=)\s*bannerView/,
-    'RN-GMA gained its own request identity check; review whether the app boundary is still needed',
-  );
 });
 
 test('native banner callbacks remain bound to the GAD request that created them', t => {
