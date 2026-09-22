@@ -22,7 +22,7 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
   const fixture = fs.mkdtempSync(path.join(root, '.expo/admob-prebuild-test-'));
   try {
     for (const file of ['package.json', 'app.json', 'app.config.js']) fs.copyFileSync(path.join(root, file), path.join(fixture, file));
-    for (const dir of ['config', 'plugins', 'scripts', 'assets']) fs.cpSync(path.join(root, dir), path.join(fixture, dir), { recursive: true });
+    for (const dir of ['config', 'plugins', 'scripts', 'assets', 'native']) fs.cpSync(path.join(root, dir), path.join(fixture, dir), { recursive: true });
     fs.symlinkSync(path.join(root, 'node_modules'), path.join(fixture, 'node_modules'), 'dir');
     const clearedVariables = [
       'EAS_BUILD',
@@ -143,6 +143,25 @@ test('Expo prebuild emits iOS configuration and enforces release identifiers', (
     assert.equal(info.GADDelayAppMeasurementInit, true);
     assert.equal(info.NSUserTrackingUsageDescription, undefined);
     assert.equal(info.SKAdNetworkItems, undefined);
+    const bannerIdentitySource = 'RPBannerRequestIdentity.m';
+    const generatedBannerIdentityPath = path.join(fixture, 'ios/RamenProfitable', bannerIdentitySource);
+    assert.equal(
+      fs.readFileSync(generatedBannerIdentityPath, 'utf8'),
+      fs.readFileSync(path.join(root, 'native/ios', bannerIdentitySource), 'utf8'),
+      'prebuild must copy the app-owned native request identity boundary',
+    );
+    const generatedProject = xcode.project(path.join(fixture, 'ios/RamenProfitable.xcodeproj/project.pbxproj')).parseSync();
+    const bannerIdentityReferences = Object.values(generatedProject.hash.project.objects.PBXFileReference)
+      .filter(value => typeof value.path === 'string' && value.path.endsWith(`/${bannerIdentitySource}\"`));
+    const bannerIdentityBuildFiles = Object.values(generatedProject.hash.project.objects.PBXBuildFile)
+      .filter(value => value.fileRef_comment === bannerIdentitySource);
+    const sourceBuildPhase = generatedProject.pbxSourcesBuildPhaseObj(generatedProject.getFirstTarget().uuid);
+    assert.equal(bannerIdentityReferences.length, 1, 'prebuild must emit one request identity source reference');
+    assert.equal(bannerIdentityBuildFiles.length, 1, 'prebuild must compile one request identity source');
+    assert.ok(
+      sourceBuildPhase.files.some(file => file.comment === `${bannerIdentitySource} in Sources`),
+      'the request identity boundary must be linked into the app target',
+    );
     for (const configuration of ['Debug', 'Profile', 'Staging', undefined]) {
       const result = runPhase(configuration);
       assert.equal(

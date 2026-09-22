@@ -30,10 +30,9 @@ function RequestBoundBanner({
     return () => { requestActiveRef.current = false; };
   }, []);
 
-  // Known limitation: Fabric can recycle the native view; RN-GMA 16.5.0 removes the old banner
-  // without clearing its delegate and forwards late callbacks through the current event emitter
-  // without checking callback identity, bypassing this retired-closure guard.
-  // Native-view release across replacement cycles remains unmeasured pending real-device verification.
+  // This guard retires the JavaScript handlers. The app-owned iOS boundary in
+  // native/ios/RPBannerRequestIdentity.m separately rejects callbacks from a GADBannerView
+  // that no longer belongs to Fabric's current RN-GMA component view.
   return (
     <Banner
       {...props}
