@@ -23,6 +23,7 @@ test('approved verdict can return Home without presenting the Go Indie paywall',
       tab = 'home';
     },
     openGoIndiePaywall: presentGoIndiePaywall,
+    setUpPaywall: () => assert.fail('Continue must not open the designer'),
   });
 
   assert.equal(overlay, null);
@@ -46,6 +47,7 @@ test('approved verdict keeps Go Indie as an optional purchase path', async () =>
     openGoIndiePaywall: () => {
       paywallPresentations += 1;
     },
+    setUpPaywall: () => assert.fail('Go Indie must not open the designer'),
   });
 
   assert.equal(dismissals, 0);

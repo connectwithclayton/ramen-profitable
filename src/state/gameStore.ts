@@ -74,7 +74,8 @@ type ChirpOptions = Omit<Partial<Chirp>, 'id' | 'who' | 'handle' | 'text' | 'lik
 export type Notif = { id: string; text: string; icon?: IconName; emoji?: string };
 export type Overlay =
   | { type: 'review'; appName: string }
-  | { type: 'verdict'; ok: boolean; appName: string; rule?: string; flavor?: string; gain?: number }
+  | { type: 'verdict'; ok: true; appId: string; appName: string; gain: number }
+  | { type: 'verdict'; ok: false; appName: string; rule: string; flavor: string }
   | { type: 'paywall' }
   | { type: 'paywallDesigner'; appId: string }
   | { type: 'paywallResult'; appId: string; transaction: PaywallTransaction }
@@ -467,11 +468,12 @@ export const useGame = create<RuntimeState & Actions>()(
           const base = 40 + Math.floor(Math.random() * 160);
           const gain = base * s.mrrMult;
           const delta: MrrDelta = { before: s.mrr, after: s.mrr + gain };
+          const appId = uid();
           set({
-            apps: [...s.apps, { id: uid(), name: p.name, idea: p.idea, live: true, baseMrr: base, mult: 1, dark: 0, hasPaywall: false }],
+            apps: [...s.apps, { id: appId, name: p.name, idea: p.idea, live: true, baseMrr: base, mult: 1, dark: 0, hasPaywall: false }],
             mrr: s.mrr + gain,
             project: null,
-            overlay: { type: 'verdict', ok: true, appName: p.name, gain },
+            overlay: { type: 'verdict', ok: true, appId, appName: p.name, gain },
           });
           s.pushChirp(`${p.name} just went live on the App Store!! ${base > 150 ? 'the numbers are actually good??' : 'it begins.'} #shipaton`, {
             author: PLAYER,

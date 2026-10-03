@@ -38,7 +38,9 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
             return (
               <Pressable
                 key={ch.id}
+                accessibilityRole="button"
                 accessibilityLabel={`${ch.label}, heat ${ch.dark}`}
+                accessibilityHint={ch.flavor}
                 accessibilityState={{ selected: active }}
                 onPress={() => {
                   Haptics.selectionAsync().catch(() => {});
@@ -106,7 +108,7 @@ const st = StyleSheet.create({
   choiceActive: { borderColor: C.gold, backgroundColor: '#241F14' },
   choiceLabel: { color: C.mut, fontWeight: '700', fontSize: 13 },
   choiceFlavor: { color: C.dim, fontSize: 11, marginTop: 1 },
-  previewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  previewRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   heatIcons: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   cleanStatus: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

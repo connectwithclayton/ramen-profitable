@@ -59,6 +59,7 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   const overlay = useGame(s => s.overlay);
   const dismiss = useGame(s => s.dismissOverlay);
   const openGoIndiePaywall = useGame(s => s.openGoIndiePaywall);
+  const openPaywallDesigner = useGame(s => s.openPaywallDesigner);
   const pushNotif = useGame(s => s.pushNotif);
   const mrr = useGame(s => s.mrr);
   const paywallApp = useGame(s =>
@@ -87,31 +88,49 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   if (!overlay) return null;
 
   return (
-    <View style={st.backdrop}>
-      <View style={[st.sheet, overlay.type === 'paywallResult' && st.paywallResultSheet]}>
+    <View style={st.backdrop} accessibilityViewIsModal>
+      <View style={[st.sheet, (overlay.type === 'paywallResult' || (overlay.type === 'verdict' && overlay.ok)) && st.scrollSheet]}>
         {overlay.type === 'review' && <ReviewSheet appName={overlay.appName} />}
 
         {overlay.type === 'verdict' && overlay.ok && (
-          <>
+          <ScrollView style={st.sheetScroll} contentContainerStyle={st.sheetContent}>
             <Eyebrow color={C.mint}>Approved</Eyebrow>
             <View style={st.titleRow}>
-              <Text style={st.h1}>{overlay.appName} is LIVE</Text>
+              <Text style={[st.h1, st.approvedTitle]}>{overlay.appName} is LIVE</Text>
               <CelebrateIcon size={24} color={C.mint} />
             </View>
             <Text style={st.body}>First subscribers rolling in:</Text>
             <MonoText style={{ color: C.gold, fontSize: 30, fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
               +{fmt(overlay.gain ?? 0)}/mo
             </MonoText>
+            <Text style={st.body}>
+              Next: set up your app's paywall to shape subscriber conversion. Free, in-game design - no purchase needed.
+            </Text>
+            <Btn
+              label="Set up paywall"
+              accessibilityLabel={`Set up paywall for ${overlay.appName}. Free in-game design.`}
+              onPress={() =>
+                handleApprovedVerdictAction('set-up-paywall', {
+                  dismissOverlay: dismiss,
+                  returnHome: onReturnHome,
+                  openGoIndiePaywall,
+                  setUpPaywall: () => openPaywallDesigner(overlay.appId),
+                })
+              }
+              style={{ marginTop: 16 }}
+            />
             <Btn
               label="Continue to Home"
+              ghost
               onPress={() =>
                 handleApprovedVerdictAction('continue', {
                   dismissOverlay: dismiss,
                   returnHome: onReturnHome,
                   openGoIndiePaywall,
+                  setUpPaywall: () => openPaywallDesigner(overlay.appId),
                 })
               }
-              style={{ marginTop: 16 }}
+              style={{ marginTop: 8 }}
             />
             <Btn
               label="Go Indie"
@@ -121,11 +140,12 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
                   dismissOverlay: dismiss,
                   returnHome: onReturnHome,
                   openGoIndiePaywall,
+                  setUpPaywall: () => openPaywallDesigner(overlay.appId),
                 })
               }
               style={{ marginTop: 8 }}
             />
-          </>
+          </ScrollView>
         )}
 
         {overlay.type === 'verdict' && !overlay.ok && (
@@ -173,8 +193,8 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
 
         {overlay.type === 'paywallResult' && paywallResult && (
           <ScrollView
-            style={st.paywallResultScroll}
-            contentContainerStyle={st.paywallResultContent}
+            style={st.sheetScroll}
+            contentContainerStyle={st.sheetContent}
             showsVerticalScrollIndicator
           >
             <Eyebrow
@@ -241,16 +261,16 @@ const st = StyleSheet.create({
     borderRadius: R.sheet,
     padding: 22,
   },
-  paywallResultSheet: {
+  scrollSheet: {
     maxHeight: '100%',
     flexShrink: 1,
     padding: 0,
   },
-  paywallResultScroll: {
+  sheetScroll: {
     width: '100%',
     flexShrink: 1,
   },
-  paywallResultContent: { padding: 22 },
+  sheetContent: { padding: 22 },
   h1: {
     color: C.ink,
     fontSize: 22,
@@ -258,7 +278,8 @@ const st = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  approvedTitle: { maxWidth: '100%' },
   heroIcon: { alignItems: 'center' },
   body: { color: C.mut, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 19 },
   resultReceipt: { fontSize: 11, textAlign: 'center', marginTop: 10 },

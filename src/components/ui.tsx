@@ -67,6 +67,8 @@ export function Btn({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       disabled={disabled}
@@ -357,7 +359,7 @@ const st = StyleSheet.create({
   btnSmall: { paddingVertical: 9, paddingHorizontal: 12 },
   btnContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   btnLabel: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
-  btnText: { color: C.btnText, fontWeight: '700', fontSize: 15 },
+  btnText: { color: C.btnText, fontWeight: '700', fontSize: 15, textAlign: 'center', flexShrink: 1 },
   screen: { paddingBottom: 132 },
   screenTop: {
     flexDirection: 'row',
@@ -384,7 +386,7 @@ const st = StyleSheet.create({
   heroSuffix: { color: C.dim, fontSize: 15, marginLeft: 4, marginBottom: 8 },
 
   section: { paddingHorizontal: S.gutter, marginTop: S.section },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, justifyContent: 'space-between', alignItems: 'baseline' },
   sectionMeta: { fontSize: 11, letterSpacing: 1.2, color: C.dim },
 
   unit: {
