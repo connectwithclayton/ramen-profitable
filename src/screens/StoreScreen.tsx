@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 import { useGame } from '../state/gameStore';
-import { SHOP } from '../content/content';
+import { RAMEN_ORDERS, SHOP } from '../content/content';
 import {
   Btn,
   Divider,
@@ -23,12 +23,15 @@ import {
   Section,
   SectionHeader,
   Unit,
+  exactMoney,
   fmt,
   money,
 } from '../components/ui';
 import { C } from '../theme';
 import PhoneBillboard, { type BillboardViewportFrame } from '../components/PhoneBillboard';
 import { restoreGoIndiePurchases } from '../monetization/purchases';
+import { RamenProfitableIcon } from '../components/icons';
+import { ramenFundingEligible } from '../state/experience';
 
 /**
  * Presentation only: seven upgrades in one flat list is a list, not a shop.
@@ -69,8 +72,11 @@ export default function StoreScreen({
     cash: active ? state.cash : 0,
     mrr: active ? state.mrr : 0,
     upgrades: active ? state.upgrades : HIDDEN_UPGRADES,
+    hasJob: active ? state.hasJob : true,
+    mealsFunded: active ? state.mealsFunded : 0,
     indie: active && state.goIndieResolved && state.goIndieActive,
     buy: state.buy,
+    openRamenPurchase: state.openRamenPurchase,
     pushNotif: state.pushNotif,
     openGoIndiePaywall: state.openGoIndiePaywall,
   })));
@@ -81,6 +87,7 @@ export default function StoreScreen({
   const billboardFrameRef = useRef<BillboardViewportFrame | null>(null);
   const viewportRef = useRef({ offsetY: 0, height: 0, insetTop: 0, insetBottom: 0 });
   const owned = SHOP.filter(i => s.upgrades[i.id]).length;
+  const ramenEligible = ramenFundingEligible(s.upgrades, s.hasJob, SHOP);
   const indie = s.indie;
   const catvertising = Platform.OS === 'ios';
   const indieCopy = indie
@@ -246,6 +253,59 @@ export default function StoreScreen({
         );
       })}
 
+      {ramenEligible && (
+        <Section>
+          <SectionHeader
+            title="Ramen run"
+            meta={s.mealsFunded > 0 ? `${s.mealsFunded.toLocaleString()} FUNDED` : 'OPEN'}
+            metaColor={C.gold}
+          />
+          <Unit tone={C.gold} style={st.ramenUnit}>
+            <View style={st.ramenIntro}>
+              <RamenProfitableIcon size={25} color={C.gold} />
+              <View style={st.ramenIntroCopy}>
+                <Text style={st.ramenTitle}>Spend success on dinner</Text>
+                <Text style={st.ramenCopy}>
+                  Optional, repeatable, and worth exactly zero MRR. Every $20 funds one meal.
+                </Text>
+              </View>
+            </View>
+            <View style={st.ramenMenu}>
+              {RAMEN_ORDERS.map((order, index) => {
+                const affordable = s.cash >= order.cost;
+                const short = Math.max(0, order.cost - s.cash);
+                const mealLabel = order.quantity === 1 ? 'meal' : 'meals';
+                return (
+                  <View key={order.quantity}>
+                    {index > 0 && <Divider />}
+                    <View style={[st.ramenRow, !affordable && st.ramenUnaffordable]}>
+                      <View style={st.ramenOrderCopy}>
+                        <Text style={st.name}>{order.quantity.toLocaleString()} {mealLabel}</Text>
+                        <Text style={st.desc}>{order.label}</Text>
+                      </View>
+                      {affordable ? (
+                        <Btn
+                          small
+                          label={exactMoney(order.cost)}
+                          accessibilityLabel={`Review funding ${order.quantity.toLocaleString()} ramen ${mealLabel} for ${exactMoney(order.cost)}.`}
+                          onPress={() => s.openRamenPurchase(order.quantity)}
+                          style={st.ramenBuy}
+                        />
+                      ) : (
+                        <View style={st.lockedPrice}>
+                          <MonoText style={st.lockedCost}>{exactMoney(order.cost)}</MonoText>
+                          <MonoText style={st.lockedShort}>{exactMoney(Math.ceil(short))} SHORT</MonoText>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </Unit>
+        </Section>
+      )}
+
       {catvertising && (
         <PhoneBillboard
           active={active}
@@ -287,6 +347,16 @@ const st = StyleSheet.create({
   lockedPrice: { alignItems: 'flex-end' },
   lockedCost: { color: C.ink, fontSize: 14, fontWeight: '600' },
   lockedShort: { color: C.pink, fontSize: 10, letterSpacing: 0.8, marginTop: 3 },
+  ramenUnit: { marginTop: 12, paddingBottom: 0 },
+  ramenIntro: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  ramenIntroCopy: { flex: 1 },
+  ramenTitle: { color: C.ink, fontSize: 16, fontWeight: '700' },
+  ramenCopy: { color: C.mut, fontSize: 12.5, lineHeight: 18, marginTop: 4 },
+  ramenMenu: { marginTop: 12 },
+  ramenRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  ramenOrderCopy: { flex: 1 },
+  ramenUnaffordable: { opacity: 0.5 },
+  ramenBuy: { minWidth: 84 },
   indie: { marginTop: 12 },
   indieCopy: { color: C.mut, fontSize: 13, lineHeight: 19 },
 });

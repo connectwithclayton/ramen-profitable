@@ -25,6 +25,7 @@ import {
   SectionHeader,
   Unit,
   fmt,
+  fmtN,
   initials,
   money,
 } from '../components/ui';
@@ -354,6 +355,23 @@ export default function HomeScreen({
         )}
       </Hero>
 
+      {s.mealsFunded > 0 && (
+        <Section style={st.ramenRecognition}>
+          <Unit tone={C.gold} style={st.ramenRecognitionUnit}>
+            <View
+              accessible
+              accessibilityLabel={`${fmtN(s.mealsFunded)} ramen meals funded over your lifetime.`}
+              style={st.ramenRecognitionRow}
+            >
+              <RamenProfitableIcon size={18} color={C.gold} />
+              <MonoText style={st.ramenRecognitionText}>
+                {fmtN(s.mealsFunded)} RAMEN MEALS FUNDED · LIFETIME
+              </MonoText>
+            </View>
+          </Unit>
+        </Section>
+      )}
+
       {paywallSetupApp && (
         <Section>
           <SectionHeader title="Next step" />
@@ -560,6 +578,11 @@ const st = StyleSheet.create({
   railGoal: { fontSize: 11, color: C.ink, letterSpacing: 0.8, fontWeight: '600' },
   freeLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   freeText: { fontSize: 11, color: C.mint, letterSpacing: 1 },
+
+  ramenRecognition: { marginTop: S_GAP },
+  ramenRecognitionUnit: { paddingVertical: 10 },
+  ramenRecognitionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ramenRecognitionText: { color: C.gold, fontSize: 10, letterSpacing: 0.7, fontWeight: '600', flex: 1 },
 
   setupName: { color: C.ink, fontSize: 17, fontWeight: '700' },
   setupCopy: { color: C.mut, fontSize: 13, lineHeight: 19, marginTop: 6 },

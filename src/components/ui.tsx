@@ -110,6 +110,10 @@ export const fmt = (n: number) => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$
 export const fmtN = (n: number) => Math.floor(n).toLocaleString();
 /** Full-precision money for hero numerals, where "$2.0k" would be a lie about a real balance. */
 export const money = (n: number) => `$${Math.floor(n).toLocaleString()}`;
+export const exactMoney = (n: number) => `$${n.toLocaleString('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+})}`;
 
 /* ------------------------------------------------------------------ *
  * Screen scaffold

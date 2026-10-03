@@ -3,7 +3,7 @@ import { Platform, View, Text, ScrollView, StyleSheet, Animated, Easing } from '
 import * as Haptics from 'expo-haptics';
 import { useGame } from '../state/gameStore';
 import { REVIEW_MSGS } from '../content/content';
-import { Btn, Eyebrow, MonoText, fmt } from './ui';
+import { Btn, Eyebrow, MonoText, exactMoney, fmt, fmtN } from './ui';
 import { C, R } from '../theme';
 import { presentGoIndiePaywall } from '../monetization/purchases';
 import PaywallDesigner from './PaywallDesigner';
@@ -61,6 +61,9 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   const openGoIndiePaywall = useGame(s => s.openGoIndiePaywall);
   const openPaywallDesigner = useGame(s => s.openPaywallDesigner);
   const pushNotif = useGame(s => s.pushNotif);
+  const fundRamen = useGame(s => s.fundRamen);
+  const cash = useGame(s => s.cash);
+  const mealsFunded = useGame(s => s.mealsFunded);
   const mrr = useGame(s => s.mrr);
   const paywallApp = useGame(s =>
     overlay?.type === 'paywallResult' ? s.apps.find(app => app.id === overlay.appId) : undefined,
@@ -191,6 +194,49 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
 
         {overlay.type === 'paywallDesigner' && <PaywallDesigner appId={overlay.appId} />}
 
+        {overlay.type === 'ramenPurchase' && (
+          <>
+            <View style={st.heroIcon}>
+              <RamenProfitableIcon size={40} color={C.gold} />
+            </View>
+            <Eyebrow color={C.gold}>Review ramen receipt</Eyebrow>
+            <Text style={st.h1}>
+              Fund {fmtN(overlay.quantity)} {overlay.quantity === 1 ? 'meal' : 'meals'}?
+            </Text>
+            <Text style={st.body}>
+              This is optional recognition spending. It adds no income, energy, or other gameplay boost.
+            </Text>
+            <View style={st.ramenQuote}>
+              <View style={st.quoteRow}>
+                <MonoText style={st.quoteLabel}>TOTAL</MonoText>
+                <MonoText style={st.quoteValue}>{exactMoney(overlay.cost)}</MonoText>
+              </View>
+              <View style={st.quoteRow}>
+                <MonoText style={st.quoteLabel}>CASH AFTER</MonoText>
+                <MonoText style={[st.quoteValue, cash < overlay.cost && { color: C.pink }]}>
+                  {cash >= overlay.cost ? exactMoney(cash - overlay.cost) : `${exactMoney(overlay.cost - cash)} SHORT`}
+                </MonoText>
+              </View>
+              <View style={st.quoteRow}>
+                <MonoText style={st.quoteLabel}>LIFETIME AFTER</MonoText>
+                <MonoText style={st.quoteValue}>{fmtN(mealsFunded + overlay.quantity)} MEALS</MonoText>
+              </View>
+            </View>
+            <Btn
+              label={cash >= overlay.cost ? 'Fund these meals' : 'Not enough cash'}
+              accessibilityLabel={cash >= overlay.cost
+                ? `Confirm funding ${fmtN(overlay.quantity)} ramen ${overlay.quantity === 1 ? 'meal' : 'meals'} for ${exactMoney(overlay.cost)}. ${exactMoney(cash - overlay.cost)} cash will remain.`
+                : `Cannot fund this order. ${exactMoney(overlay.cost - cash)} more cash needed.`}
+              disabled={cash < overlay.cost}
+              onPress={() => {
+                if (!fundRamen()) pushNotif('That ramen receipt is no longer available.', 'store');
+              }}
+              style={{ marginTop: 16 }}
+            />
+            <Btn label="Not tonight" ghost onPress={dismiss} style={{ marginTop: 8 }} />
+          </>
+        )}
+
         {overlay.type === 'paywallResult' && paywallResult && (
           <ScrollView
             style={st.sheetScroll}
@@ -284,6 +330,10 @@ const st = StyleSheet.create({
   body: { color: C.mut, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 19 },
   resultReceipt: { fontSize: 11, textAlign: 'center', marginTop: 10 },
   paywallCode: { marginTop: 16 },
+  ramenQuote: { backgroundColor: C.card2, borderRadius: R.tile, marginTop: 16, padding: 12, gap: 9 },
+  quoteRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 },
+  quoteLabel: { color: C.dim, fontSize: 10, letterSpacing: 0.8 },
+  quoteValue: { color: C.ink, fontSize: 12, fontWeight: '600', textAlign: 'right' },
   spinner: {
     width: 36,
     height: 36,
