@@ -90,6 +90,7 @@ export type GameState = {
   energyMax: number;
   energyRegen: number; // per fast tick (500ms)
   tapPower: number;
+  hasTappedCode: boolean;
   autoCode: number; // LOC per second
   hasJob: boolean;
   salary: number;
@@ -304,6 +305,7 @@ const initial: RuntimeState = {
   energyMax: 50,
   energyRegen: 0.06,
   tapPower: 3,
+  hasTappedCode: false,
   autoCode: 0,
   hasJob: true,
   salary: 80,
@@ -412,6 +414,7 @@ export const useGame = create<RuntimeState & Actions>()(
         );
         set({
           energy: nextEnergy,
+          hasTappedCode: true,
           project: {
             ...s.project,
             loc: nextLoc,
