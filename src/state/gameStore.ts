@@ -542,12 +542,17 @@ export const useGame = create<RuntimeState & Actions>()(
         const item = SHOP.find(i => i.id === id);
         if (!item || s.upgrades[id] || s.cash < item.cost) return;
         const applied = item.apply(s);
+        const upgrades = { ...s.upgrades, [id]: true };
+        const ramenWasEligible = ramenFundingEligible(s.upgrades, s.hasJob, SHOP);
         set({
           cash: s.cash - item.cost,
-          upgrades: { ...s.upgrades, [id]: true },
+          upgrades,
           ...applied,
         });
         s.pushNotif(`${item.name} acquired.`, 'store');
+        if (!ramenWasEligible && ramenFundingEligible(upgrades, s.hasJob, SHOP)) {
+          get().pushNotif('Ramen run unlocked in Store.', 'ramen-profitable');
+        }
         // The committed-rate purchase beat carries the automation joke; progress telemetry alone does not.
         if (id === 'claude') {
           const rate = typeof applied.autoCode === 'number' ? applied.autoCode : s.autoCode;
@@ -596,7 +601,7 @@ export const useGame = create<RuntimeState & Actions>()(
             id: uid(),
             who: BETA_TESTER[0],
             handle: BETA_TESTER[1],
-            text: `receipt checked: ${order.quantity.toLocaleString()} ramen ${mealLabel} funded, ${mealsFunded.toLocaleString()} lifetime, $${cash.toLocaleString('en-US', { maximumFractionDigits: 2 })} left. ${highestMilestone?.flavor ?? 'Dinner keeps scaling.'}`,
+            text: `receipt checked: ${order.quantity.toLocaleString()} fictional ramen ${mealLabel} recorded, ${mealsFunded.toLocaleString()} lifetime, $${cash.toLocaleString('en-US', { maximumFractionDigits: 2 })} game cash left. ${highestMilestone?.flavor ?? 'Dinner keeps scaling.'}`,
             likes: Math.floor(Math.random() * 900) + 12,
             kind: 'purchase',
             event: highestMilestone
@@ -614,7 +619,7 @@ export const useGame = create<RuntimeState & Actions>()(
           });
           const purchaseNotif: Notif = {
             id: uid(),
-            text: `${order.quantity.toLocaleString()} ramen ${mealLabel} funded. Receipt posted to Chirp.`,
+            text: `${order.quantity.toLocaleString()} fictional ramen ${mealLabel} recorded. Receipt posted to Chirp.`,
             icon: 'ramen-profitable',
           };
           committed = true;
@@ -635,11 +640,15 @@ export const useGame = create<RuntimeState & Actions>()(
       quitJob: () => {
         const s = get();
         if (s.mrr < MRR_GOAL) return;
+        const ramenWasEligible = ramenFundingEligible(s.upgrades, s.hasJob, SHOP);
         set({ hasJob: false, won: true, overlay: { type: 'win' } });
         s.pushChirp(`i just quit my job. MRR $${Math.floor(s.mrr)}. hands are shaking. #indiehacker #shipaton`, {
           author: PLAYER,
         });
         s.unlock('ramen');
+        if (!ramenWasEligible) {
+          get().pushNotif('Ramen run unlocked in Store.', 'ramen-profitable');
+        }
       },
 
       fastTick: () => {

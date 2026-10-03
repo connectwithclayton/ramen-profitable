@@ -42,8 +42,11 @@ Module._load = function (name, parent, main) {
   );
   if (name === '../components/PhoneBillboard') return { __esModule: true, default: () => null };
   if (name === '../monetization/purchases') return {
+    initPurchases: async () => false,
+    getPurchaseServiceStatus: () => 'unavailable',
+    subscribePurchaseServiceStatus: () => () => {},
     restoreGoIndiePurchases: async () => false,
-    presentGoIndiePaywall: async () => false,
+    presentGoIndiePaywall: async () => ({ status: 'cancelled' }),
   };
   return originalLoad(name, parent, main);
 };
@@ -108,19 +111,24 @@ test('Store reveals repeatable meal controls at eligibility and quotes exact tot
   let view;
   await act(async () => { view = create(React.createElement(StoreScreen)); });
   t.after(async () => { await act(async () => view.unmount()); });
-  assert.equal(textExists(view.root, 'Ramen run'), false);
+  assert.ok(textExists(view.root, 'Ramen run'));
+  assert.ok(textExists(view.root, 'LOCKED'));
+  assert.ok(textExists(view.root, 'Buy all 7 upgrades or quit your day job to unlock fictional ramen.'));
+  assert.ok(textExists(view.root, '7 UPGRADES LEFT · OR QUIT YOUR DAY JOB'));
 
   await act(async () => useGame.setState({ upgrades: allUpgrades(), cash: 80000.25 }));
-  assert.ok(textExists(view.root, 'Ramen run'));
+  assert.ok(textExists(view.root, 'UNLOCKED'));
+  assert.ok(textExists(view.root, 'Fictional game cash only. No real meals or donations. Every $20 records one in-game meal and adds zero MRR.'));
+  assert.ok(textExists(view.root, 'NEXT MILESTONE · 4 MEALS · 4 TO GO'));
   for (const order of RAMEN_ORDERS) {
     const meals = order.quantity === 1 ? 'meal' : 'meals';
     assert.ok(button(
       view.root,
-      `Review funding ${order.quantity.toLocaleString()} ramen ${meals} for $${order.cost.toLocaleString()}.`,
+      `Review ${order.quantity.toLocaleString()} fictional ramen ${meals} for $${order.cost.toLocaleString()} game cash.`,
     ));
   }
 
-  await press(button(view.root, 'Review funding 4,000 ramen meals for $80,000.'));
+  await press(button(view.root, 'Review 4,000 fictional ramen meals for $80,000 game cash.'));
   assert.deepEqual(useGame.getState().overlay, { type: 'ramenPurchase', quantity: 4000, cost: 80000 });
 
   let overlay;
@@ -130,10 +138,11 @@ test('Store reveals repeatable meal controls at eligibility and quotes exact tot
   assert.ok(textExists(overlay.root, '$0.25'));
   assert.ok(textExists(overlay.root, '4,000 MEALS'));
   assert.equal(
-    button(overlay.root, 'Confirm funding 4,000 ramen meals for $80,000. $0.25 cash will remain.').props.accessibilityState.disabled,
+    button(overlay.root, 'Confirm recording 4,000 fictional ramen meals for $80,000 game cash. $0.25 game cash will remain.').props.accessibilityState.disabled,
     false,
   );
 
+  assert.ok(textExists(overlay.root, 'Fictional game cash only. No real meals or donations. This optional in-game record adds no income, energy, or other gameplay boost.'));
   await press(button(overlay.root, 'Not tonight'));
   assert.equal(useGame.getState().cash, 80000.25);
   assert.equal(useGame.getState().mealsFunded, 0);
@@ -150,7 +159,7 @@ test('purchases are repeatable, atomic, consolidated, and safe when funds change
   assert.equal(useGame.getState().mrr, 123);
   assert.equal(useGame.getState().energy, 17);
   assert.equal(useGame.getState().chirps.length, 1);
-  assert.match(useGame.getState().chirps[0].text, /4 ramen meals funded, 4 lifetime, \$80\.5 left/);
+  assert.match(useGame.getState().chirps[0].text, /4 fictional ramen meals recorded, 4 lifetime, \$80\.5 game cash left/);
 
   assert.equal(useGame.getState().fundRamen(), false, 'the consumed confirmation cannot double commit');
   assert.equal(useGame.getState().cash, 80.5);
@@ -212,7 +221,7 @@ test('meal totals and receipt achievements survive relaunch while old saves defa
   assert.equal(useGame.getState().mealsFunded, 40);
   assert.equal(useGame.getState().achievements.ramen_meals_4, true);
   assert.equal(useGame.getState().achievements.ramen_meals_40, true);
-  assert.match(useGame.getState().chirps[0].text, /40 ramen meals funded/);
+  assert.match(useGame.getState().chirps[0].text, /40 fictional ramen meals recorded/);
 
   reset();
   saved = JSON.stringify({
@@ -226,15 +235,29 @@ test('meal totals and receipt achievements survive relaunch while old saves defa
   assert.equal(useGame.getState().mealsFunded, 0);
 });
 
-test('Home gives funded meals restrained lifetime recognition', async t => {
+test('final upgrade and resignation reveal the existing ramen run without changing eligibility', () => {
+  const lastUpgrade = SHOP.at(-1);
+  const upgrades = allUpgrades();
+  delete upgrades[lastUpgrade.id];
+  useGame.setState({ upgrades, cash: lastUpgrade.cost, notifs: [] });
+  useGame.getState().buy(lastUpgrade.id);
+  assert.ok(useGame.getState().notifs.some(notif => notif.text === 'Ramen run unlocked in Store.'));
+
+  reset();
+  useGame.setState({ mrr: 2000, notifs: [] });
+  useGame.getState().quitJob();
+  assert.ok(useGame.getState().notifs.some(notif => notif.text === 'Ramen run unlocked in Store.'));
+});
+
+test('Home gives recorded fictional meals restrained lifetime recognition', async t => {
   useGame.setState({ mealsFunded: 40000, achievements: { ramen_meals_40000: true } });
   let view;
   await act(async () => {
     view = create(React.createElement(HomeScreen, { bottomOcclusion: 80, onOpenCode() {} }));
   });
   t.after(async () => { await act(async () => view.unmount()); });
-  assert.ok(view.root.findByProps({ accessibilityLabel: '40,000 ramen meals funded over your lifetime.' }));
-  assert.ok(textExists(view.root, '40,000 RAMEN MEALS FUNDED · LIFETIME'));
+  assert.ok(view.root.findByProps({ accessibilityLabel: '40,000 fictional ramen meals recorded over your lifetime.' }));
+  assert.ok(textExists(view.root, '40,000 FICTIONAL RAMEN MEALS · LIFETIME'));
   assert.ok(view.root.findByProps({
     accessibilityLabel: `Ramen Endowment. Unlocked. ${ACHIEVEMENTS.find(a => a.id === 'ramen_meals_40000').desc}`,
   }));

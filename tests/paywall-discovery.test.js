@@ -29,7 +29,9 @@ Module._load = function (name, parent, main) {
     { __esModule: true, default: 'Svg' }, { get: (obj, key) => obj[key] ?? String(key) },
   );
   if (name === '../monetization/purchases') return {
-    presentGoIndiePaywall: async () => { purchases++; return false; },
+    getPurchaseServiceStatus: () => 'available',
+    subscribePurchaseServiceStatus: () => () => {},
+    presentGoIndiePaywall: async () => { purchases++; return { status: 'cancelled' }; },
   };
   return originalLoad(name, parent, main);
 };
@@ -179,10 +181,11 @@ test('Go Indie remains a separate, deliberate purchase path', async t => {
   approveProject();
   const view = await render(t, 'code');
   assert.equal(purchases, 0);
+  await act(async () => useGame.setState({ goIndieResolved: true, goIndieActive: false }));
   await press(button(view.root, 'Go Indie'));
   assert.equal(useGame.getState().overlay.type, 'paywall');
   assert.equal(purchases, 0, 'approval action only opens the existing Go Indie explanation');
-  await press(button(view.root, 'Go Indie'));
+  await press(button(view.root, 'View price and purchase'));
   assert.equal(purchases, 1, 'only explicit Go Indie confirmation calls the purchase SDK');
   assert.equal(useGame.getState().apps[0].hasPaywall, false);
 });

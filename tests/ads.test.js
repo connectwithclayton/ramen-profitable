@@ -22,6 +22,8 @@ const info = (active, requestDate = new Date(nextCustomerInfoRequestTime += 1_00
 let customer = deferred();
 let restored = deferred();
 let paywall = deferred();
+let offeringPackages = [{}];
+let offeringsError = null;
 let consentInfoUpdate = deferred();
 let consentForm = deferred();
 let listener;
@@ -148,7 +150,10 @@ Module._load = function (name, parent, main) {
       return customer.promise;
     },
     restorePurchases: () => restored.promise,
-    getOfferings: async () => ({ current: { availablePackages: [{}] } }),
+    getOfferings: async () => {
+      if (offeringsError) throw offeringsError;
+      return { current: { identifier: 'go-indie', availablePackages: offeringPackages } };
+    },
   }, LOG_LEVEL: { VERBOSE: 'VERBOSE' } };
   if (name === 'react-native-purchases-ui') return { default: { presentPaywall: () => paywall.promise }, PAYWALL_RESULT: { PURCHASED: 'PURCHASED', RESTORED: 'RESTORED', CANCELLED: 'CANCELLED' } };
   return originalLoad(name, parent, main);
@@ -391,7 +396,7 @@ test('Store billboard waits for ownership and consent, honors purchases, and han
   assert.equal(banners().length, 1);
   let purchase;
   await act(async () => { purchase = purchases.presentGoIndiePaywall(); });
-  await act(async () => { customer = { promise: Promise.resolve(info(true)) }; paywall.resolve('PURCHASED'); assert.equal(await purchase, true); });
+  await act(async () => { customer = { promise: Promise.resolve(info(true)) }; paywall.resolve('PURCHASED'); assert.deepEqual(await purchase, { status: 'confirmed-owned' }); });
   assert.equal(banners().length, 0, 'purchase suppresses without a restart');
 
   await act(async () => { listener(info(false)); });
@@ -1268,7 +1273,7 @@ test('a first-session purchase advances lastSeen so relaunch cannot repay foregr
   paywall = deferred();
   const purchase = purchases.presentGoIndiePaywall();
   paywall.resolve('PURCHASED');
-  assert.equal(await purchase, true);
+  assert.deepEqual(await purchase, { status: 'confirmed-owned' });
   assert.equal(useGame.getState().lastSeen, now);
   assert.equal(useGame.getState().goIndieRateStartsAt, now);
 
@@ -1345,7 +1350,7 @@ test('a fresh purchase applies the owner rate only after confirmation', async t 
   paywall = deferred();
   const purchase = purchases.presentGoIndiePaywall();
   paywall.resolve('PURCHASED');
-  assert.equal(await purchase, true);
+  assert.deepEqual(await purchase, { status: 'confirmed-owned' });
   assert.equal(useGame.getState().goIndieRateStartsAt, now);
 
   now += 20_000;
@@ -1454,7 +1459,7 @@ test('an identity-less restore listener cannot revoke a confirmed purchase', asy
   paywall = deferred();
   const purchase = purchases.presentGoIndiePaywall();
   paywall.resolve('PURCHASED');
-  assert.equal(await purchase, true);
+  assert.deepEqual(await purchase, { status: 'confirmed-owned' });
   assert.equal(useGame.getState().goIndieActive, true);
 
   const staleRestoreInfo = info(false);
@@ -1511,7 +1516,7 @@ test('a stalled purchase refresh cannot discard confirmed restore ownership', as
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
 
   refreshInfo.resolve(info(true));
-  assert.equal(await purchase, true);
+  assert.deepEqual(await purchase, { status: 'confirmed-owned' });
 });
 
 test('a stale negative restore cannot clear the post-payment ad barrier', async () => {
@@ -1568,7 +1573,7 @@ test('a stale negative restore cannot clear the post-payment ad barrier', async 
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
   assert.equal(banners().length, 0, 'pending purchase confirmation must unmount the advert');
 
-  await act(async () => { button('Remain humble').props.onPress(); });
+  await act(async () => { button('Remain free').props.onPress(); });
   await flush();
   await setBillboardWidth(tree, 320);
   assert.equal(useGame.getState().overlay, null);
@@ -1578,7 +1583,7 @@ test('a stale negative restore cannot clear the post-payment ad barrier', async 
 
   await act(async () => {
     refreshInfo.resolve(info(true));
-    assert.equal(await purchase, true);
+    assert.deepEqual(await purchase, { status: 'confirmed-owned' });
   });
   assert.equal(useGame.getState().goIndieActive, true);
   assert.equal(useGame.getState().goIndieResolved, true);
@@ -1593,7 +1598,7 @@ test('a paywall success without a confirmed go_indie entitlement fails closed', 
   customer.promise.catch(() => {});
   const purchase = purchases.presentGoIndiePaywall();
   paywall.resolve('PURCHASED');
-  assert.equal(await purchase, null);
+  assert.deepEqual(await purchase, { status: 'entitlement-unconfirmed' });
   assert.equal(useGame.getState().goIndieResolved, false);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
 });
@@ -1604,9 +1609,32 @@ test('suppressed CustomerInfo cannot confirm unresolved persisted ownership', as
   customer = { promise: Promise.resolve(info(false)) };
   const purchase = purchases.presentGoIndiePaywall();
   paywall.resolve('PURCHASED');
-  assert.equal(await purchase, null);
+  assert.deepEqual(await purchase, { status: 'entitlement-unconfirmed' });
   assert.equal(useGame.getState().goIndieResolved, false);
   assert.equal(require('../src/monetization/ads.ts').mayRequestAds(useGame.getState()), false);
+});
+
+test('purchase outcomes distinguish cancellation, missing catalog, and service errors', async () => {
+  offeringPackages = [{}];
+  offeringsError = null;
+  paywall = deferred();
+  const cancelled = purchases.presentGoIndiePaywall();
+  paywall.resolve('CANCELLED');
+  assert.deepEqual(await cancelled, { status: 'cancelled' });
+
+  offeringPackages = [];
+  assert.deepEqual(
+    await purchases.presentGoIndiePaywall(),
+    { status: 'catalog-unavailable' },
+  );
+
+  offeringPackages = [{}];
+  offeringsError = new Error('store offline');
+  assert.deepEqual(
+    await purchases.presentGoIndiePaywall(),
+    { status: 'service-error' },
+  );
+  offeringsError = null;
 });
 
 test('release runtime accepts a valid pair and rejects cross-publisher identifiers', () => {
@@ -3209,24 +3237,25 @@ test('Android omits Catvertising and describes only the offline Go Indie benefit
   try {
     mockNative.Platform.OS = 'android';
     useGame.setState({ goIndieActive: false, goIndieResolved: true, overlay: null });
+    await refreshOwnership(false);
     store = await mountStore(StoreScreen);
 
     assert.equal(visibleText(store).includes('Your phone'), false);
     assert.equal(visibleText(store).includes('CATVERTISING'), false);
-    assert.ok(visibleText(store).includes('Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.'));
-    assert.equal(visibleText(store).some(value => value.includes('removes ads')), false);
+    assert.ok(visibleText(store).includes('Optional one-time purchase with real money: doubles offline app income, up to 8 hours. It does not quit your character\'s day job.'));
+    assert.equal(visibleText(store).some(value => value.includes('removes iOS ads')), false);
 
     await act(async () => { useGame.setState({ goIndieActive: true }); });
-    assert.ok(visibleText(store).includes('Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'));
-    assert.equal(visibleText(store).some(value => value.includes('Ads are removed')), false);
+    assert.ok(visibleText(store).includes('Go Indie is confirmed active. Offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'));
+    assert.equal(visibleText(store).some(value => value.includes('iOS ads are removed')), false);
     await act(async () => { store.unmount(); });
     store = null;
 
     useGame.setState({ overlay: { type: 'paywall' } });
     const OverlayHost = require('../src/components/OverlayHost.tsx').default;
     await act(async () => { overlay = create(React.createElement(OverlayHost, { onReturnHome() {} })); });
-    assert.ok(visibleText(overlay).includes('Make your character an indie operator. Go Indie doubles offline earnings in this game.'));
-    assert.equal(visibleText(overlay).some(value => value.includes('removes ads')), false);
+    assert.ok(visibleText(overlay).includes('Go Indie is confirmed active. Offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'));
+    assert.equal(visibleText(overlay).some(value => value.includes('iOS ads are removed')), false);
   } finally {
     if (store) await act(async () => { store.unmount(); });
     if (overlay) await act(async () => { overlay.unmount(); });

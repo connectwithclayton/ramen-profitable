@@ -360,12 +360,12 @@ export default function HomeScreen({
           <Unit tone={C.gold} style={st.ramenRecognitionUnit}>
             <View
               accessible
-              accessibilityLabel={`${fmtN(s.mealsFunded)} ramen meals funded over your lifetime.`}
+              accessibilityLabel={`${fmtN(s.mealsFunded)} fictional ramen meals recorded over your lifetime.`}
               style={st.ramenRecognitionRow}
             >
               <RamenProfitableIcon size={18} color={C.gold} />
               <MonoText style={st.ramenRecognitionText}>
-                {fmtN(s.mealsFunded)} RAMEN MEALS FUNDED · LIFETIME
+                {fmtN(s.mealsFunded)} FICTIONAL RAMEN MEALS · LIFETIME
               </MonoText>
             </View>
           </Unit>

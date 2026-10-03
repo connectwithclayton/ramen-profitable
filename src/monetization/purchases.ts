@@ -26,6 +26,32 @@ export type RevenueCatKeyConfig = {
   androidApiKey?: string;
 };
 
+export type PurchaseServiceStatus = 'checking' | 'available' | 'unavailable';
+export type GoIndiePurchaseOutcome =
+  | { status: 'confirmed-owned' }
+  | { status: 'cancelled' }
+  | { status: 'catalog-unavailable' }
+  | { status: 'service-error' }
+  | { status: 'entitlement-unconfirmed' };
+
+const purchaseServiceListeners = new Set<() => void>();
+let purchaseServiceStatus: PurchaseServiceStatus = 'checking';
+
+export function getPurchaseServiceStatus(): PurchaseServiceStatus {
+  return purchaseServiceStatus;
+}
+
+export function subscribePurchaseServiceStatus(listener: () => void): () => void {
+  purchaseServiceListeners.add(listener);
+  return () => purchaseServiceListeners.delete(listener);
+}
+
+function setPurchaseServiceStatus(status: PurchaseServiceStatus): void {
+  if (status === purchaseServiceStatus) return;
+  purchaseServiceStatus = status;
+  for (const listener of purchaseServiceListeners) listener();
+}
+
 const TEST_STORE_KEY_PREFIX = 'test_';
 const PLATFORM_KEY_PREFIX: Record<NativePlatform, string> = {
   ios: 'appl_',
@@ -148,6 +174,7 @@ function applyCustomerInfo(customerInfo: any, revision: number): boolean | null 
 }
 
 function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
+  setPurchaseServiceStatus('available');
   const active = isGoIndieActive(customerInfo);
   if (active) {
     ignoreNegativeCustomerInfoThroughRevision = Math.max(
@@ -171,13 +198,18 @@ function applyCustomerInfoUpdate(customerInfo: any): boolean | null {
 }
 
 async function refreshGoIndieEntitlement(invalidateCache = false): Promise<boolean | null> {
-  if (mockMode || !Purchases) return null;
+  if (mockMode || !Purchases) {
+    setPurchaseServiceStatus('unavailable');
+    return null;
+  }
   const revision = beginCustomerInfoOperation();
   try {
     if (invalidateCache) await Purchases.invalidateCustomerInfoCache();
     const info = await Purchases.getCustomerInfo();
+    setPurchaseServiceStatus('available');
     return applyCustomerInfo(info, revision);
   } catch (e) {
+    setPurchaseServiceStatus('unavailable');
     console.warn('[purchases] Could not refresh CustomerInfo.', e);
     return null;
   }
@@ -196,6 +228,7 @@ async function configurePurchases(): Promise<boolean | null> {
       configuredKeys(),
     );
     if ('reason' in selection) {
+      setPurchaseServiceStatus('unavailable');
       console.log(`[purchases] ${selection.reason} — mock mode.`);
       return null;
     }
@@ -211,6 +244,7 @@ async function configurePurchases(): Promise<boolean | null> {
     });
     return ownership;
   } catch (e) {
+    setPurchaseServiceStatus('unavailable');
     console.log('[purchases] Native module unavailable (Expo Go?) — mock mode.', e);
     return null;
   }
@@ -223,9 +257,12 @@ export function initPurchases(): Promise<boolean | null> {
   return initializationPromise;
 }
 
-export async function presentGoIndiePaywall(): Promise<boolean | null> {
+export async function presentGoIndiePaywall(): Promise<GoIndiePurchaseOutcome> {
   await initPurchases();
-  if (mockMode || !Purchases) return null;
+  if (mockMode || !Purchases) {
+    setPurchaseServiceStatus('unavailable');
+    return { status: 'service-error' };
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const uiMod = require('react-native-purchases-ui');
@@ -233,9 +270,11 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
     const offerings = await Purchases.getOfferings();
     const offering = offerings.current;
     if (!offering?.availablePackages?.length) {
+      setPurchaseServiceStatus('unavailable');
       console.warn('[purchases] Current Offering has no available packages.');
-      return null;
+      return { status: 'catalog-unavailable' };
     }
+    setPurchaseServiceStatus('available');
 
     if (__DEV__) {
       const packageIds = offering.availablePackages
@@ -262,28 +301,38 @@ export async function presentGoIndiePaywall(): Promise<boolean | null> {
       if (active !== true) {
         const currentOwnership = useGame.getState();
         if (currentOwnership.goIndieResolved && currentOwnership.goIndieActive) {
-          return true;
+          return { status: 'confirmed-owned' };
         }
         useGame.setState({ goIndieResolved: false });
-        return null;
+        return { status: 'entitlement-unconfirmed' };
       }
-      return true;
+      return { status: 'confirmed-owned' };
     }
-    return null;
+    if (result === uiMod.PAYWALL_RESULT.CANCELLED) {
+      return { status: 'cancelled' };
+    }
+    setPurchaseServiceStatus('unavailable');
+    return { status: 'service-error' };
   } catch (e) {
+    setPurchaseServiceStatus('unavailable');
     console.warn('[purchases] purchase failed', e);
-    return null;
+    return { status: 'service-error' };
   }
 }
 
 export async function restoreGoIndiePurchases(): Promise<boolean | null> {
   await initPurchases();
-  if (mockMode || !Purchases) return null;
+  if (mockMode || !Purchases) {
+    setPurchaseServiceStatus('unavailable');
+    return null;
+  }
   const revision = beginCustomerInfoOperation();
   try {
     const customerInfo = await Purchases.restorePurchases();
+    setPurchaseServiceStatus('available');
     return applyCustomerInfo(customerInfo, revision);
   } catch (e) {
+    setPurchaseServiceStatus('unavailable');
     console.warn('[purchases] restore failed', e);
     return null;
   }

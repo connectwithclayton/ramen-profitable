@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Platform,
   View,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 import { useGame } from '../state/gameStore';
-import { RAMEN_ORDERS, SHOP } from '../content/content';
+import { RAMEN_MILESTONES, RAMEN_ORDERS, SHOP } from '../content/content';
 import {
   Btn,
   Divider,
@@ -29,7 +29,12 @@ import {
 } from '../components/ui';
 import { C } from '../theme';
 import PhoneBillboard, { type BillboardViewportFrame } from '../components/PhoneBillboard';
-import { restoreGoIndiePurchases } from '../monetization/purchases';
+import {
+  getPurchaseServiceStatus,
+  initPurchases,
+  restoreGoIndiePurchases,
+  subscribePurchaseServiceStatus,
+} from '../monetization/purchases';
 import { RamenProfitableIcon } from '../components/icons';
 import { ramenFundingEligible } from '../state/experience';
 
@@ -74,12 +79,18 @@ export default function StoreScreen({
     upgrades: active ? state.upgrades : HIDDEN_UPGRADES,
     hasJob: active ? state.hasJob : true,
     mealsFunded: active ? state.mealsFunded : 0,
-    indie: active && state.goIndieResolved && state.goIndieActive,
+    indieActive: active && state.goIndieActive,
+    indieResolved: active && state.goIndieResolved,
     buy: state.buy,
     openRamenPurchase: state.openRamenPurchase,
     pushNotif: state.pushNotif,
     openGoIndiePaywall: state.openGoIndiePaywall,
   })));
+  const purchaseService = useSyncExternalStore(
+    subscribePurchaseServiceStatus,
+    getPurchaseServiceStatus,
+    getPurchaseServiceStatus,
+  );
   const [restoring, setRestoring] = useState(false);
   const [billboardInViewport, setBillboardInViewport] = useState(false);
   const [viewportMeasurementCurrent, setViewportMeasurementCurrent] = useState(true);
@@ -87,16 +98,38 @@ export default function StoreScreen({
   const billboardFrameRef = useRef<BillboardViewportFrame | null>(null);
   const viewportRef = useRef({ offsetY: 0, height: 0, insetTop: 0, insetBottom: 0 });
   const owned = SHOP.filter(i => s.upgrades[i.id]).length;
+  const upgradesLeft = SHOP.length - owned;
   const ramenEligible = ramenFundingEligible(s.upgrades, s.hasJob, SHOP);
-  const indie = s.indie;
+  const nextRamenMilestone = RAMEN_MILESTONES.find(milestone => milestone.threshold > s.mealsFunded);
+  const indie = s.indieResolved && s.indieActive;
   const catvertising = Platform.OS === 'ios';
-  const indieCopy = indie
+  const purchaseSurface = indie
+    ? 'confirmed-owned'
+    : purchaseService === 'unavailable'
+      ? 'unavailable'
+      : purchaseService === 'checking' || !s.indieResolved
+        ? 'checking'
+        : 'free';
+  const indieCopy = purchaseSurface === 'confirmed-owned'
     ? catvertising
-      ? 'Indie operator status is active. Ads are removed. Offline earnings are doubled — capped at 8 hours, same as always.'
-      : 'Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'
-    : catvertising
-      ? 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed.'
-      : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.';
+      ? 'Go Indie is confirmed active. iOS ads are removed and offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'
+      : 'Go Indie is confirmed active. Offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'
+    : purchaseSurface === 'checking'
+      ? 'Checking your App Store purchase status before showing this optional offer.'
+      : purchaseSurface === 'unavailable'
+        ? 'The App Store is unavailable right now. No purchase or ownership status was assumed.'
+        : catvertising
+          ? 'Optional one-time purchase with real money: removes iOS ads and doubles offline app income, up to 8 hours. It does not quit your character\'s day job.'
+          : 'Optional one-time purchase with real money: doubles offline app income, up to 8 hours. It does not quit your character\'s day job.';
+  const purchaseMeta = purchaseSurface === 'confirmed-owned'
+    ? 'CONFIRMED OWNED'
+    : purchaseSurface === 'free'
+      ? 'FREE PLAYER'
+      : purchaseSurface.toUpperCase();
+
+  useEffect(() => {
+    void initPurchases();
+  }, []);
 
   const updateBillboardVisibility = useCallback(() => {
     const frame = billboardFrameRef.current;
@@ -166,15 +199,18 @@ export default function StoreScreen({
   const restore = async () => {
     if (restoring) return;
     setRestoring(true);
-    const active = await restoreGoIndiePurchases();
-    if (active === true) {
-      s.pushNotif('Purchases restored. Go Indie is active.', 'growth');
-    } else if (active === false) {
-      s.pushNotif('No Go Indie purchase found to restore.', 'store');
-    } else {
-      s.pushNotif('Purchases are unavailable. Try restoring again later.', 'store');
+    try {
+      const restoredOwnership = await restoreGoIndiePurchases();
+      if (restoredOwnership === true) {
+        s.pushNotif('Existing Go Indie purchase restored and confirmed.', 'growth');
+      } else if (restoredOwnership === false) {
+        s.pushNotif('No Go Indie purchase was found for this store account.', 'store');
+      } else {
+        s.pushNotif('The App Store could not check existing purchases. Try again later.', 'store');
+      }
+    } finally {
+      setRestoring(false);
     }
-    setRestoring(false);
   };
 
   return (
@@ -253,21 +289,30 @@ export default function StoreScreen({
         );
       })}
 
-      {ramenEligible && (
-        <Section>
-          <SectionHeader
-            title="Ramen run"
-            meta={s.mealsFunded > 0 ? `${s.mealsFunded.toLocaleString()} FUNDED` : 'OPEN'}
-            metaColor={C.gold}
-          />
+      <Section>
+        <SectionHeader
+          title="Ramen run"
+          meta={ramenEligible
+            ? s.mealsFunded > 0
+              ? `${s.mealsFunded.toLocaleString()} RECORDED`
+              : 'UNLOCKED'
+            : 'LOCKED'}
+          metaColor={ramenEligible ? C.gold : undefined}
+        />
+        {ramenEligible ? (
           <Unit tone={C.gold} style={st.ramenUnit}>
             <View style={st.ramenIntro}>
               <RamenProfitableIcon size={25} color={C.gold} />
               <View style={st.ramenIntroCopy}>
-                <Text style={st.ramenTitle}>Spend success on dinner</Text>
+                <Text style={st.ramenTitle}>Spend success on fictional dinner</Text>
                 <Text style={st.ramenCopy}>
-                  Optional, repeatable, and worth exactly zero MRR. Every $20 funds one meal.
+                  Fictional game cash only. No real meals or donations. Every $20 records one in-game meal and adds zero MRR.
                 </Text>
+                <MonoText style={st.ramenMilestone}>
+                  {nextRamenMilestone
+                    ? `NEXT MILESTONE · ${nextRamenMilestone.threshold.toLocaleString()} MEALS · ${(nextRamenMilestone.threshold - s.mealsFunded).toLocaleString()} TO GO`
+                    : 'ALL RAMEN MILESTONES COMPLETE'}
+                </MonoText>
               </View>
             </View>
             <View style={st.ramenMenu}>
@@ -287,7 +332,7 @@ export default function StoreScreen({
                         <Btn
                           small
                           label={exactMoney(order.cost)}
-                          accessibilityLabel={`Review funding ${order.quantity.toLocaleString()} ramen ${mealLabel} for ${exactMoney(order.cost)}.`}
+                          accessibilityLabel={`Review ${order.quantity.toLocaleString()} fictional ramen ${mealLabel} for ${exactMoney(order.cost)} game cash.`}
                           onPress={() => s.openRamenPurchase(order.quantity)}
                           style={st.ramenBuy}
                         />
@@ -303,8 +348,15 @@ export default function StoreScreen({
               })}
             </View>
           </Unit>
-        </Section>
-      )}
+        ) : (
+          <Unit style={st.ramenLocked}>
+            <Text style={st.ramenCopy}>Buy all 7 upgrades or quit your day job to unlock fictional ramen.</Text>
+            <MonoText style={st.ramenLockedProgress}>
+              {upgradesLeft} {upgradesLeft === 1 ? 'UPGRADE' : 'UPGRADES'} LEFT · OR QUIT YOUR DAY JOB
+            </MonoText>
+          </Unit>
+        )}
+      </Section>
 
       {catvertising && (
         <PhoneBillboard
@@ -317,15 +369,36 @@ export default function StoreScreen({
       )}
 
       <Section>
-        <SectionHeader title="Go Indie" meta={indie ? 'ACTIVE' : undefined} metaColor={C.mint} />
-        <Unit tone={indie ? C.mint : C.gold} style={st.indie}>
+        <SectionHeader
+          title="Go Indie"
+          meta={purchaseMeta}
+          metaColor={purchaseSurface === 'confirmed-owned' ? C.mint : undefined}
+        />
+        <Unit tone={purchaseSurface === 'confirmed-owned' ? C.mint : C.gold} style={st.indie}>
           <Text style={st.indieCopy}>{indieCopy}</Text>
-          <Btn label="Go Indie" ghost={indie} onPress={s.openGoIndiePaywall} style={{ marginTop: 14 }} />
+          {purchaseSurface === 'free' && (
+            <Text style={st.storePriceCopy}>The App Store shows the current local price before purchase.</Text>
+          )}
+          {purchaseSurface !== 'confirmed-owned' && (
+            <Btn
+              label={purchaseSurface === 'checking'
+                ? 'Checking purchase status'
+                : purchaseSurface === 'unavailable'
+                  ? 'Try Go Indie'
+                  : 'View App Store price'}
+              disabled={purchaseSurface === 'checking'}
+              onPress={s.openGoIndiePaywall}
+              style={{ marginTop: 14 }}
+            />
+          )}
+          <Text style={st.restoreCopy}>
+            Restore only rechecks an existing Go Indie purchase for this store account. It does not restore local game progress.
+          </Text>
           <Btn
             small
             ghost
             label={restoring ? 'Restoring…' : 'Restore Purchases'}
-            disabled={restoring}
+            disabled={restoring || purchaseSurface === 'checking'}
             onPress={restore}
             style={{ marginTop: 8 }}
           />
@@ -353,10 +426,15 @@ const st = StyleSheet.create({
   ramenTitle: { color: C.ink, fontSize: 16, fontWeight: '700' },
   ramenCopy: { color: C.mut, fontSize: 12.5, lineHeight: 18, marginTop: 4 },
   ramenMenu: { marginTop: 12 },
+  ramenMilestone: { color: C.gold, fontSize: 10, letterSpacing: 0.6, lineHeight: 15, marginTop: 9 },
+  ramenLocked: { marginTop: 12 },
+  ramenLockedProgress: { color: C.dim, fontSize: 10, letterSpacing: 0.6, lineHeight: 15, marginTop: 9 },
   ramenRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   ramenOrderCopy: { flex: 1 },
   ramenUnaffordable: { opacity: 0.5 },
   ramenBuy: { minWidth: 84 },
   indie: { marginTop: 12 },
   indieCopy: { color: C.mut, fontSize: 13, lineHeight: 19 },
+  storePriceCopy: { color: C.dim, fontSize: 11, lineHeight: 16, marginTop: 8 },
+  restoreCopy: { color: C.dim, fontSize: 11, lineHeight: 16, marginTop: 14 },
 });
