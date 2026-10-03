@@ -12,6 +12,7 @@ const native = {
   Platform: { OS: 'android', select: options => options.android ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1, absoluteFill: {} },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
   Animated: {
     Value: class {
@@ -126,6 +127,10 @@ test('Store reveals repeatable meal controls at eligibility and quotes exact tot
   let overlay;
   await act(async () => { overlay = create(React.createElement(OverlayHost, { onReturnHome() {} })); });
   t.after(async () => { await act(async () => overlay.unmount()); });
+  assert.equal(overlay.root.findAllByType('ScrollView').length, 1, 'the complete transaction is viewport-scrollable');
+  assert.ok(overlay.root.findByProps({ accessibilityLabel: 'Total: $80,000.' }));
+  assert.ok(overlay.root.findByProps({ accessibilityLabel: 'Cash after: $0.25.' }));
+  assert.ok(overlay.root.findByProps({ accessibilityLabel: 'Lifetime after: 4,000 meals.' }));
   assert.ok(textExists(overlay.root, '$80,000'));
   assert.ok(textExists(overlay.root, '$0.25'));
   assert.ok(textExists(overlay.root, '4,000 MEALS'));

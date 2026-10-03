@@ -13,6 +13,7 @@ const native = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1 },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
 };
 const originalLoad = Module._load;

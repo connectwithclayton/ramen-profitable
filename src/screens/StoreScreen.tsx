@@ -356,7 +356,7 @@ const st = StyleSheet.create({
   ramenRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   ramenOrderCopy: { flex: 1 },
   ramenUnaffordable: { opacity: 0.5 },
-  ramenBuy: { minWidth: 84 },
+  ramenBuy: { minWidth: 84, minHeight: 44, justifyContent: 'center' },
   indie: { marginTop: 12 },
   indieCopy: { color: C.mut, fontSize: 13, lineHeight: 19 },
 });

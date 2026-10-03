@@ -153,6 +153,7 @@ function HydratedGame() {
           return (
             <Pressable
               key={t.key}
+              testID={`tab-${t.key}`}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
               accessibilityLabel={flagged ? `${t.label}, new posts` : t.label}
