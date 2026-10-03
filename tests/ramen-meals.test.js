@@ -12,6 +12,7 @@ const native = {
   Platform: { OS: 'android', select: options => options.android ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1, absoluteFill: {} },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
   Animated: {
     Value: class {
@@ -134,6 +135,10 @@ test('Store reveals repeatable meal controls at eligibility and quotes exact tot
   let overlay;
   await act(async () => { overlay = create(React.createElement(OverlayHost, { onReturnHome() {} })); });
   t.after(async () => { await act(async () => overlay.unmount()); });
+  assert.equal(overlay.root.findAllByType('ScrollView').length, 1, 'the complete transaction is viewport-scrollable');
+  assert.ok(overlay.root.findByProps({ accessibilityLabel: 'Total: $80,000.' }));
+  assert.ok(overlay.root.findByProps({ accessibilityLabel: 'Cash after: $0.25.' }));
+  assert.ok(overlay.root.findByProps({ accessibilityLabel: 'Lifetime after: 4,000 meals.' }));
   assert.ok(textExists(overlay.root, '$80,000'));
   assert.ok(textExists(overlay.root, '$0.25'));
   assert.ok(textExists(overlay.root, '4,000 MEALS'));
@@ -249,15 +254,28 @@ test('final upgrade and resignation reveal the existing ramen run without changi
   assert.ok(useGame.getState().notifs.some(notif => notif.text === 'Ramen run unlocked in Store.'));
 });
 
-test('Home gives recorded fictional meals restrained lifetime recognition', async t => {
-  useGame.setState({ mealsFunded: 40000, achievements: { ramen_meals_40000: true } });
+test('Home puts its actionable next step above passive fictional meal recognition', async t => {
+  useGame.setState({
+    mealsFunded: 40000,
+    achievements: { ramen_meals_40000: true },
+    apps: [{
+      id: 'needs-paywall', name: 'PlantParent', idea: 'guilt-based plant care', live: true,
+      baseMrr: 100, mult: 1, dark: 0, hasPaywall: false,
+    }],
+  });
   let view;
   await act(async () => {
     view = create(React.createElement(HomeScreen, { bottomOcclusion: 80, onOpenCode() {} }));
   });
   t.after(async () => { await act(async () => view.unmount()); });
   assert.ok(view.root.findByProps({ accessibilityLabel: '40,000 fictional ramen meals recorded over your lifetime.' }));
+  assert.ok(textExists(view.root, 'per game day, soul-crushing'));
   assert.ok(textExists(view.root, '40,000 FICTIONAL RAMEN MEALS · LIFETIME'));
+  const homeText = visibleText(view.root);
+  assert.ok(
+    homeText.indexOf('Next step') < homeText.indexOf('40,000 FICTIONAL RAMEN MEALS · LIFETIME'),
+    'the actionable free setup must precede passive lifetime recognition',
+  );
   assert.ok(view.root.findByProps({
     accessibilityLabel: `Ramen Endowment. Unlocked. ${ACHIEVEMENTS.find(a => a.id === 'ramen_meals_40000').desc}`,
   }));

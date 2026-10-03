@@ -8,7 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { useGame, MRR_GOAL } from '../state/gameStore';
+import { MRR_GOAL, PAYWALL_AB_TEST_COST, useGame } from '../state/gameStore';
 import { ACHIEVEMENTS, BETA_TESTER, SHOP } from '../content/content';
 import {
   Btn,
@@ -212,7 +212,7 @@ function AppRow({
   const label = live
     ? `${name}. ${idea}. Earning ${fmt(mrr)} per month. ` +
       (hasPaywall
-        ? `Paywall shipped, conversion times ${mult.toFixed(2)}. Run an A/B test for $75.`
+        ? `Paywall shipped, conversion times ${mult.toFixed(2)}. Run an A/B test for $${PAYWALL_AB_TEST_COST}.`
         : 'No paywall yet. Set up your paywall for free, in-game.')
     : `${name}. ${idea}. Rejected by App Review.`;
 
@@ -233,7 +233,9 @@ function AppRow({
             <MonoText style={st.appMrr}>{fmt(mrr)}/mo</MonoText>
             <View style={st.appAction}>
               {hasPaywall ? <AbTestIcon size={13} color={C.gold} /> : <PaywallIcon size={13} color={C.gold} />}
-              <MonoText style={st.appActionText}>{hasPaywall ? `×${mult.toFixed(2)} · $75` : 'SET UP PAYWALL'}</MonoText>
+              <MonoText style={st.appActionText}>
+                {hasPaywall ? `×${mult.toFixed(2)} · $${PAYWALL_AB_TEST_COST}` : 'SET UP PAYWALL'}
+              </MonoText>
             </View>
           </>
         ) : (
@@ -255,7 +257,9 @@ function AppRow({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint={hasPaywall ? `Opens the paywall designer. Costs $75.` : 'Opens the paywall designer.'}
+      accessibilityHint={hasPaywall
+        ? `Opens the paywall designer for free. Running a new A/B test costs $${PAYWALL_AB_TEST_COST}.`
+        : 'Opens the paywall designer.'}
       onPress={onPress}
       style={({ pressed }) => [st.appRow, pressed && { opacity: 0.6 }]}
     >
@@ -355,23 +359,6 @@ export default function HomeScreen({
         )}
       </Hero>
 
-      {s.mealsFunded > 0 && (
-        <Section style={st.ramenRecognition}>
-          <Unit tone={C.gold} style={st.ramenRecognitionUnit}>
-            <View
-              accessible
-              accessibilityLabel={`${fmtN(s.mealsFunded)} fictional ramen meals recorded over your lifetime.`}
-              style={st.ramenRecognitionRow}
-            >
-              <RamenProfitableIcon size={18} color={C.gold} />
-              <MonoText style={st.ramenRecognitionText}>
-                {fmtN(s.mealsFunded)} FICTIONAL RAMEN MEALS · LIFETIME
-              </MonoText>
-            </View>
-          </Unit>
-        </Section>
-      )}
-
       {paywallSetupApp && (
         <Section>
           <SectionHeader title="Next step" />
@@ -386,6 +373,23 @@ export default function HomeScreen({
               onPress={() => s.openPaywallDesigner(paywallSetupApp.id)}
               style={{ marginTop: 12 }}
             />
+          </Unit>
+        </Section>
+      )}
+
+      {s.mealsFunded > 0 && (
+        <Section style={st.ramenRecognition}>
+          <Unit tone={C.gold} style={st.ramenRecognitionUnit}>
+            <View
+              accessible
+              accessibilityLabel={`${fmtN(s.mealsFunded)} fictional ramen meals recorded over your lifetime.`}
+              style={st.ramenRecognitionRow}
+            >
+              <RamenProfitableIcon size={18} color={C.gold} />
+              <MonoText style={st.ramenRecognitionText}>
+                {fmtN(s.mealsFunded)} FICTIONAL RAMEN MEALS · LIFETIME
+              </MonoText>
+            </View>
           </Unit>
         </Section>
       )}
@@ -438,7 +442,7 @@ export default function HomeScreen({
         <Unit style={st.statUnit}>
           <Eyebrow color={C.mut}>Day job</Eyebrow>
           <MonoText style={st.statValue}>{s.hasJob ? `+${fmt(s.salary)}` : 'NONE'}</MonoText>
-          <Text style={st.statCaption}>{s.hasJob ? 'per day, soul-crushing' : 'Bliss, statistically'}</Text>
+          <Text style={st.statCaption}>{s.hasJob ? 'per game day, soul-crushing' : 'Bliss, statistically'}</Text>
         </Unit>
       </Section>
 
@@ -453,7 +457,7 @@ export default function HomeScreen({
       {s.goIndieResolved && s.goIndieActive && (
         <Section style={{ marginTop: S_GAP }}>
           <Unit tone={C.mint} style={st.indie}>
-            <MonoText style={st.indieText}>INDIE OPERATOR · 2× OFFLINE EARNINGS</MonoText>
+            <MonoText style={st.indieText}>INDIE OPERATOR · 2× OFFLINE EARNINGS · 8-HOUR CAP</MonoText>
           </Unit>
         </Section>
       )}

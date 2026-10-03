@@ -362,7 +362,7 @@ export function homeReceiptStateForPersistence<T extends HomeReaction>(
 const persistedStateKeys = [
   'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
   'autoCode', 'hasTappedCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
-  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'mealsFunded', 'lastSeen',
+  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'mealsFunded', 'hasSeenOpeningToast', 'lastSeen',
   'goIndieRateStartsAt', 'pendingOwnerBonus', 'homeReceipt', 'homeReceiptSecondsLeft',
 ] as const satisfies readonly (keyof GameState)[];
 

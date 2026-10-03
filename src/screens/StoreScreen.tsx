@@ -112,15 +112,15 @@ export default function StoreScreen({
         : 'free';
   const indieCopy = purchaseSurface === 'confirmed-owned'
     ? catvertising
-      ? 'Go Indie is confirmed active. iOS ads are removed and offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'
-      : 'Go Indie is confirmed active. Offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'
+      ? 'Go Indie is confirmed active. iOS ads are removed and offline app income is doubled, up to the existing 8-hour cap. Your character\'s job is unchanged.'
+      : 'Go Indie is confirmed active. Offline app income is doubled, up to the existing 8-hour cap. Your character\'s job is unchanged.'
     : purchaseSurface === 'checking'
       ? 'Checking your App Store purchase status before showing this optional offer.'
       : purchaseSurface === 'unavailable'
         ? 'The App Store is unavailable right now. No purchase or ownership status was assumed.'
         : catvertising
-          ? 'Optional one-time purchase with real money: removes iOS ads and doubles offline app income, up to 8 hours. It does not quit your character\'s day job.'
-          : 'Optional one-time purchase with real money: doubles offline app income, up to 8 hours. It does not quit your character\'s day job.';
+          ? 'Optional one-time purchase with real money: removes iOS ads and doubles offline app income, up to the existing 8-hour cap. It does not quit your character\'s day job.'
+          : 'Optional one-time purchase with real money: doubles offline app income, up to the existing 8-hour cap. It does not quit your character\'s day job.';
   const purchaseMeta = purchaseSurface === 'confirmed-owned'
     ? 'CONFIRMED OWNED'
     : purchaseSurface === 'free'
@@ -432,7 +432,7 @@ const st = StyleSheet.create({
   ramenRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   ramenOrderCopy: { flex: 1 },
   ramenUnaffordable: { opacity: 0.5 },
-  ramenBuy: { minWidth: 84 },
+  ramenBuy: { minWidth: 84, minHeight: 44, justifyContent: 'center' },
   indie: { marginTop: 12 },
   indieCopy: { color: C.mut, fontSize: 13, lineHeight: 19 },
   storePriceCopy: { color: C.dim, fontSize: 11, lineHeight: 16, marginTop: 8 },

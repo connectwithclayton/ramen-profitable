@@ -58,6 +58,7 @@ const mockNative = {
     },
   },
   StatusBar: { currentHeight: 0 },
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', SafeAreaView: 'SafeAreaView',
 };
 const setAppState = state => {
@@ -3242,11 +3243,11 @@ test('Android omits Catvertising and describes only the offline Go Indie benefit
 
     assert.equal(visibleText(store).includes('Your phone'), false);
     assert.equal(visibleText(store).includes('CATVERTISING'), false);
-    assert.ok(visibleText(store).includes('Optional one-time purchase with real money: doubles offline app income, up to 8 hours. It does not quit your character\'s day job.'));
+    assert.ok(visibleText(store).includes('Optional one-time purchase with real money: doubles offline app income, up to the existing 8-hour cap. It does not quit your character\'s day job.'));
     assert.equal(visibleText(store).some(value => value.includes('removes iOS ads')), false);
 
     await act(async () => { useGame.setState({ goIndieActive: true }); });
-    assert.ok(visibleText(store).includes('Go Indie is confirmed active. Offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'));
+    assert.ok(visibleText(store).includes('Go Indie is confirmed active. Offline app income is doubled, up to the existing 8-hour cap. Your character\'s job is unchanged.'));
     assert.equal(visibleText(store).some(value => value.includes('iOS ads are removed')), false);
     await act(async () => { store.unmount(); });
     store = null;

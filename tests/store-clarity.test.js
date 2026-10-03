@@ -16,6 +16,7 @@ const native = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1, absoluteFill: {} },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
   Animated: {
     Value: class { interpolate() { return '0deg'; } },
@@ -113,7 +114,7 @@ test('mounted Store distinguishes checking, unavailable, free, and confirmed own
   assert.ok(button(view.root, 'View App Store price'));
   assert.ok(textIncludes(view.root, 'Optional one-time purchase with real money'));
   assert.ok(textIncludes(view.root, 'does not quit your character'));
-  assert.ok(textIncludes(view.root, 'up to 8 hours'));
+  assert.ok(textIncludes(view.root, 'existing 8-hour cap'));
   assert.ok(textIncludes(view.root, 'current local price'));
   assert.ok(textIncludes(view.root, 'does not restore local game progress'));
 

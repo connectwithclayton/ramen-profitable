@@ -13,6 +13,7 @@ const native = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1 },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
 };
 const originalLoad = Module._load;
@@ -54,6 +55,11 @@ const button = (root, label) => buttons(root).find(node => node.props.accessibil
   node.findAllByType('Text').some(text => text.props.children === label));
 const setup = root => button(root, 'Set up paywall');
 const press = async node => { assert.ok(node, 'action must be reachable'); await act(async () => node.props.onPress()); };
+const completePaywall = async view => {
+  for (const axis of PAYWALL_AXES) {
+    await press(button(view.root, `${axis.choices[0].label}, heat ${axis.choices[0].dark}`));
+  }
+};
 
 async function render(t, initialTab = 'home') {
   function Scene() {
@@ -136,9 +142,7 @@ test('pending setup skips rejected/configured apps, advances to the next app and
   assert.equal(useGame.getState().overlay.appId, 'pending');
   const incomplete = button(view.root, 'Pick one from each row');
   assert.equal(incomplete.props.accessibilityState.disabled, true);
-  for (const axis of PAYWALL_AXES) {
-    await press(button(view.root, `${axis.choices[0].label}, heat ${axis.choices[0].dark}`));
-  }
+  await completePaywall(view);
   await press(button(view.root, 'Ship this paywall'));
   assert.equal(useGame.getState().apps.find(a => a.id === 'pending').hasPaywall, true);
   await press(button(view.root, 'Watch the numbers'));
@@ -151,13 +155,69 @@ test('pending setup skips rejected/configured apps, advances to the next app and
   assert.equal(setup(view.root), undefined);
   assert.equal(purchases, 0);
   assert.equal(useGame.getState().cash, 0);
+});
+
+test('opening and cancelling an existing paywall inspection is free', async t => {
+  useGame.setState({ apps: [app('configured', { hasPaywall: true })], cash: 100 });
+  const view = await render(t);
+  const openDesigner = buttons(view.root).find(node => node.props.accessibilityLabel?.includes('Run an A/B test'));
+  assert.match(openDesigner.props.accessibilityHint, /designer for free/);
+
+  await press(openDesigner);
+  assert.deepEqual(useGame.getState().overlay, { type: 'paywallDesigner', appId: 'configured' });
+  assert.equal(useGame.getState().cash, 100);
+  assert.ok(view.root.findAllByType('View').some(node => node.props.accessibilityLabel ===
+    'A/B test fee $75. Charged only when you run the test.'));
+  assert.ok(button(view.root, 'Never mind'), 'the free inspection remains cancellable');
+
+  await press(button(view.root, 'Never mind'));
+  assert.equal(useGame.getState().overlay, null);
+  assert.equal(useGame.getState().cash, 100);
+});
+
+test('an unaffordable A/B commit stays open and charges nothing', async t => {
+  useGame.setState({ apps: [app('configured', { hasPaywall: true })], cash: 74 });
+  const view = await render(t);
   await press(buttons(view.root).find(node => node.props.accessibilityLabel?.includes('Run an A/B test')));
-  assert.equal(useGame.getState().overlay, null, 'paid A/B test still needs $75');
+  await completePaywall(view);
+
+  const commit = button(view.root, 'Run A/B test · $75');
+  assert.equal(commit.props.accessibilityLabel, 'Run A/B test for $75');
+  assert.ok(view.root.findAllByType('Text').some(node => node.props.children === '$1 more cash needed. Opening and leaving are free.'));
+  await press(commit);
+
+  assert.deepEqual(useGame.getState().overlay, { type: 'paywallDesigner', appId: 'configured' });
+  assert.equal(useGame.getState().cash, 74);
   assert.ok(useGame.getState().notifs.some(notif => notif.text.includes('cost $75')));
-  await act(async () => useGame.setState({ cash: 100 }));
+});
+
+test('a committed repeat A/B test charges exactly $75', async t => {
+  useGame.setState({ apps: [app('configured', { hasPaywall: true })], cash: 100, mrr: 100 });
+  const view = await render(t);
   await press(buttons(view.root).find(node => node.props.accessibilityLabel?.includes('Run an A/B test')));
-  assert.equal(useGame.getState().overlay.type, 'paywallDesigner');
-  assert.equal(useGame.getState().cash, 25, 'existing A/B pricing is unchanged');
+  await completePaywall(view);
+  await press(button(view.root, 'Run A/B test · $75'));
+
+  assert.equal(useGame.getState().cash, 25);
+  assert.equal(useGame.getState().mrr, 81, 'the existing paywall conversion math is unchanged');
+  assert.equal(useGame.getState().overlay.type, 'paywallResult');
+  assert.equal(useGame.getState().chirps.filter(chirp => chirp.kind === 'paywall').length, 1);
+});
+
+test('repeated A/B commit callbacks cannot double-charge', async t => {
+  useGame.setState({ apps: [app('configured', { hasPaywall: true })], cash: 200, mrr: 100 });
+  const view = await render(t);
+  await press(buttons(view.root).find(node => node.props.accessibilityLabel?.includes('Run an A/B test')));
+  await completePaywall(view);
+  const commit = button(view.root, 'Run A/B test · $75').props.onPress;
+
+  await act(async () => {
+    assert.equal(commit(), true);
+    assert.equal(commit(), false);
+  });
+
+  assert.equal(useGame.getState().cash, 125);
+  assert.equal(useGame.getState().chirps.filter(chirp => chirp.kind === 'paywall').length, 1);
 });
 
 test('new or rejected-only players have no setup cue', async t => {

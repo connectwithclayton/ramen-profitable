@@ -61,13 +61,17 @@ function HydratedGame() {
   const unread = useGame(s => s.unreadChirps);
   const pushNotif = useGame(s => s.pushNotif);
   const pushChirp = useGame(s => s.pushChirp);
+  const claimOpeningToast = useGame(s => s.claimOpeningToast);
 
   useGameLoop();
 
   useEffect(() => {
     void initPurchases();
     void refreshConsentSession().catch(() => {});
-    const t1 = setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900);
+    const firstSession = claimOpeningToast();
+    const t1 = firstSession
+      ? setTimeout(() => pushNotif('11:58 PM. The day job is done. The real work begins. Open Code.', 'night'), 900)
+      : undefined;
     const t2 = setTimeout(() => {
       const s = useGame.getState();
       if (s.chirps.length === 0) {
@@ -75,7 +79,7 @@ function HydratedGame() {
       }
     }, 3000);
     return () => {
-      clearTimeout(t1);
+      if (t1 !== undefined) clearTimeout(t1);
       clearTimeout(t2);
     };
   }, []);
@@ -149,6 +153,7 @@ function HydratedGame() {
           return (
             <Pressable
               key={t.key}
+              testID={`tab-${t.key}`}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
               accessibilityLabel={flagged ? `${t.label}, new posts` : t.label}
