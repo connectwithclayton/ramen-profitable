@@ -17,6 +17,7 @@ import { C } from '../theme';
 import { EnergyIcon, IdeaIcon, LaunchIcon } from '../components/icons';
 import { codeProgressStatus } from '../state/experience';
 import CodePanel from '../components/CodePanel';
+import CodeRingGlow from '../components/CodeRingGlow';
 import { codePanelMode, projectCodeView } from '../content/codePanel';
 
 const RING = 248;
@@ -165,6 +166,9 @@ export default function CodeScreen() {
               onPress={onTap}
               style={({ pressed }) => [st.ringPress, pressed && { transform: [{ scale: 0.975 }] }]}
             >
+              {!done && s.energy >= 1 && !s.overlay && (
+                <CodeRingGlow size={RING} discovered={s.hasTappedCode} />
+              )}
               <Ring
                 build={spent}
                 energy={s.energy / s.energyMax}

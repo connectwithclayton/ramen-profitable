@@ -129,6 +129,10 @@ Module._load = function (name, parent, main) {
     setItem: (key, value) => storageWrite(key, value),
   };
   if (name === 'expo-status-bar') return { StatusBar: 'StatusBar' };
+  if (name === 'expo-battery') return {
+    isLowPowerModeEnabledAsync: async () => false,
+    addLowPowerModeListener: () => ({ remove() {} }),
+  };
   if (name === 'expo-haptics') return { selectionAsync: async () => {}, notificationAsync: async () => {}, NotificationFeedbackType: {} };
   if (name === 'react-native-svg') return new Proxy({ __esModule: true, default: 'Svg' }, { get: (obj, key) => obj[key] ?? String(key) });
   if (name === 'react-native-google-mobile-ads') return ads;

@@ -347,7 +347,7 @@ export function homeReceiptStateForPersistence<T extends HomeReaction>(
 
 const persistedStateKeys = [
   'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
-  'autoCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
+  'autoCode', 'hasTappedCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
   'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
   'goIndieRateStartsAt', 'pendingOwnerBonus', 'homeReceipt', 'homeReceiptSecondsLeft',
 ] as const satisfies readonly (keyof GameState)[];
@@ -369,6 +369,9 @@ export function selectPersistedState(
       .filter(key => key in source)
       .map(key => [key, source[key]]),
   ) as Partial<GameState>;
+  // Older saves already record successful manual taps on the current project.
+  // Automated LOC alone is not evidence that the player discovered the ring.
+  selected.hasTappedCode = selected.hasTappedCode === true || (selected.project?.manualTaps ?? 0) > 0;
   selected.pendingOwnerBonus = parsePendingOwnerBonus(selected.pendingOwnerBonus);
   if ('goIndieRateStartsAt' in source) {
     selected.goIndieRateStartsAt = parseGoIndieRateStartsAt(source.goIndieRateStartsAt);
