@@ -1,11 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Platform, View, Text, ScrollView, StyleSheet, Animated, Easing, useWindowDimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useGame } from '../state/gameStore';
 import { REVIEW_MSGS } from '../content/content';
 import { Btn, Eyebrow, MonoText, exactMoney, fmt, fmtN } from './ui';
 import { C, R } from '../theme';
-import { presentGoIndiePaywall } from '../monetization/purchases';
+import {
+  getPurchaseServiceStatus,
+  presentGoIndiePaywall,
+  subscribePurchaseServiceStatus,
+} from '../monetization/purchases';
 import PaywallDesigner from './PaywallDesigner';
 import { CelebrateIcon, RamenProfitableIcon } from './icons';
 import { handleApprovedVerdictAction } from './approvedVerdictActions';
@@ -65,18 +69,37 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   const cash = useGame(s => s.cash);
   const mealsFunded = useGame(s => s.mealsFunded);
   const mrr = useGame(s => s.mrr);
+  const goIndieActive = useGame(s => s.goIndieActive);
+  const goIndieResolved = useGame(s => s.goIndieResolved);
+  const purchaseService = useSyncExternalStore(
+    subscribePurchaseServiceStatus,
+    getPurchaseServiceStatus,
+    getPurchaseServiceStatus,
+  );
   const { fontScale } = useWindowDimensions();
   const stackRamenQuote = fontScale > 1.3;
   const paywallApp = useGame(s =>
     overlay?.type === 'paywallResult' ? s.apps.find(app => app.id === overlay.appId) : undefined,
   );
   const [goIndiePending, setGoIndiePending] = useState(false);
+  const [goIndieFeedback, setGoIndieFeedback] = useState<string | null>(null);
+  const goIndieSurface = goIndieResolved && goIndieActive
+    ? 'confirmed-owned'
+    : purchaseService === 'unavailable'
+      ? 'unavailable'
+      : purchaseService === 'checking' || !goIndieResolved
+        ? 'checking'
+        : 'free';
   const paywallResult = overlay?.type === 'paywallResult'
     ? paywallResultPresentation(overlay.transaction)
     : null;
   const paywallCode = overlay?.type === 'paywallResult'
     ? paywallCodeView(overlay.transaction)
     : null;
+
+  useEffect(() => {
+    if (overlay?.type === 'paywall') setGoIndieFeedback(null);
+  }, [overlay]);
 
   useEffect(() => {
     if (overlay?.type === 'verdict') {
@@ -169,33 +192,67 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
 
         {overlay.type === 'paywall' && (
           <>
-            <Eyebrow>A wild paywall appears</Eyebrow>
+            <Eyebrow>Optional purchase</Eyebrow>
             <Text style={st.h1}>Go Indie</Text>
             <Text style={st.body}>
-              {Platform.OS === 'ios'
-                ? 'Make your character an indie operator. Go Indie removes ads and doubles offline earnings in this game, up to the 8-hour offline cap.'
-                : 'Make your character an indie operator. Go Indie doubles offline earnings in this game, up to the 8-hour offline cap.'}
+              {goIndieSurface === 'confirmed-owned'
+                ? Platform.OS === 'ios'
+                  ? 'Go Indie is confirmed active. iOS ads are removed and offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'
+                  : 'Go Indie is confirmed active. Offline app income is doubled, up to 8 hours. Your character\'s job is unchanged.'
+                : goIndieSurface === 'checking'
+                  ? 'Checking your App Store purchase status. No ownership status will be guessed.'
+                  : goIndieSurface === 'unavailable'
+                    ? 'The App Store is unavailable right now. You can try the one-time Go Indie purchase again.'
+                    : Platform.OS === 'ios'
+                      ? 'Optional one-time purchase with real money. It removes iOS ads and doubles offline app income, up to the existing 8-hour cap. It does not quit your character\'s day job. The App Store shows the current local price before purchase.'
+                      : 'Optional one-time purchase with real money. It doubles offline app income, up to the existing 8-hour cap. It does not quit your character\'s day job. The App Store shows the current local price before purchase.'}
             </Text>
-            <MonoText style={{ color: C.dim, fontSize: 11, textAlign: 'center', marginVertical: 12 }}>
-              [ RevenueCat Paywall · remotely configured ]
+            <MonoText style={st.purchaseStatus}>
+              {goIndieSurface === 'confirmed-owned'
+                ? 'PURCHASE CONFIRMED'
+                : goIndieSurface === 'free'
+                  ? 'ONE-TIME PURCHASE · APP STORE PRICE'
+                  : goIndieSurface === 'checking'
+                    ? 'CHECKING PURCHASE STATUS'
+                    : 'APP STORE UNAVAILABLE'}
             </MonoText>
-            <Btn
-              label="Go Indie"
-              disabled={goIndiePending}
-              onPress={async () => {
-                setGoIndiePending(true);
-                try {
-                  const active = await presentGoIndiePaywall();
-                  if (active === true) {
-                    pushNotif('Go Indie active. Your character is now an indie operator.', 'growth');
-                    dismiss();
+            {goIndieFeedback && (
+              <Text accessibilityRole="alert" style={st.purchaseFeedback}>{goIndieFeedback}</Text>
+            )}
+            {(goIndieSurface === 'free' || goIndieSurface === 'unavailable') && (
+              <Btn
+                label={goIndiePending ? 'Waiting for App Store…' : 'View price and purchase'}
+                disabled={goIndiePending}
+                onPress={async () => {
+                  setGoIndieFeedback(null);
+                  setGoIndiePending(true);
+                  try {
+                    const outcome = await presentGoIndiePaywall();
+                    if (outcome.status === 'confirmed-owned') {
+                      pushNotif('Go Indie confirmed active. Paid benefits are on.', 'growth');
+                      dismiss();
+                    } else if (outcome.status === 'cancelled') {
+                      pushNotif('Purchase cancelled. Nothing was changed.', 'store');
+                      dismiss();
+                    } else if (outcome.status === 'catalog-unavailable') {
+                      setGoIndieFeedback('Go Indie is not available from the App Store right now. Try again later.');
+                    } else if (outcome.status === 'entitlement-unconfirmed') {
+                      setGoIndieFeedback('Go Indie could not be confirmed. No paid benefits were activated. Try Restore Purchases later.');
+                    } else {
+                      setGoIndieFeedback('The App Store could not complete that request. Try again later.');
+                    }
+                  } finally {
+                    setGoIndiePending(false);
                   }
-                } finally {
-                  setGoIndiePending(false);
-                }
-              }}
+                }}
+              />
+            )}
+            <Btn
+              label={goIndieSurface === 'confirmed-owned' ? 'Done' : 'Remain free'}
+              ghost
+              onPress={dismiss}
+              style={{ marginTop: 8 }}
             />
-            <Btn label="Remain humble" ghost onPress={dismiss} style={{ marginTop: 8 }} />
           </>
         )}
 
@@ -212,10 +269,10 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
             </View>
             <Eyebrow color={C.gold}>Review ramen receipt</Eyebrow>
             <Text style={st.h1}>
-              Fund {fmtN(overlay.quantity)} {overlay.quantity === 1 ? 'meal' : 'meals'}?
+              Record {fmtN(overlay.quantity)} fictional {overlay.quantity === 1 ? 'meal' : 'meals'}?
             </Text>
             <Text style={st.body}>
-              This is optional recognition spending. It adds no income, energy, or other gameplay boost.
+              Fictional game cash only. No real meals or donations. This optional in-game record adds no income, energy, or other gameplay boost.
             </Text>
             <View style={st.ramenQuote}>
               <View
@@ -248,10 +305,10 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
               </View>
             </View>
             <Btn
-              label={cash >= overlay.cost ? 'Fund these meals' : 'Not enough cash'}
+              label={cash >= overlay.cost ? 'Record these meals' : 'Not enough game cash'}
               accessibilityLabel={cash >= overlay.cost
-                ? `Confirm funding ${fmtN(overlay.quantity)} ramen ${overlay.quantity === 1 ? 'meal' : 'meals'} for ${exactMoney(overlay.cost)}. ${exactMoney(cash - overlay.cost)} cash will remain.`
-                : `Cannot fund this order. ${exactMoney(overlay.cost - cash)} more cash needed.`}
+                ? `Confirm recording ${fmtN(overlay.quantity)} fictional ramen ${overlay.quantity === 1 ? 'meal' : 'meals'} for ${exactMoney(overlay.cost)} game cash. ${exactMoney(cash - overlay.cost)} game cash will remain.`
+                : `Cannot record this order. ${exactMoney(overlay.cost - cash)} more game cash needed.`}
               disabled={cash < overlay.cost}
               onPress={() => {
                 if (!fundRamen()) pushNotif('That ramen receipt is no longer available.', 'store');
@@ -353,6 +410,8 @@ const st = StyleSheet.create({
   approvedTitle: { maxWidth: '100%' },
   heroIcon: { alignItems: 'center' },
   body: { color: C.mut, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 19 },
+  purchaseStatus: { color: C.dim, fontSize: 10, letterSpacing: 0.8, textAlign: 'center', marginVertical: 12 },
+  purchaseFeedback: { color: C.pink, fontSize: 12, lineHeight: 18, textAlign: 'center', marginBottom: 12 },
   resultReceipt: { fontSize: 11, textAlign: 'center', marginTop: 10 },
   paywallCode: { marginTop: 16 },
   ramenQuote: { backgroundColor: C.card2, borderRadius: R.tile, marginTop: 16, padding: 12, gap: 9 },

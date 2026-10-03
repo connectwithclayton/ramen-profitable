@@ -2,8 +2,8 @@ import XCTest
 
 final class MealAccessibilityUITests: XCTestCase {
     private let bundleIdentifier = "com.clayton.ramenprofitable"
-    private let orderLabel = "Review funding 4 ramen meals for $80."
-    private let confirmLabel = "Confirm funding 4 ramen meals for $80. $999,920 cash will remain."
+    private let orderLabel = "Review 4 fictional ramen meals for $80 game cash."
+    private let confirmLabel = "Confirm recording 4 fictional ramen meals for $80 game cash. $999,920 game cash will remain."
 
     override func setUpWithError() throws {
         continueAfterFailure = false

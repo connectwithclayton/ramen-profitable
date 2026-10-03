@@ -36,14 +36,18 @@ trap restore EXIT
 
 seed_fixture() {
   python3 - "$MANIFEST" <<'PY'
+import hashlib
 import json
+from pathlib import Path
 import sys
 import time
 
-path = sys.argv[1]
+path = Path(sys.argv[1])
 manifest = json.load(open(path))
 key = "ramen-profitable-v1"
-root = json.loads(manifest[key])
+value = manifest[key]
+value_path = path.parent / hashlib.md5(key.encode()).hexdigest()
+root = json.loads(value) if value is not None else json.load(open(value_path))
 state = root["state"]
 state.update({
     "cash": 1_000_000,
@@ -53,9 +57,13 @@ state.update({
     "mealsFunded": 39_996,
     "lastSeen": int(time.time() * 1000),
 })
-manifest[key] = json.dumps(root, separators=(",", ":"))
-with open(path, "w") as output:
-    json.dump(manifest, output, separators=(",", ":"))
+serialized = json.dumps(root, separators=(",", ":"))
+if value is None:
+    value_path.write_text(serialized)
+else:
+    manifest[key] = serialized
+    with open(path, "w") as output:
+        json.dump(manifest, output, separators=(",", ":"))
 PY
 }
 
