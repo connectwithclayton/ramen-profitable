@@ -28,7 +28,7 @@ import {
   initials,
   money,
 } from '../components/ui';
-import { C, R } from '../theme';
+import { C, R, S } from '../theme';
 import { AbTestIcon, DrawnIcon, EnergyIcon, PaywallIcon, RamenProfitableIcon, VerdictIcon } from '../components/icons';
 import {
   automationAffordabilityNudge,
@@ -491,24 +491,38 @@ export default function HomeScreen({
 
       <Section>
         <SectionHeader title="Achievements" meta={`${unlocked} / ${ACHIEVEMENTS.length}`} />
-        <View style={st.achStrip}>
+        <View style={st.achList}>
           {ACHIEVEMENTS.map((a, i) => {
-            const got = s.achievements[a.id];
+            const got = Boolean(s.achievements[a.id]);
+            const status = got ? 'Unlocked' : 'Locked';
             return (
-              <View
-                key={a.id}
-                accessible
-                accessibilityLabel={got ? `${a.name}. ${a.desc}` : `Locked achievement, ${i + 1} of ${ACHIEVEMENTS.length}`}
-                style={[st.achTile, got && st.achTileGot]}
-              >
-                {got ? (
-                  a.drawnIcon ? (
-                    <DrawnIcon name={a.drawnIcon} size={18} color={C.gold} />
-                  ) : (
-                    <Text style={{ fontSize: 16 }}>{a.icon}</Text>
-                  )
-                ) : null}
-              </View>
+              <React.Fragment key={a.id}>
+                {i > 0 && <Divider />}
+                <View
+                  accessible
+                  accessibilityLabel={`${a.name}. ${status}. ${a.desc}`}
+                  style={st.achRow}
+                >
+                  <View
+                    accessible={false}
+                    importantForAccessibility="no-hide-descendants"
+                    style={[st.achTile, got && st.achTileGot]}
+                  >
+                    {a.drawnIcon ? (
+                      <DrawnIcon name={a.drawnIcon} size={20} color={got ? C.gold : C.mut} />
+                    ) : (
+                      <Text style={{ fontSize: 18 }}>{a.icon}</Text>
+                    )}
+                  </View>
+                  <View style={st.achCopy}>
+                    <Text style={st.achName}>{a.name}</Text>
+                    <Text style={st.achDesc}>{a.desc}</Text>
+                    <MonoText style={[st.achStatus, got && { color: C.gold }]}>
+                      {status.toUpperCase()}
+                    </MonoText>
+                  </View>
+                </View>
+              </React.Fragment>
             );
           })}
         </View>
@@ -569,16 +583,21 @@ const st = StyleSheet.create({
   appActionText: { color: C.gold, fontSize: 9.5, letterSpacing: 0.6 },
   appRejected: { color: C.pink, fontSize: 11, letterSpacing: 1 },
 
-  achStrip: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+  achList: { marginTop: S.gap },
+  achRow: { flexDirection: 'row', alignItems: 'flex-start', gap: S.gap, paddingVertical: S.row },
   achTile: {
     width: 34,
     height: 34,
+    marginTop: 2,
     borderRadius: R.tile,
     borderWidth: 1,
     borderColor: C.line,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.45,
   },
-  achTileGot: { backgroundColor: C.card2, borderColor: C.gold, opacity: 1 },
+  achTileGot: { backgroundColor: C.card2, borderColor: C.gold },
+  achCopy: { flex: 1, minWidth: 0 },
+  achName: { color: C.ink, fontSize: 15, fontWeight: '600' },
+  achDesc: { color: C.mut, fontSize: 14, lineHeight: 20, marginTop: 4 },
+  achStatus: { color: C.mut, fontSize: 10.5, letterSpacing: 0.6, marginTop: 7 },
 });

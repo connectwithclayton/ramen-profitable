@@ -212,13 +212,13 @@ type AchievementDetails = { id: string; name: string; desc: string };
 export type Achievement = AchievementDetails & ({ icon: string; drawnIcon?: never } | { icon?: never; drawnIcon: IconName });
 
 export const ACHIEVEMENTS: Achievement[] = [
-  { id: 'first_ship', drawnIcon: 'ship', name: 'Shipped', desc: 'Got an app approved. Everything changes now.' },
-  { id: 'first_reject', drawnIcon: 'survivor-4-3', name: '4.3 Survivor', desc: 'Got rejected and lived to tell Chirp about it.' },
-  { id: 'mrr_100', drawnIcon: 'beer-money', name: 'Beer Money', desc: 'Reached $100 MRR.' },
-  { id: 'mrr_1000', drawnIcon: 'growth', name: 'Rent Adjacent', desc: 'Reached $1,000 MRR.' },
-  { id: 'ramen', drawnIcon: 'ramen-profitable', name: 'Ramen Profitable', desc: 'Quit the day job. Free at last.' },
-  { id: 'paywall_first', drawnIcon: 'paywall', name: 'Paywall Architect', desc: 'Designed your first paywall.' },
-  { id: 'dark_side', drawnIcon: 'dark-side', name: 'The Dark Side', desc: 'Shipped a paywall with heat ≥ 5. We saw that.' },
-  { id: 'saint', drawnIcon: 'ethically-sourced', name: 'Ethically Sourced', desc: 'Shipped a completely clean paywall.' },
-  { id: 'portfolio', drawnIcon: 'portfolio-guy', name: 'Portfolio Guy', desc: 'Three live apps at once.' },
+  { id: 'first_ship', drawnIcon: 'ship', name: 'Shipped', desc: 'Get an app approved by App Review.' },
+  { id: 'first_reject', drawnIcon: 'survivor-4-3', name: '4.3 Survivor', desc: 'Have an app rejected by App Review.' },
+  { id: 'mrr_100', drawnIcon: 'beer-money', name: 'Beer Money', desc: 'Reach $100 in monthly recurring revenue.' },
+  { id: 'mrr_1000', drawnIcon: 'growth', name: 'Rent Adjacent', desc: 'Reach $1,000 in monthly recurring revenue.' },
+  { id: 'ramen', drawnIcon: 'ramen-profitable', name: 'Ramen Profitable', desc: 'Reach $2,000 in monthly recurring revenue, then quit your day job.' },
+  { id: 'paywall_first', drawnIcon: 'paywall', name: 'Paywall Architect', desc: 'Ship your first paywall.' },
+  { id: 'dark_side', drawnIcon: 'dark-side', name: 'The Dark Side', desc: 'Ship a paywall with heat 5 or higher.' },
+  { id: 'saint', drawnIcon: 'ethically-sourced', name: 'Ethically Sourced', desc: 'Ship a paywall with heat 0.' },
+  { id: 'portfolio', drawnIcon: 'portfolio-guy', name: 'Portfolio Guy', desc: 'Have 3 live apps at the same time.' },
 ];
