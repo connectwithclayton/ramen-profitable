@@ -138,6 +138,7 @@ test('paywall descriptions reflect exact heat conditions, without changing the p
     const combo = combinations.find(combo => combo.heat === heat);
     assert.ok(combo, `catalog supports heat ${heat}`);
     useGame.setState({ apps: [app('test')], mrr: 40 });
+    useGame.getState().openPaywallDesigner('test');
     useGame.getState().applyPaywall('test', combo.picks);
     const result = useGame.getState();
     assert.equal(result.achievements.paywall_first, true);

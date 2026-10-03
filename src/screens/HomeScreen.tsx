@@ -8,7 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { useGame, MRR_GOAL } from '../state/gameStore';
+import { MRR_GOAL, PAYWALL_AB_TEST_COST, useGame } from '../state/gameStore';
 import { ACHIEVEMENTS, BETA_TESTER, SHOP } from '../content/content';
 import {
   Btn,
@@ -212,7 +212,7 @@ function AppRow({
   const label = live
     ? `${name}. ${idea}. Earning ${fmt(mrr)} per month. ` +
       (hasPaywall
-        ? `Paywall shipped, conversion times ${mult.toFixed(2)}. Run an A/B test for $75.`
+        ? `Paywall shipped, conversion times ${mult.toFixed(2)}. Run an A/B test for $${PAYWALL_AB_TEST_COST}.`
         : 'No paywall yet. Set up your paywall for free, in-game.')
     : `${name}. ${idea}. Rejected by App Review.`;
 
@@ -233,7 +233,9 @@ function AppRow({
             <MonoText style={st.appMrr}>{fmt(mrr)}/mo</MonoText>
             <View style={st.appAction}>
               {hasPaywall ? <AbTestIcon size={13} color={C.gold} /> : <PaywallIcon size={13} color={C.gold} />}
-              <MonoText style={st.appActionText}>{hasPaywall ? `×${mult.toFixed(2)} · $75` : 'SET UP PAYWALL'}</MonoText>
+              <MonoText style={st.appActionText}>
+                {hasPaywall ? `×${mult.toFixed(2)} · $${PAYWALL_AB_TEST_COST}` : 'SET UP PAYWALL'}
+              </MonoText>
             </View>
           </>
         ) : (
@@ -255,7 +257,9 @@ function AppRow({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint={hasPaywall ? `Opens the paywall designer. Costs $75.` : 'Opens the paywall designer.'}
+      accessibilityHint={hasPaywall
+        ? `Opens the paywall designer for free. Running a new A/B test costs $${PAYWALL_AB_TEST_COST}.`
+        : 'Opens the paywall designer.'}
       onPress={onPress}
       style={({ pressed }) => [st.appRow, pressed && { opacity: 0.6 }]}
     >
