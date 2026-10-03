@@ -3213,11 +3213,11 @@ test('Android omits Catvertising and describes only the offline Go Indie benefit
 
     assert.equal(visibleText(store).includes('Your phone'), false);
     assert.equal(visibleText(store).includes('CATVERTISING'), false);
-    assert.ok(visibleText(store).includes('Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.'));
+    assert.ok(visibleText(store).includes('Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed, up to the 8-hour offline cap.'));
     assert.equal(visibleText(store).some(value => value.includes('removes ads')), false);
 
     await act(async () => { useGame.setState({ goIndieActive: true }); });
-    assert.ok(visibleText(store).includes('Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'));
+    assert.ok(visibleText(store).includes('Indie operator status is active. Offline earnings are doubled, capped at 8 hours per away interval, same as always.'));
     assert.equal(visibleText(store).some(value => value.includes('Ads are removed')), false);
     await act(async () => { store.unmount(); });
     store = null;
@@ -3225,7 +3225,7 @@ test('Android omits Catvertising and describes only the offline Go Indie benefit
     useGame.setState({ overlay: { type: 'paywall' } });
     const OverlayHost = require('../src/components/OverlayHost.tsx').default;
     await act(async () => { overlay = create(React.createElement(OverlayHost, { onReturnHome() {} })); });
-    assert.ok(visibleText(overlay).includes('Make your character an indie operator. Go Indie doubles offline earnings in this game.'));
+    assert.ok(visibleText(overlay).includes('Make your character an indie operator. Go Indie doubles offline earnings in this game, up to the 8-hour offline cap.'));
     assert.equal(visibleText(overlay).some(value => value.includes('removes ads')), false);
   } finally {
     if (store) await act(async () => { store.unmount(); });
