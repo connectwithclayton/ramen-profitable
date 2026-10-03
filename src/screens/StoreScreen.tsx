@@ -92,11 +92,11 @@ export default function StoreScreen({
   const catvertising = Platform.OS === 'ios';
   const indieCopy = indie
     ? catvertising
-      ? 'Indie operator status is active. Ads are removed. Offline earnings are doubled — capped at 8 hours, same as always.'
-      : 'Indie operator status is active. Offline earnings are doubled — capped at 8 hours, same as always.'
+      ? 'Indie operator status is active. Ads are removed. Offline earnings are doubled, capped at 8 hours per away interval, same as always.'
+      : 'Indie operator status is active. Offline earnings are doubled, capped at 8 hours per away interval, same as always.'
     : catvertising
-      ? 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed.'
-      : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed.';
+      ? 'Make your character an indie operator. Go Indie removes ads and doubles what your apps earn while the app is closed, up to the 8-hour offline cap.'
+      : 'Make your character an indie operator. Go Indie doubles what your apps earn while the app is closed, up to the 8-hour offline cap.';
 
   const updateBillboardVisibility = useCallback(() => {
     const frame = billboardFrameRef.current;

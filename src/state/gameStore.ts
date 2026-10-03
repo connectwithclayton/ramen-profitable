@@ -114,6 +114,7 @@ export type GameState = {
   won: boolean;
   achievements: Record<string, boolean>;
   mealsFunded: number;
+  hasSeenOpeningToast: boolean;
   lastSeen: number; // epoch ms; interval identity for base offline credit
   goIndieRateStartsAt: number | null;
   pendingOwnerBonus: PendingOwnerBonus;
@@ -154,6 +155,7 @@ type Actions = {
   buy: (id: string) => void;
   openRamenPurchase: (quantity: number) => void;
   fundRamen: () => boolean;
+  claimOpeningToast: () => boolean;
   quitJob: () => void;
   fastTick: () => void;
   slowTick: () => void;
@@ -332,6 +334,7 @@ const initial: RuntimeState = {
   won: false,
   achievements: {},
   mealsFunded: 0,
+  hasSeenOpeningToast: false,
   lastSeen: Date.now(),
   goIndieRateStartsAt: null,
   pendingOwnerBonus: emptyPendingOwnerBonus(),
@@ -353,6 +356,12 @@ export const useGame = create<RuntimeState & Actions>()(
         set(s => ({ notifs: [...s.notifs.slice(-2), n] }));
       },
       expireNotif: id => set(s => ({ notifs: s.notifs.filter(n => n.id !== id) })),
+
+      claimOpeningToast: () => {
+        if (get().hasSeenOpeningToast) return false;
+        set({ hasSeenOpeningToast: true });
+        return true;
+      },
 
       pushChirp: (text, options) => {
         const [who, handle] = options?.author ?? pick(CHIRPERS);
@@ -914,9 +923,12 @@ export const useGame = create<RuntimeState & Actions>()(
     }),
     {
       name: 'ramen-profitable-v1',
-      version: 6,
+      version: 7,
       migrate: (persisted: any) => {
         const migrated = selectPersistedState(persisted, BETA_TESTER);
+        // Any save reaching a schema migration belongs to a returning player. Fresh
+        // installs have no persisted state and retain the initial false value.
+        migrated.hasSeenOpeningToast = true;
         if (migrated?.apps) {
           migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }

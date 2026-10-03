@@ -226,15 +226,28 @@ test('meal totals and receipt achievements survive relaunch while old saves defa
   assert.equal(useGame.getState().mealsFunded, 0);
 });
 
-test('Home gives funded meals restrained lifetime recognition', async t => {
-  useGame.setState({ mealsFunded: 40000, achievements: { ramen_meals_40000: true } });
+test('Home puts its actionable next step above passive lifetime meal recognition', async t => {
+  useGame.setState({
+    mealsFunded: 40000,
+    achievements: { ramen_meals_40000: true },
+    apps: [{
+      id: 'needs-paywall', name: 'PlantParent', idea: 'guilt-based plant care', live: true,
+      baseMrr: 100, mult: 1, dark: 0, hasPaywall: false,
+    }],
+  });
   let view;
   await act(async () => {
     view = create(React.createElement(HomeScreen, { bottomOcclusion: 80, onOpenCode() {} }));
   });
   t.after(async () => { await act(async () => view.unmount()); });
   assert.ok(view.root.findByProps({ accessibilityLabel: '40,000 ramen meals funded over your lifetime.' }));
+  assert.ok(textExists(view.root, 'per game day, soul-crushing'));
   assert.ok(textExists(view.root, '40,000 RAMEN MEALS FUNDED · LIFETIME'));
+  const homeText = visibleText(view.root);
+  assert.ok(
+    homeText.indexOf('Next step') < homeText.indexOf('40,000 RAMEN MEALS FUNDED · LIFETIME'),
+    'the actionable free setup must precede passive lifetime recognition',
+  );
   assert.ok(view.root.findByProps({
     accessibilityLabel: `Ramen Endowment. Unlocked. ${ACHIEVEMENTS.find(a => a.id === 'ramen_meals_40000').desc}`,
   }));

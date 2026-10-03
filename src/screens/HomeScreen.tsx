@@ -355,23 +355,6 @@ export default function HomeScreen({
         )}
       </Hero>
 
-      {s.mealsFunded > 0 && (
-        <Section style={st.ramenRecognition}>
-          <Unit tone={C.gold} style={st.ramenRecognitionUnit}>
-            <View
-              accessible
-              accessibilityLabel={`${fmtN(s.mealsFunded)} ramen meals funded over your lifetime.`}
-              style={st.ramenRecognitionRow}
-            >
-              <RamenProfitableIcon size={18} color={C.gold} />
-              <MonoText style={st.ramenRecognitionText}>
-                {fmtN(s.mealsFunded)} RAMEN MEALS FUNDED · LIFETIME
-              </MonoText>
-            </View>
-          </Unit>
-        </Section>
-      )}
-
       {paywallSetupApp && (
         <Section>
           <SectionHeader title="Next step" />
@@ -386,6 +369,23 @@ export default function HomeScreen({
               onPress={() => s.openPaywallDesigner(paywallSetupApp.id)}
               style={{ marginTop: 12 }}
             />
+          </Unit>
+        </Section>
+      )}
+
+      {s.mealsFunded > 0 && (
+        <Section style={st.ramenRecognition}>
+          <Unit tone={C.gold} style={st.ramenRecognitionUnit}>
+            <View
+              accessible
+              accessibilityLabel={`${fmtN(s.mealsFunded)} ramen meals funded over your lifetime.`}
+              style={st.ramenRecognitionRow}
+            >
+              <RamenProfitableIcon size={18} color={C.gold} />
+              <MonoText style={st.ramenRecognitionText}>
+                {fmtN(s.mealsFunded)} RAMEN MEALS FUNDED · LIFETIME
+              </MonoText>
+            </View>
           </Unit>
         </Section>
       )}
@@ -438,7 +438,7 @@ export default function HomeScreen({
         <Unit style={st.statUnit}>
           <Eyebrow color={C.mut}>Day job</Eyebrow>
           <MonoText style={st.statValue}>{s.hasJob ? `+${fmt(s.salary)}` : 'NONE'}</MonoText>
-          <Text style={st.statCaption}>{s.hasJob ? 'per day, soul-crushing' : 'Bliss, statistically'}</Text>
+          <Text style={st.statCaption}>{s.hasJob ? 'per game day, soul-crushing' : 'Bliss, statistically'}</Text>
         </Unit>
       </Section>
 
@@ -453,7 +453,7 @@ export default function HomeScreen({
       {s.goIndieResolved && s.goIndieActive && (
         <Section style={{ marginTop: S_GAP }}>
           <Unit tone={C.mint} style={st.indie}>
-            <MonoText style={st.indieText}>INDIE OPERATOR · 2× OFFLINE EARNINGS</MonoText>
+            <MonoText style={st.indieText}>INDIE OPERATOR · 2× OFFLINE EARNINGS · 8-HOUR CAP</MonoText>
           </Unit>
         </Section>
       )}
