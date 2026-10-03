@@ -13,6 +13,20 @@ export type PaywallTransaction = {
   choices: Readonly<Record<string, string>>;
 };
 
+export function ramenFundingEligible(
+  upgrades: Readonly<Record<string, boolean>>,
+  hasJob: boolean,
+  shop: readonly Pick<ShopItem, 'id'>[],
+) {
+  return !hasJob || shop.every(item => upgrades[item.id] === true);
+}
+
+export function parseMealsFunded(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : 0;
+}
+
 /** Durable versioned owner-bonus remainder; settled once entitlement is known. */
 export type PendingOwnerBonus = {
   revision: number;
@@ -348,7 +362,7 @@ export function homeReceiptStateForPersistence<T extends HomeReaction>(
 const persistedStateKeys = [
   'day', 'dayTick', 'cash', 'mrr', 'energy', 'energyMax', 'energyRegen', 'tapPower',
   'autoCode', 'hasTappedCode', 'hasJob', 'salary', 'mrrMult', 'rejectShield', 'project', 'apps',
-  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'lastSeen',
+  'upgrades', 'chirps', 'unreadChirps', 'goIndieActive', 'won', 'achievements', 'mealsFunded', 'lastSeen',
   'goIndieRateStartsAt', 'pendingOwnerBonus', 'homeReceipt', 'homeReceiptSecondsLeft',
 ] as const satisfies readonly (keyof GameState)[];
 
@@ -373,6 +387,9 @@ export function selectPersistedState(
   // Automated LOC alone is not evidence that the player discovered the ring.
   selected.hasTappedCode = selected.hasTappedCode === true || (selected.project?.manualTaps ?? 0) > 0;
   selected.pendingOwnerBonus = parsePendingOwnerBonus(selected.pendingOwnerBonus);
+  if ('mealsFunded' in source) {
+    selected.mealsFunded = parseMealsFunded(selected.mealsFunded);
+  }
   if ('goIndieRateStartsAt' in source) {
     selected.goIndieRateStartsAt = parseGoIndieRateStartsAt(source.goIndieRateStartsAt);
   }

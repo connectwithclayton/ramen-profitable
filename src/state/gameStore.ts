@@ -11,6 +11,8 @@ import {
   MRR_GOAL,
   PAYWALL_AXES,
   PLAYER,
+  RAMEN_MILESTONES,
+  RAMEN_ORDERS,
   REJECTIONS,
   SHOP,
 } from '../content/content';
@@ -22,8 +24,10 @@ import {
   emptyPendingOwnerBonus,
   paywallReaction,
   parseGoIndieRateStartsAt,
+  parseMealsFunded,
   parsePendingOwnerBonus,
   priorityHomeReactionState,
+  ramenFundingEligible,
   resolveGameEvent,
   selectPersistedState,
   tapReactionKind,
@@ -79,6 +83,7 @@ export type Overlay =
   | { type: 'paywall' }
   | { type: 'paywallDesigner'; appId: string }
   | { type: 'paywallResult'; appId: string; transaction: PaywallTransaction }
+  | { type: 'ramenPurchase'; quantity: number; cost: number }
   | { type: 'win' }
   | null;
 
@@ -108,6 +113,7 @@ export type GameState = {
   goIndieResolved: boolean;
   won: boolean;
   achievements: Record<string, boolean>;
+  mealsFunded: number;
   lastSeen: number; // epoch ms; interval identity for base offline credit
   goIndieRateStartsAt: number | null;
   pendingOwnerBonus: PendingOwnerBonus;
@@ -146,6 +152,8 @@ type Actions = {
   openGoIndiePaywall: () => void;
   setGoIndieActive: (active: boolean) => void;
   buy: (id: string) => void;
+  openRamenPurchase: (quantity: number) => void;
+  fundRamen: () => boolean;
   quitJob: () => void;
   fastTick: () => void;
   slowTick: () => void;
@@ -323,6 +331,7 @@ const initial: RuntimeState = {
   goIndieResolved: false,
   won: false,
   achievements: {},
+  mealsFunded: 0,
   lastSeen: Date.now(),
   goIndieRateStartsAt: null,
   pendingOwnerBonus: emptyPendingOwnerBonus(),
@@ -548,6 +557,79 @@ export const useGame = create<RuntimeState & Actions>()(
             event: 'AUTOMATION PURCHASED',
           });
         }
+      },
+
+      openRamenPurchase: quantity => {
+        const s = get();
+        const order = RAMEN_ORDERS.find(candidate => candidate.quantity === quantity);
+        if (!order || !ramenFundingEligible(s.upgrades, s.hasJob, SHOP)) return;
+        set({ overlay: { type: 'ramenPurchase', quantity: order.quantity, cost: order.cost } });
+      },
+
+      fundRamen: () => {
+        let committed = false;
+        set(state => {
+          const quote = state.overlay?.type === 'ramenPurchase' ? state.overlay : null;
+          const order = quote
+            ? RAMEN_ORDERS.find(candidate =>
+                candidate.quantity === quote.quantity && candidate.cost === quote.cost,
+              )
+            : undefined;
+          if (
+            !order ||
+            !ramenFundingEligible(state.upgrades, state.hasJob, SHOP) ||
+            !Number.isFinite(state.cash) ||
+            state.cash < order.cost ||
+            state.mealsFunded > Number.MAX_SAFE_INTEGER - order.quantity
+          ) return state;
+
+          const cash = state.cash - order.cost;
+          const mealsFunded = state.mealsFunded + order.quantity;
+          const unlockedMilestones = RAMEN_MILESTONES.filter(milestone =>
+            mealsFunded >= milestone.threshold && !state.achievements[milestone.id],
+          );
+          const achievements = { ...state.achievements };
+          for (const milestone of unlockedMilestones) achievements[milestone.id] = true;
+          const highestMilestone = unlockedMilestones[unlockedMilestones.length - 1];
+          const mealLabel = order.quantity === 1 ? 'meal' : 'meals';
+          const receipt: Chirp = {
+            id: uid(),
+            who: BETA_TESTER[0],
+            handle: BETA_TESTER[1],
+            text: `receipt checked: ${order.quantity.toLocaleString()} ramen ${mealLabel} funded, ${mealsFunded.toLocaleString()} lifetime, $${cash.toLocaleString('en-US', { maximumFractionDigits: 2 })} left. ${highestMilestone?.flavor ?? 'Dinner keeps scaling.'}`,
+            likes: Math.floor(Math.random() * 900) + 12,
+            kind: 'purchase',
+            event: highestMilestone
+              ? `RAMEN MILESTONE · ${highestMilestone.threshold.toLocaleString()} MEALS`
+              : 'RAMEN RECEIPT',
+          };
+          const homeReactionState = priorityHomeReactionState(receipt, BETA_TESTER);
+          const milestoneNotifs: Notif[] = unlockedMilestones.map(milestone => {
+            const achievement = ACHIEVEMENTS.find(candidate => candidate.id === milestone.id);
+            return {
+              id: uid(),
+              text: `Achievement: ${achievement?.name ?? milestone.threshold.toLocaleString() + ' meals'}`,
+              icon: 'achievement',
+            };
+          });
+          const purchaseNotif: Notif = {
+            id: uid(),
+            text: `${order.quantity.toLocaleString()} ramen ${mealLabel} funded. Receipt posted to Chirp.`,
+            icon: 'ramen-profitable',
+          };
+          committed = true;
+          return {
+            cash,
+            mealsFunded,
+            achievements,
+            overlay: null,
+            chirps: [receipt, ...state.chirps].slice(0, 30),
+            unreadChirps: true,
+            notifs: [...state.notifs, purchaseNotif, ...milestoneNotifs].slice(-3),
+            ...homeReactionState,
+          };
+        });
+        return committed;
       },
 
       quitJob: () => {
@@ -832,13 +914,14 @@ export const useGame = create<RuntimeState & Actions>()(
     }),
     {
       name: 'ramen-profitable-v1',
-      version: 5,
+      version: 6,
       migrate: (persisted: any) => {
         const migrated = selectPersistedState(persisted, BETA_TESTER);
         if (migrated?.apps) {
           migrated.apps = migrated.apps.map((a: any) => ({ mult: 1, dark: 0, hasPaywall: false, ...a }));
         }
         migrated.achievements = migrated.achievements ?? {};
+        migrated.mealsFunded = parseMealsFunded(migrated.mealsFunded);
         migrated.goIndieActive = migrated.goIndieActive ?? false;
         migrated.pendingOwnerBonus = parsePendingOwnerBonus(migrated.pendingOwnerBonus);
         if (migrated.project) {

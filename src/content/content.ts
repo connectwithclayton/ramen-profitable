@@ -110,6 +110,28 @@ export const SHOP: ShopItem[] = [
   { id: 'agent', name: 'Agentic coding rig', desc: 'Auto-writes 20 LOC/sec', cost: 900, apply: s => ({ autoCode: s.autoCode + 20 }) },
 ];
 
+export type RamenOrder = {
+  quantity: number;
+  cost: number;
+  label: string;
+};
+
+export const RAMEN_ORDERS: readonly RamenOrder[] = [
+  { quantity: 1, cost: 20, label: 'One bowl, no runway math' },
+  { quantity: 4, cost: 80, label: 'Dinner is handled' },
+  { quantity: 40, cost: 800, label: 'Feed the beta testers' },
+  { quantity: 400, cost: 8000, label: 'Feed the launch thread' },
+  { quantity: 4000, cost: 80000, label: 'The thread was bigger than expected' },
+];
+
+export const RAMEN_MILESTONES = [
+  { id: 'ramen_meals_4', threshold: 4, flavor: 'Dinner is handled.' },
+  { id: 'ramen_meals_40', threshold: 40, flavor: 'The beta testers ate well.' },
+  { id: 'ramen_meals_400', threshold: 400, flavor: 'The launch thread has been fed.' },
+  { id: 'ramen_meals_4000', threshold: 4000, flavor: 'The thread was bigger than expected.' },
+  { id: 'ramen_meals_40000', threshold: 40000, flavor: 'The service fee has a seed round.' },
+] as const;
+
 export const BETA_TESTER = ['Burnt Out Beta Tester', '@testflight_gremlin'] as const;
 export const PLAYER = ['You', '@buildinpublic'] as const;
 
@@ -221,4 +243,9 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'dark_side', drawnIcon: 'dark-side', name: 'The Dark Side', desc: 'Ship a paywall with heat 5 or higher.' },
   { id: 'saint', drawnIcon: 'ethically-sourced', name: 'Ethically Sourced', desc: 'Ship a paywall with heat 0.' },
   { id: 'portfolio', drawnIcon: 'portfolio-guy', name: 'Portfolio Guy', desc: 'Have 3 live apps at the same time.' },
+  { id: 'ramen_meals_4', drawnIcon: 'ramen-profitable', name: 'Dinner Is Handled', desc: 'Fund 4 ramen meals.' },
+  { id: 'ramen_meals_40', drawnIcon: 'ramen-profitable', name: 'Beta Test Banquet', desc: 'Fund 40 ramen meals.' },
+  { id: 'ramen_meals_400', drawnIcon: 'ramen-profitable', name: 'Launch Thread Lunch', desc: 'Fund 400 ramen meals.' },
+  { id: 'ramen_meals_4000', drawnIcon: 'ramen-profitable', name: 'Thread Catering', desc: 'Fund 4,000 ramen meals.' },
+  { id: 'ramen_meals_40000', drawnIcon: 'ramen-profitable', name: 'Ramen Endowment', desc: 'Fund 40,000 ramen meals.' },
 ];
