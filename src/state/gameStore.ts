@@ -165,7 +165,7 @@ type Actions = {
   markChirpsRead: () => void;
   toggleChirpLike: (id: string) => void;
   openPaywallDesigner: (appId: string) => void;
-  applyPaywall: (appId: string, picks: Record<string, string>) => void;
+  applyPaywall: (appId: string, picks: Record<string, string>) => boolean;
   unlock: (id: string) => void;
   applyLaunchOfflineEarnings: () => number;
   applyOfflineEarnings: () => number;
@@ -173,6 +173,8 @@ type Actions = {
   discardPendingLaunchHydration: () => void;
   touchLastSeen: () => void;
 };
+
+export const PAYWALL_AB_TEST_COST = 75;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
@@ -712,20 +714,24 @@ export const useGame = create<RuntimeState & Actions>()(
         const s = get();
         const app = s.apps.find(a => a.id === appId);
         if (!app || !app.live) return;
-        if (app.hasPaywall) {
-          if (s.cash < 75) {
-            s.pushNotif('A/B tests cost $75. Science is not free.', 'abTest');
-            return;
-          }
-          set({ cash: s.cash - 75 });
-        }
         set({ overlay: { type: 'paywallDesigner', appId } });
       },
 
       applyPaywall: (appId, picks) => {
         const s = get();
         const app = s.apps.find(a => a.id === appId);
-        if (!app) return;
+        const isCurrentDesigner = s.overlay?.type === 'paywallDesigner' && s.overlay.appId === appId;
+        const hasCompletePicks = PAYWALL_AXES.every(axis =>
+          axis.choices.some(choice => choice.id === picks[axis.id]),
+        );
+        if (!app || !app.live || !isCurrentDesigner || !hasCompletePicks) return false;
+
+        const isRepeatTest = app.hasPaywall;
+        if (isRepeatTest && s.cash < PAYWALL_AB_TEST_COST) {
+          s.pushNotif(`A/B tests cost $${PAYWALL_AB_TEST_COST}. Science is not free.`, 'abTest');
+          return false;
+        }
+
         const transaction = calculatePaywallTransaction({
           totalMrr: s.mrr,
           mrrMult: s.mrrMult,
@@ -736,15 +742,16 @@ export const useGame = create<RuntimeState & Actions>()(
         });
         const { mult, dark } = transaction;
         set({
+          cash: isRepeatTest ? s.cash - PAYWALL_AB_TEST_COST : s.cash,
           apps: s.apps.map(a => (a.id === appId ? { ...a, mult, dark, hasPaywall: true } : a)),
           mrr: transaction.delta.after,
           overlay: { type: 'paywallResult', appId, transaction },
         });
-        s.unlock('paywall_first');
+        get().unlock('paywall_first');
         if (dark >= 5) {
-          s.unlock('dark_side');
+          get().unlock('dark_side');
         } else if (dark === 0) {
-          s.unlock('saint');
+          get().unlock('saint');
         }
         get().pushChirp(paywallReaction(app.name, transaction), {
           author: BETA_TESTER,
@@ -752,6 +759,7 @@ export const useGame = create<RuntimeState & Actions>()(
           event: `PAYWALL SHIPPED · HEAT ${dark}`,
           delta: transaction.delta,
         });
+        return true;
       },
 
       unlock: id => {

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useGame } from '../state/gameStore';
+import { PAYWALL_AB_TEST_COST, useGame } from '../state/gameStore';
 import { PAYWALL_AXES } from '../content/content';
-import { Btn, Eyebrow, MonoText } from './ui';
+import { Btn, Eyebrow, MonoText, exactMoney } from './ui';
 import { C } from '../theme';
 import { EthicallySourcedIcon, ShipIcon, TrendingIcon } from './icons';
 
@@ -11,11 +11,13 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
   const app = useGame(s => s.apps.find(a => a.id === appId));
   const applyPaywall = useGame(s => s.applyPaywall);
   const dismiss = useGame(s => s.dismissOverlay);
+  const cash = useGame(s => s.cash);
   const [picks, setPicks] = useState<Record<string, string>>({});
 
   if (!app) return null;
 
   const complete = PAYWALL_AXES.every(ax => picks[ax.id]);
+  const isRepeatTest = app.hasPaywall;
   const preview = PAYWALL_AXES.reduce(
     (acc, ax) => {
       const c = ax.choices.find(ch => ch.id === picks[ax.id]);
@@ -23,6 +25,16 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
     },
     { mult: 1, dark: 0 }
   );
+  const commitLabel = !complete
+    ? 'Pick one from each row'
+    : isRepeatTest
+      ? `Run A/B test · ${exactMoney(PAYWALL_AB_TEST_COST)}`
+      : 'Ship this paywall';
+  const quoteNote = !isRepeatTest
+    ? 'Your first in-game paywall setup is free.'
+    : cash < PAYWALL_AB_TEST_COST
+      ? `${exactMoney(PAYWALL_AB_TEST_COST - cash)} more cash needed. Opening and leaving are free.`
+      : 'Charged only when you run this test. Opening and leaving are free.';
 
   return (
     <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false}>
@@ -77,8 +89,29 @@ export default function PaywallDesigner({ appId }: { appId: string }) {
         )}
       </View>
 
+      <View
+        accessible
+        accessibilityLabel={isRepeatTest
+          ? `A/B test fee ${exactMoney(PAYWALL_AB_TEST_COST)}. Charged only when you run the test.`
+          : 'First paywall setup is free.'}
+        style={st.commitQuote}
+      >
+        <View style={st.commitQuoteRow}>
+          <MonoText style={st.commitQuoteLabel}>{isRepeatTest ? 'A/B TEST FEE' : 'FIRST SETUP'}</MonoText>
+          <MonoText style={st.commitQuoteValue}>
+            {isRepeatTest ? exactMoney(PAYWALL_AB_TEST_COST) : 'FREE'}
+          </MonoText>
+        </View>
+        <Text style={[st.commitQuoteNote, isRepeatTest && cash < PAYWALL_AB_TEST_COST && { color: C.pink }]}>
+          {quoteNote}
+        </Text>
+      </View>
+
       <Btn
-        label={complete ? 'Ship this paywall' : 'Pick one from each row'}
+        label={commitLabel}
+        accessibilityLabel={complete && isRepeatTest
+          ? `Run A/B test for ${exactMoney(PAYWALL_AB_TEST_COST)}`
+          : undefined}
         icon={complete ? <ShipIcon size={18} color={C.btnText} /> : undefined}
         disabled={!complete}
         onPress={() => applyPaywall(appId, picks)}
@@ -109,6 +142,11 @@ const st = StyleSheet.create({
   choiceLabel: { color: C.mut, fontWeight: '700', fontSize: 13 },
   choiceFlavor: { color: C.dim, fontSize: 11, marginTop: 1 },
   previewRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  commitQuote: { backgroundColor: C.card2, borderRadius: 12, marginTop: 14, padding: 12, gap: 6 },
+  commitQuoteRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+  commitQuoteLabel: { color: C.dim, fontSize: 10, letterSpacing: 0.8 },
+  commitQuoteValue: { color: C.ink, fontSize: 13, fontWeight: '700' },
+  commitQuoteNote: { color: C.mut, fontSize: 11, lineHeight: 16 },
   heatIcons: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   cleanStatus: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });
