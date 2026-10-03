@@ -212,7 +212,7 @@ function AppRow({
     ? `${name}. ${idea}. Earning ${fmt(mrr)} per month. ` +
       (hasPaywall
         ? `Paywall shipped, conversion times ${mult.toFixed(2)}. Run an A/B test for $75.`
-        : 'No paywall yet. Design one.')
+        : 'No paywall yet. Set up your paywall for free, in-game.')
     : `${name}. ${idea}. Rejected by App Review.`;
 
   const body = (
@@ -232,7 +232,7 @@ function AppRow({
             <MonoText style={st.appMrr}>{fmt(mrr)}/mo</MonoText>
             <View style={st.appAction}>
               {hasPaywall ? <AbTestIcon size={13} color={C.gold} /> : <PaywallIcon size={13} color={C.gold} />}
-              <MonoText style={st.appActionText}>{hasPaywall ? `×${mult.toFixed(2)} · $75` : 'PAYWALL'}</MonoText>
+              <MonoText style={st.appActionText}>{hasPaywall ? `×${mult.toFixed(2)} · $75` : 'SET UP PAYWALL'}</MonoText>
             </View>
           </>
         ) : (
@@ -273,6 +273,7 @@ export default function HomeScreen({
   const s = useGame();
   const pct = Math.min(100, (s.mrr / MRR_GOAL) * 100);
   const live = s.apps.filter(a => a.live).length;
+  const paywallSetupApp = s.apps.find(a => a.live && !a.hasPaywall);
   const unlocked = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
   const free = !s.hasJob;
   const canQuit = s.hasJob && s.mrr >= MRR_GOAL;
@@ -352,6 +353,24 @@ export default function HomeScreen({
           />
         )}
       </Hero>
+
+      {paywallSetupApp && (
+        <Section>
+          <SectionHeader title="Next step" />
+          <Unit>
+            <Text style={st.setupName}>{paywallSetupApp.name} is live</Text>
+            <Text style={st.setupCopy}>
+              Set up its paywall to shape subscriber conversion. Free, in-game design - no purchase needed.
+            </Text>
+            <Btn
+              label="Set up paywall"
+              accessibilityLabel={`Set up paywall for ${paywallSetupApp.name}. Free in-game design.`}
+              onPress={() => s.openPaywallDesigner(paywallSetupApp.id)}
+              style={{ marginTop: 12 }}
+            />
+          </Unit>
+        </Section>
+      )}
 
       {reaction && (
         <Section key={reaction.id} onLayout={reactionViewport.onSectionLayout}>
@@ -521,15 +540,18 @@ const S_GAP = 10;
 
 const st = StyleSheet.create({
   railWrap: { marginTop: 16 },
-  railLabels: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 9 },
+  railLabels: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 4, justifyContent: 'space-between', alignItems: 'baseline', marginTop: 9 },
   railEnd: { fontSize: 11, color: C.dim },
   railMid: { fontSize: 11, color: C.mut, letterSpacing: 0.8 },
   railGoal: { fontSize: 11, color: C.ink, letterSpacing: 0.8, fontWeight: '600' },
   freeLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   freeText: { fontSize: 11, color: C.mint, letterSpacing: 1 },
 
+  setupName: { color: C.ink, fontSize: 17, fontWeight: '700' },
+  setupCopy: { color: C.mut, fontSize: 13, lineHeight: 19, marginTop: 6 },
+
   reaction: { paddingVertical: 13 },
-  reactionByline: { flexDirection: 'row', alignItems: 'baseline', gap: 7 },
+  reactionByline: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: 7 },
   reactionWho: { color: C.ink, fontSize: 13, fontWeight: '700' },
   reactionHandle: { color: C.dim, fontSize: 10 },
   reactionText: { color: C.ink, fontSize: 14, lineHeight: 20, marginTop: 7 },
