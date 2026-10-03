@@ -56,6 +56,7 @@ const mockNative = {
     },
   },
   StatusBar: { currentHeight: 0 },
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', SafeAreaView: 'SafeAreaView',
 };
 const setAppState = state => {

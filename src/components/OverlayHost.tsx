@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, View, Text, ScrollView, StyleSheet, Animated, Easing } from 'react-native';
+import { Platform, View, Text, ScrollView, StyleSheet, Animated, Easing, useWindowDimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useGame } from '../state/gameStore';
 import { REVIEW_MSGS } from '../content/content';
@@ -65,6 +65,8 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
   const cash = useGame(s => s.cash);
   const mealsFunded = useGame(s => s.mealsFunded);
   const mrr = useGame(s => s.mrr);
+  const { fontScale } = useWindowDimensions();
+  const stackRamenQuote = fontScale > 1.3;
   const paywallApp = useGame(s =>
     overlay?.type === 'paywallResult' ? s.apps.find(app => app.id === overlay.appId) : undefined,
   );
@@ -92,7 +94,12 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
 
   return (
     <View style={st.backdrop} accessibilityViewIsModal>
-      <View style={[st.sheet, (overlay.type === 'paywallResult' || (overlay.type === 'verdict' && overlay.ok)) && st.scrollSheet]}>
+      <View
+        style={[
+          st.sheet,
+          (overlay.type === 'paywallResult' || overlay.type === 'ramenPurchase' || (overlay.type === 'verdict' && overlay.ok)) && st.scrollSheet,
+        ]}
+      >
         {overlay.type === 'review' && <ReviewSheet appName={overlay.appName} />}
 
         {overlay.type === 'verdict' && overlay.ok && (
@@ -195,7 +202,11 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
         {overlay.type === 'paywallDesigner' && <PaywallDesigner appId={overlay.appId} />}
 
         {overlay.type === 'ramenPurchase' && (
-          <>
+          <ScrollView
+            style={st.sheetScroll}
+            contentContainerStyle={st.sheetContent}
+            showsVerticalScrollIndicator
+          >
             <View style={st.heroIcon}>
               <RamenProfitableIcon size={40} color={C.gold} />
             </View>
@@ -207,17 +218,31 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
               This is optional recognition spending. It adds no income, energy, or other gameplay boost.
             </Text>
             <View style={st.ramenQuote}>
-              <View style={st.quoteRow}>
+              <View
+                accessible
+                accessibilityLabel={`Total: ${exactMoney(overlay.cost)}.`}
+                style={[st.quoteRow, stackRamenQuote && st.quoteRowStack]}
+              >
                 <MonoText style={st.quoteLabel}>TOTAL</MonoText>
                 <MonoText style={st.quoteValue}>{exactMoney(overlay.cost)}</MonoText>
               </View>
-              <View style={st.quoteRow}>
+              <View
+                accessible
+                accessibilityLabel={cash >= overlay.cost
+                  ? `Cash after: ${exactMoney(cash - overlay.cost)}.`
+                  : `Cash short: ${exactMoney(overlay.cost - cash)}.`}
+                style={[st.quoteRow, stackRamenQuote && st.quoteRowStack]}
+              >
                 <MonoText style={st.quoteLabel}>CASH AFTER</MonoText>
                 <MonoText style={[st.quoteValue, cash < overlay.cost && { color: C.pink }]}>
                   {cash >= overlay.cost ? exactMoney(cash - overlay.cost) : `${exactMoney(overlay.cost - cash)} SHORT`}
                 </MonoText>
               </View>
-              <View style={st.quoteRow}>
+              <View
+                accessible
+                accessibilityLabel={`Lifetime after: ${fmtN(mealsFunded + overlay.quantity)} meals.`}
+                style={[st.quoteRow, stackRamenQuote && st.quoteRowStack]}
+              >
                 <MonoText style={st.quoteLabel}>LIFETIME AFTER</MonoText>
                 <MonoText style={st.quoteValue}>{fmtN(mealsFunded + overlay.quantity)} MEALS</MonoText>
               </View>
@@ -234,7 +259,7 @@ export default function OverlayHost({ onReturnHome }: { onReturnHome: () => void
               style={{ marginTop: 16 }}
             />
             <Btn label="Not tonight" ghost onPress={dismiss} style={{ marginTop: 8 }} />
-          </>
+          </ScrollView>
         )}
 
         {overlay.type === 'paywallResult' && paywallResult && (
@@ -331,9 +356,10 @@ const st = StyleSheet.create({
   resultReceipt: { fontSize: 11, textAlign: 'center', marginTop: 10 },
   paywallCode: { marginTop: 16 },
   ramenQuote: { backgroundColor: C.card2, borderRadius: R.tile, marginTop: 16, padding: 12, gap: 9 },
-  quoteRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 },
-  quoteLabel: { color: C.dim, fontSize: 10, letterSpacing: 0.8 },
-  quoteValue: { color: C.ink, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  quoteRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 },
+  quoteRowStack: { flexDirection: 'column', alignItems: 'stretch', gap: 2 },
+  quoteLabel: { color: C.dim, fontSize: 10, letterSpacing: 0.8, flexShrink: 1 },
+  quoteValue: { color: C.ink, fontSize: 12, fontWeight: '600', textAlign: 'right', flexShrink: 1, maxWidth: '100%' },
   spinner: {
     width: 36,
     height: 36,
