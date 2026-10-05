@@ -29,6 +29,7 @@ import {
 } from '../components/ui';
 import { C } from '../theme';
 import PhoneBillboard, { type BillboardViewportFrame } from '../components/PhoneBillboard';
+import PrivacySupportLinks from '../components/PrivacySupportLinks';
 import {
   getPurchaseServiceStatus,
   initPurchases,
@@ -405,6 +406,12 @@ export default function StoreScreen({
         </Unit>
       </Section>
 
+      <Section>
+        <SectionHeader title="Privacy & support" />
+        <Unit style={st.privacySupport}>
+          <PrivacySupportLinks />
+        </Unit>
+      </Section>
     </Screen>
   );
 }
@@ -437,4 +444,5 @@ const st = StyleSheet.create({
   indieCopy: { color: C.mut, fontSize: 13, lineHeight: 19 },
   storePriceCopy: { color: C.dim, fontSize: 11, lineHeight: 16, marginTop: 8 },
   restoreCopy: { color: C.dim, fontSize: 11, lineHeight: 16, marginTop: 14 },
+  privacySupport: { marginTop: 12 },
 });

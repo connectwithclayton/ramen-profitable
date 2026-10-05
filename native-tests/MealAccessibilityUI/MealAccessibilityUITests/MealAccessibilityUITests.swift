@@ -59,6 +59,32 @@ final class MealAccessibilityUITests: XCTestCase {
         XCTAssertTrue(unchangedCash.waitForExistence(timeout: 5), "Cancellation must spend no cash")
     }
 
+    func testPrivacySupportLinksAreReachableAtLargeText() throws {
+        let app = XCUIApplication(bundleIdentifier: bundleIdentifier)
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+        dismissDeveloperMenuIfNeeded(in: app)
+
+        let store = app.descendants(matching: .any)["tab-store"]
+        XCTAssertTrue(store.waitForExistence(timeout: 5))
+        store.tap()
+
+        let section = app.staticTexts["PRIVACY & SUPPORT"].firstMatch
+        makeHittable(section, in: app, message: "Privacy & support section")
+        let description = app.staticTexts[
+            "Learn how Ramen Profitable handles game progress, purchases, and advertising, or get help."
+        ].firstMatch
+        makeHittable(description, in: app, message: "Privacy & support description")
+
+        for label in ["Privacy Policy", "Support"] {
+            let link = app.links[label]
+            makeHittable(link, in: app, message: label)
+            XCTAssertGreaterThanOrEqual(link.frame.height, 44, "\(label) touch target must be at least 44 points")
+            assertInsideViewport(link, app: app, message: label)
+        }
+        attachScreenshot(app, name: "privacy-support-links")
+    }
+
     private func dismissDeveloperMenuIfNeeded(in app: XCUIApplication) {
         let onboarding = app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "This is the developer menu")
