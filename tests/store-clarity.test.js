@@ -11,11 +11,17 @@ let saved = null;
 let serviceStatus = 'checking';
 let purchaseOutcome = { status: 'cancelled' };
 let restoreOutcome = false;
+let openedURLs = [];
+let fetchedURLs = [];
+let networkResult = { ok: true };
+let alertCalls = [];
 const serviceListeners = new Set();
 const native = {
   Platform: { OS: 'ios', select: options => options.ios ?? options.default },
   StyleSheet: { create: value => value, hairlineWidth: 1, absoluteFill: {} },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  Linking: { openURL: async url => { openedURLs.push(url); } },
+  Alert: { alert: (...args) => { alertCalls.push(args); } },
   useWindowDimensions: () => ({ fontScale: 1 }),
   View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
   Animated: {
@@ -92,6 +98,15 @@ test.beforeEach(async () => {
   serviceStatus = 'checking';
   purchaseOutcome = { status: 'cancelled' };
   restoreOutcome = false;
+  openedURLs = [];
+  fetchedURLs = [];
+  alertCalls = [];
+  networkResult = { ok: true };
+  global.fetch = async url => {
+    fetchedURLs.push(url);
+    if (networkResult instanceof Error) throw networkResult;
+    return networkResult;
+  };
   await useGame.persist.rehydrate();
   useGame.setState(useGame.getInitialState(), true);
 });
@@ -122,6 +137,58 @@ test('mounted Store distinguishes checking, unavailable, free, and confirmed own
   assert.ok(textIncludes(view.root, 'CONFIRMED OWNED'));
   assert.ok(textIncludes(view.root, 'Go Indie is confirmed active'));
   assert.equal(button(view.root, 'View App Store price'), undefined);
+});
+
+test('Store always offers independent accessible privacy and support links to free and Go Indie players', async t => {
+  let view;
+  await act(async () => { view = create(React.createElement(StoreScreen)); });
+  t.after(async () => { await act(async () => view.unmount()); });
+  const assertLinks = async () => {
+    assert.ok(textIncludes(view.root, 'Privacy & support'));
+    assert.ok(textIncludes(view.root, 'Learn how Ramen Profitable handles game progress, purchases, and advertising, or get help.'));
+    for (const [label, url] of [
+      ['Privacy Policy', 'https://ramen.clayj.app/privacy/'],
+      ['Support', 'https://ramen.clayj.app/support/'],
+    ]) {
+      const link = button(view.root, label);
+      assert.ok(link, `${label} must be independently reachable`);
+      assert.equal(link.props.accessibilityRole, 'link');
+      assert.equal(link.props.accessibilityLabel, label);
+      await press(link);
+      assert.equal(fetchedURLs.at(-1), url);
+      assert.equal(openedURLs.at(-1), url);
+    }
+  };
+  await assertLinks();
+  await act(async () => useGame.setState({ goIndieActive: true, goIndieResolved: true }));
+  await assertLinks();
+});
+
+test('Store link activation reports offline, HTTP, and URL-opening failures without trapping the player', async t => {
+  let view;
+  await act(async () => { view = create(React.createElement(StoreScreen)); });
+  t.after(async () => { await act(async () => view.unmount()); });
+
+  networkResult = new TypeError('Network request failed');
+  await press(button(view.root, 'Privacy Policy'));
+  assert.equal(openedURLs.length, 0);
+  assert.match(alertCalls.at(-1)[1], /connection/i);
+  assert.ok(button(view.root, 'Privacy Policy'), 'link stays available for retry');
+
+  networkResult = { ok: false, status: 503 };
+  await press(button(view.root, 'Support'));
+  assert.equal(openedURLs.length, 0);
+  assert.match(alertCalls.at(-1)[1], /unavailable/i);
+
+  networkResult = { ok: true };
+  native.Linking.openURL = async () => { throw new Error('Cannot open URL'); };
+  try {
+    await press(button(view.root, 'Support'));
+    assert.match(alertCalls.at(-1)[1], /open/i);
+    assert.ok(button(view.root, 'Support'), 'failure does not trap the player');
+  } finally {
+    native.Linking.openURL = async url => { openedURLs.push(url); };
+  }
 });
 
 test('Restore Purchases explains and reports its existing-purchase-only outcomes', async t => {
