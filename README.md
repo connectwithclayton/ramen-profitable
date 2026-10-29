@@ -1,37 +1,61 @@
 # 🍜 Ramen Profitable
 
-An idle game about being an indie app developer. Ship apps, survive App Review,
-fight churn, quit your day job. Built for **Shipaton 2026**.
+**An idle game about being an indie app developer.** Ship apps, survive App
+Review, fight churn, and quit your day job.
 
-**Category targets:** Best Game · HAMM Award · Catvertising · #BuildInPublic
-**Ship plan:** see `SHIPPLAN.md` — App Review submission deadline **Sept 10**.
+**Status:** In TestFlight beta on iOS. Started for RevenueCat's Shipaton 2026
+hackathon; I missed the deadline and kept building.
 
-## Run it (5 minutes)
+![Three screens from the game: the Home dashboard tracking monthly recurring revenue, an App Review approval, and the Paywall Designer.](docs/readme/screens.png)
 
-```bash
-npm install
-npx expo install expo-haptics @react-native-async-storage/async-storage react-native-svg
-npx expo start
-```
+## What's in it
 
-Scan the QR with Expo Go on your phone. The game runs there, but a development
-build is required for real RevenueCat Test Store purchases.
+- **The loop.** Tap to write code, submit to App Review, and grow monthly
+  recurring revenue to $2,000, the point where you can quit your day job.
+- **A paywall designer that punishes dark patterns.** A tiny close button or a
+  trial short enough to forget about raises conversion, but it also adds
+  "heat" that can backfire on social media and cost you revenue.
+- **The paywall in a game about paywalls is real.** "Go Indie" is a real
+  one-time purchase through RevenueCat. It doubles offline earnings.
+- **A real ad inside a fake phone.** On iPhone and iPad, the Store shows a real
+  AdMob banner inside the in-game phone. Buying Go Indie removes it.
+- **Offline progress.** Earnings keep accruing while the app is closed, up to
+  8 hours.
 
-## Validate changes
+## How I built it
 
-Pull requests and pushes to `main` run the same lockfile-strict Linux checks as:
+I build with a crew of AI coding agents through [firstmate]. They write the
+code; I own the decisions. I wrote up the rules I use to supervise them in
+[Field Notes][field-notes].
 
-```bash
-npm ci --no-audit --no-fund
-npm run typecheck
-npm test
-```
+- **Agents implement; gates decide what merges.** Changes go through an
+  automated AI review ([no-mistakes]) before they become pull requests, and CI
+  runs the type check and test suite on every pull request.
+- **People keep the human decisions.** firstmate calls the person in charge
+  "the captain," and that's me. Anything involving accounts, money, or legal
+  declarations, such as App Store privacy answers, ad and purchase dashboard
+  settings, and publishing the privacy policy, is marked captain-owned in the
+  docs and never done by an agent.
+- **Real money fails safe.** An iOS release build refuses to configure without a
+  valid production purchase key. If the app can't confirm whether a player has
+  paid, it shows no ads instead of guessing.
+- **Evidence, not claims.** Interface changes are tested in the iOS Simulator,
+  including at the largest accessibility text sizes, with screenshots kept as
+  [evidence](docs/PAYWALL_DISCOVERY_VALIDATION.md).
 
-CI does not build native apps, deploy, or require release credentials.
+Decisions I'd point to:
+
+- **No paywall on launch.** The purchase screen opens only after a deliberate
+  tap.
+- **Privacy-light ads.** Non-personalized banners only, no tracking prompt, and
+  no ads for anyone who paid.
+- **Save only what's safe to restore.** Notifications, pop-ups, and running
+  timers are never saved, so reopening the app never drops you into a stale
+  screen.
 
 ## Architecture
 
-```
+```text
 App.tsx                     root: custom dock nav (no react-navigation — deliberate)
 src/state/gameStore.ts      zustand store actions and AsyncStorage persist wiring
 src/state/experience.ts     offline settlement, Home reactions, paywall receipts, persist allowlist
@@ -69,73 +93,6 @@ Design decisions worth knowing:
   production key is missing or malformed, while runtime service failures still
   fail closed for advertising without blocking launch or base offline earnings.
 
-## Week 3: going live with RevenueCat
-
-Remaining captain steps for a Test Store purchase:
-
-1. Create a RevenueCat account and create a project for Ramen Profitable.
-2. In **Apps & Providers**, create a **Test Store** app/provider for the
-   project.
-3. In **Product Catalog**, define the Test Store lifetime product and the
-   `go_indie_lifetime` package, create the offering, connect the package to
-   that offering, and create the `go_indie` entitlement with the product
-   attached. Publish a Paywall/workflow on that same offering; the app reads
-   the SDK's `CURRENT` offering and its remotely configured packages and prices.
-   Confirm the published workflow assembles without a no-workflow error.
-4. In **Project Settings → API keys**, copy the Test Store public SDK key. It
-   must start with `test_`.
-5. For local development, put the exact variable
-   `REVENUECAT_TEST_STORE_API_KEY=test_...` in the untracked `.env.local`.
-   For an EAS development build, add that same variable and value to the
-   project's **development** environment with
-   `eas env:create --name REVENUECAT_TEST_STORE_API_KEY --value test_... --environment development --visibility plaintext`,
-   or add it in **Project settings → Environment variables**. The
-   `development` profile already selects that environment.
-6. Build the simulator development client with
-   `npx eas build --profile ios-simulator --platform ios`, install it in the
-   iOS Simulator, and start the bundler with `npx expo start --dev-client`.
-   For a local native rebuild, use `npx expo run:ios`.
-
-### Captain path: physical iPhone development build
-
-The captain must run `eas login` in a real terminal, then provision the
-development Test Store variable in the EAS **development** environment as
-described above. For Apple credentials, create an App Store Connect API key
-with the **Admin** role, keep its `.p8` file outside this repository, and use
-the captain-provided key only through the EAS credential flow. Choose the
-**Individual** team type and provide the non-secret Key ID, Issuer ID, and
-Apple Team ID when EAS requests them. Do not commit or share the `.p8` file or
-any credential values.
-
-Run `npx eas build --profile development --platform ios`. In the EAS Website
-device-registration flow, open the registration page on the captain's iPhone,
-register that device, select it for the build, and install the resulting
-development build from its EAS build link. The device must launch the app and
-render it before physical-device validation is claimed. Keep Metro running with
-`npx expo start --dev-client` and report the device-side RevenueCat state plainly:
-`[purchases] RevenueCat configured for test-store.` means Test Store is
-configured; `[purchases] ... mock mode.` means the native module or key is
-unavailable and real purchases were not configured.
-
-After dependency changes, run `npm ci` in the clone that actually runs Metro;
-otherwise Metro can fail with `Unable to resolve module` even when this clone
-is installed correctly. Do not claim RevenueCat configuration from app launch
-alone; use the Metro evidence above.
-
-Apple Developer or App Store Connect approval is not required for RevenueCat
-Test Store purchases; the physical iPhone EAS build still requires the Apple
-credentials and device registration described above.
-
-Release environments must instead provide the matching
-`REVENUECAT_IOS_API_KEY` or `REVENUECAT_ANDROID_API_KEY`. An iOS release refuses
-to configure unless `REVENUECAT_IOS_API_KEY` is a usable `appl_` public SDK
-key, not missing, wrong-type, or prefix-only. Set it in each selected EAS
-preview or production environment with Plain text or Sensitive visibility,
-not Secret visibility, so Expo can read it while resolving dynamic app
-config. Expo config injects only Test Store keys into development builds and
-only validated platform keys into release builds; it never falls back from a
-release build to the Test Store variable.
-
 ## Balancing cheatsheet
 
 | Knob | Where | Current |
@@ -147,6 +104,17 @@ release build to the Test Store variable.
 | Win condition | `MRR_GOAL` | $2,000 MRR |
 | Day length | `slowTick` | ~30s real time |
 
-## Catvertising advertising
+## Development
 
-On iPhone and iPad, the Store contains a real AdMob banner inside its fictional phone; Go Indie removes it. Android contains no advertising. See [AdMob setup, release guards, and privacy handoff](docs/ADMOB_SETUP.md). Ads require a rebuilt native development client and resolved RevenueCat ownership. The general-audience integration sends no child or under-age treatment signals and requests only non-personalized banners.
+Run it, validate changes, and configure purchases and device builds with the
+[development guide](docs/DEVELOPMENT.md). Advertising setup is in
+[AdMob setup](docs/ADMOB_SETUP.md).
+
+---
+
+Ramen Profitable is a game. Its apps, revenue, reviews, and social posts are
+fictional.
+
+[field-notes]: https://fieldnotes.clayj.app
+[firstmate]: https://github.com/kunchenguid/firstmate
+[no-mistakes]: https://github.com/kunchenguid/no-mistakes

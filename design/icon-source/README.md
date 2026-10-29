@@ -22,7 +22,7 @@ the colored ground and does not contain the adaptive-icon safe-circle correction
 | Production asset | Expo configuration | Current status |
 |---|---|---|
 | `assets/icon.png` | `expo.icon` | Configured |
-| `assets/splash-icon.png` | `expo-splash-screen` config plugin `image` | Asset only; splash configuration remains tracked in `SHIPPLAN.md` |
+| `assets/splash-icon.png` | `expo-splash-screen` config plugin `image` | Asset only; splash screen configuration not added yet |
 | `assets/favicon.png` | `expo.web.favicon` | Configured |
 | `assets/android-icon-foreground.png` | `expo.android.adaptiveIcon.foregroundImage` | Configured |
 | `assets/android-icon-background.png` | `expo.android.adaptiveIcon.backgroundImage` | Configured |
